@@ -6,11 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Alarm
-import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Place
-import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,11 +32,11 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class Screen(val label: String, val icon: ImageVector) {
-    HOME("Alarm", Icons.Default.Alarm),
-    SEARCH("Pick Stop", Icons.Default.DirectionsBus),
-    SAVED("Saved", Icons.Default.Place),
-    HISTORY("History", Icons.Default.History),
-    READINESS("Battery", Icons.Default.Security)
+    HOME("Alarm", Icons.Default.Notifications),
+    SEARCH("Pick Stop", Icons.Default.Place),
+    SAVED("Saved", Icons.Default.Star),
+    HISTORY("History", Icons.Default.Info),
+    READINESS("Battery", Icons.Default.Settings)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

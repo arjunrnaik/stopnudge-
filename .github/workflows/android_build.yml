@@ -32,11 +32,23 @@ jobs:
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x gradlew
 
-      - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+      - name: Compile & Run Unit Tests
+        run: |
+          ./gradlew testDebugUnitTest --stacktrace > test_run.log 2>&1 || {
+            echo "==================== TEST FAILURE LOG ===================="
+            tail -n 100 test_run.log
+            echo "=========================================================="
+            exit 1
+          }
 
       - name: Assemble Debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        run: |
+          ./gradlew :app:assembleDebug --stacktrace > assemble_run.log 2>&1 || {
+            echo "=================== ASSEMBLE FAILURE LOG ================="
+            tail -n 100 assemble_run.log
+            echo "=========================================================="
+            exit 1
+          }
 
       - name: List Generated APKs
         run: find . -name "*.apk" -ls
