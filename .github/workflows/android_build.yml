@@ -29,18 +29,40 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
         with:
-          gradle-home-cache-cleanup: true
+          cache-disabled: false
 
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x gradlew
 
       - name: Run Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: |
+          ./gradlew testDebugUnitTest --stacktrace --info 2>&1 | tee test_build.log
 
       - name: Assemble Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        if: success()
+        run: |
+          ./gradlew assembleDebug --stacktrace --info 2>&1 | tee assemble_build.log
+
+      - name: Dump Log Tail on Failure
+        if: failure()
+        run: |
+          echo "=== TAIL OF BUILD LOG ==="
+          tail -n 150 test_build.log 2>/dev/null || true
+          tail -n 150 assemble_build.log 2>/dev/null || true
+
+      - name: Upload Build Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            test_build.log
+            assemble_build.log
+            app/build/reports/
+          retention-days: 7
 
       - name: Upload Debug APK Artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: stopnudge-debug-apk
