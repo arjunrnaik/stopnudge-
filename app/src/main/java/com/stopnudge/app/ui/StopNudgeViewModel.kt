@@ -69,11 +69,15 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun loadInitialStops() {
         viewModelScope.launch(Dispatchers.IO) {
-            val metros = transitDao.getAllMetroStations()
-            val buses = transitDao.searchBusStops("Majestic")
-            withContext(Dispatchers.Main) {
-                _metroStations.value = metros
-                _busStops.value = buses
+            try {
+                val metros = transitDao.getAllMetroStations()
+                val buses = transitDao.searchBusStops("Majestic")
+                withContext(Dispatchers.Main) {
+                    _metroStations.value = metros
+                    _busStops.value = buses
+                }
+            } catch (e: Throwable) {
+                android.util.Log.e("StopNudge", "Failed to load initial transit stops", e)
             }
         }
     }
@@ -81,20 +85,24 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
     fun onSearchQueryChange(query: String) {
         _searchQuery.value = query
         viewModelScope.launch(Dispatchers.IO) {
-            if (query.isBlank()) {
-                val metros = transitDao.getAllMetroStations()
-                val buses = transitDao.searchBusStops("Majestic")
-                withContext(Dispatchers.Main) {
-                    _metroStations.value = metros
-                    _busStops.value = buses
+            try {
+                if (query.isBlank()) {
+                    val metros = transitDao.getAllMetroStations()
+                    val buses = transitDao.searchBusStops("Majestic")
+                    withContext(Dispatchers.Main) {
+                        _metroStations.value = metros
+                        _busStops.value = buses
+                    }
+                } else {
+                    val metros = transitDao.searchMetroStations(query.trim())
+                    val buses = transitDao.searchBusStops(query.trim())
+                    withContext(Dispatchers.Main) {
+                        _metroStations.value = metros
+                        _busStops.value = buses
+                    }
                 }
-            } else {
-                val metros = transitDao.searchMetroStations(query.trim())
-                val buses = transitDao.searchBusStops(query.trim())
-                withContext(Dispatchers.Main) {
-                    _metroStations.value = metros
-                    _busStops.value = buses
-                }
+            } catch (e: Throwable) {
+                android.util.Log.e("StopNudge", "Failed to search transit stops", e)
             }
         }
     }
@@ -102,7 +110,7 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
     fun selectMetroStation(station: MetroStationEntity) {
         _selectedDestination.value = SelectedDestination(
             name = station.name,
-            subtitle = station.metroLines?.let { "$it Line" } ?: "Metro Station",
+            subtitle = "${station.metroLines} Line",
             latitude = station.latitude,
             longitude = station.longitude,
             mode = "METRO"

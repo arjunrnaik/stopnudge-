@@ -76,6 +76,9 @@ def write_sqlite(
     );
     """)
 
+    # Set Room database version to 1
+    cursor.execute("PRAGMA user_version = 1;")
+
     # Fast spatial and search indexes for Android
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_metro_coords ON metro_stations (latitude, longitude);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_metro_name ON metro_stations (name_en);")

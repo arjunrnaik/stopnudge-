@@ -10,14 +10,14 @@ data class MetroStationEntity(
     val id: String,
     val name: String,
     @ColumnInfo(name = "name_en")
-    val nameEn: String?,
+    val nameEn: String,
     @ColumnInfo(name = "name_kn")
     val nameKn: String?,
     val latitude: Double,
     val longitude: Double,
     val mode: String,
     @ColumnInfo(name = "metro_lines")
-    val metroLines: String?,
+    val metroLines: String,
     val operator: String?,
     val ref: String?,
     @ColumnInfo(name = "group_id")

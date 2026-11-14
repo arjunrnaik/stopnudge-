@@ -10,7 +10,7 @@ data class BusStopEntity(
     val id: String,
     val name: String,
     @ColumnInfo(name = "name_en")
-    val nameEn: String?,
+    val nameEn: String,
     @ColumnInfo(name = "name_kn")
     val nameKn: String?,
     val latitude: Double,

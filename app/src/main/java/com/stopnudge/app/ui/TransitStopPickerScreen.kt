@@ -273,9 +273,9 @@ fun TransitStopPickerScreen(
 @Composable
 fun MetroStationRow(station: MetroStationEntity, onClick: () -> Unit) {
     val lineColor = when {
-        station.metroLines?.contains("Purple", ignoreCase = true) == true -> Color(0xFF7A2082)
-        station.metroLines?.contains("Green", ignoreCase = true) == true -> Color(0xFF008752)
-        station.metroLines?.contains("Yellow", ignoreCase = true) == true -> Color(0xFFD4A017)
+        station.metroLines.contains("Purple", ignoreCase = true) -> Color(0xFF7A2082)
+        station.metroLines.contains("Green", ignoreCase = true) -> Color(0xFF008752)
+        station.metroLines.contains("Yellow", ignoreCase = true) -> Color(0xFFD4A017)
         else -> MaterialTheme.colorScheme.primary
     }
 
@@ -305,14 +305,12 @@ fun MetroStationRow(station: MetroStationEntity, onClick: () -> Unit) {
                     fontWeight = FontWeight.SemiBold
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    station.metroLines?.let {
-                        Text(
-                            text = "$it Line",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = lineColor,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
+                    Text(
+                        text = "${station.metroLines} Line",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = lineColor,
+                        fontWeight = FontWeight.Bold
+                    )
                     station.nameKn?.let {
                         Text(
                             text = "• $it",
