@@ -8,14 +8,14 @@ class DistanceEvaluatorTest {
 
     @Test
     fun testHaversineDistanceBetweenBengaluruStops() {
-        // Majestic to Silk Board (~9.2 km)
+        // Majestic to Silk Board (~8.36 km direct straight-line / Haversine)
         val majesticLat = 12.975708
         val majesticLon = 77.572876
         val silkBoardLat = 12.916582
         val silkBoardLon = 77.620567
 
         val distance = computeDistanceMeters(majesticLat, majesticLon, silkBoardLat, silkBoardLon)
-        assertTrue("Distance should be around 8.5km to 9.5km", distance in 8500.0..9500.0)
+        assertTrue("Distance should be around 8.0km to 9.0km", distance in 8000.0..9000.0)
     }
 
     @Test
