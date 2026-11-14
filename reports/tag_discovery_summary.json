@@ -1,0 +1,826 @@
+{
+  "metro": {
+    "total_elements_sampled": 665,
+    "common_keys": [
+      [
+        "network",
+        607
+      ],
+      [
+        "name",
+        570
+      ],
+      [
+        "operator",
+        559
+      ],
+      [
+        "railway",
+        432
+      ],
+      [
+        "name:kn",
+        427
+      ],
+      [
+        "note",
+        319
+      ],
+      [
+        "subway",
+        312
+      ],
+      [
+        "public_transport",
+        301
+      ],
+      [
+        "code",
+        235
+      ],
+      [
+        "public_transport:version",
+        227
+      ],
+      [
+        "colour",
+        215
+      ],
+      [
+        "type",
+        208
+      ],
+      [
+        "wheelchair",
+        207
+      ],
+      [
+        "frequency",
+        183
+      ],
+      [
+        "voltage",
+        183
+      ],
+      [
+        "source",
+        182
+      ],
+      [
+        "gauge",
+        177
+      ],
+      [
+        "maxspeed",
+        167
+      ],
+      [
+        "ref",
+        157
+      ],
+      [
+        "name:en",
+        155
+      ]
+    ],
+    "network_values": [
+      [
+        "Namma Metro",
+        582
+      ],
+      [
+        "Bengaluru Suburban Railway",
+        12
+      ],
+      [
+        "Bengaluru Metropolitan Transport Corporation",
+        4
+      ],
+      [
+        "public_transport",
+        4
+      ],
+      [
+        "IR",
+        3
+      ],
+      [
+        "Metro Feeder",
+        2
+      ]
+    ],
+    "operator_values": [
+      [
+        "Bangalore Metro Rail Corporation Limited",
+        328
+      ],
+      [
+        "BMRCL",
+        217
+      ],
+      [
+        "BMTC",
+        6
+      ],
+      [
+        "SWR",
+        3
+      ],
+      [
+        "Bangalore Metro Rail Corporation Limited (BMRCL)",
+        3
+      ],
+      [
+        "K-RIDE",
+        2
+      ]
+    ],
+    "station_values": [
+      [
+        "subway",
+        15
+      ]
+    ],
+    "railway_values": [
+      [
+        "stop",
+        176
+      ],
+      [
+        "subway",
+        174
+      ],
+      [
+        "construction",
+        32
+      ],
+      [
+        "subway_entrance",
+        18
+      ],
+      [
+        "station",
+        16
+      ],
+      [
+        "platform",
+        10
+      ],
+      [
+        "proposed",
+        6
+      ]
+    ],
+    "sample_elements": [
+      {
+        "type": "node",
+        "id": "1087823607",
+        "name": "Sir M. Visvesvaraya Stn., Central College",
+        "tags": {
+          "alt_name": "Central College",
+          "code": "VSWA",
+          "name": "Sir M. Visvesvaraya Stn., Central College",
+          "name:kn": "\u0cb5\u0cbf\u0cb6\u0ccd\u0cb5\u0cc7\u0cb6\u0ccd\u0cb5\u0cb0\u0caf\u0ccd\u0caf",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "platforms": "2",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "1524381523",
+        "name": "Krishna Rajendra Market",
+        "tags": {
+          "code": "KRMT",
+          "name": "Krishna Rajendra Market",
+          "name:kn": "\u0c95\u0cc3\u0cb7\u0ccd\u0ca3\u0cb0\u0cbe\u0c9c\u0cc7\u0c82\u0ca6\u0ccd\u0cb0 \u0cae\u0cbe\u0cb0\u0cc1\u0c95\u0c9f\u0ccd\u0c9f\u0cc6",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "platforms": "2",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "short_name": "K R Market",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes",
+          "wikidata": "Q24912918",
+          "wikipedia": "en:Krishna Rajendra Market metro station"
+        }
+      },
+      {
+        "type": "node",
+        "id": "1548300484",
+        "name": "Chickpete",
+        "tags": {
+          "code": "CKPE",
+          "name": "Chickpete",
+          "name:hi": "\u091a\u093f\u0915\u092a\u0947\u091f\u0947",
+          "name:kn": "\u0c9a\u0cbf\u0c95\u0ccd\u0c95\u0caa\u0cc7\u0c9f\u0cc6",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "1560067666",
+        "name": "Krantivira Sangolli Rayanna Railway Station",
+        "tags": {
+          "code": "BRCS",
+          "name": "Krantivira Sangolli Rayanna Railway Station",
+          "name:kn": "\u0ca8\u0c97\u0cb0 \u0cb0\u0cc8\u0cb2\u0cc1 \u0ca8\u0cbf\u0cb2\u0ccd\u0ca6\u0cbe\u0ca3",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "platforms": "2",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes",
+          "wikidata": "Q39070950",
+          "wikipedia": "en:City Railway Station metro station (Bangalore)"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2669084978",
+        "name": "Krantivira Sangolli Rayanna (Bengaluru)",
+        "tags": {
+          "internet_access": "wlan",
+          "name": "Krantivira Sangolli Rayanna (Bengaluru)",
+          "name:kn": "\u0c95\u0ccd\u0cb0\u0cbe\u0c82\u0ca4\u0cbf\u0cb5\u0cc0\u0cb0 \u0cb8\u0c82\u0c97\u0cca\u0cb3\u0ccd\u0cb3\u0cbf \u0cb0\u0cbe\u0caf\u0ca3\u0ccd\u0ca3 \u0cb0\u0cc8\u0cb2\u0ccd\u0cb5\u0cc6 \u0ca8\u0cbf\u0cb2\u0ccd\u0ca6\u0cbe\u0ca3",
+          "name:ml": "\u0d15\u0d4d\u0d30\u0d3e\u0d28\u0d4d\u0d24\u0d3f\u0d35\u0d40\u0d30 \u0d38\u0d19\u0d4d\u0d15\u0d4a\u0d32\u0d4d\u0d32\u0d3f \u0d30\u0d3e\u0d2f\u0d23\u0d4d\u0d23 \u0d31\u0d46\u0d2f\u0d3f\u0d7d\u0d35\u0d47 \u0d38\u0d4d\u0d31\u0d4d\u0d31\u0d47\u0d37\u0d7b",
+          "name:te": "\u0c15\u0c4d\u0c30\u0c3e\u0c02\u0c24\u0c3f\u0c35\u0c40\u0c30 \u0c38\u0c02\u0c17\u0c4a\u0c32\u0c4d\u0c32\u0c3f \u0c30\u0c3e\u0c2f\u0c28\u0c4d\u0c28 \u0c30\u0c48\u0c32\u0c4d\u0c35\u0c47 \u0c38\u0c4d\u0c1f\u0c47\u0c37\u0c28\u0c4d",
+          "network": "IR",
+          "old_name": "Bangalore City Junction",
+          "operator": "SWR",
+          "public_transport": "station",
+          "railway": "station",
+          "ref": "SBC",
+          "short_name": "KSR Bengaluru",
+          "wheelchair": "yes",
+          "wikidata": "Q3633970"
+        }
+      },
+      {
+        "type": "node",
+        "id": "4254495751",
+        "name": "A1: KSR Railway Station",
+        "tags": {
+          "level": "0",
+          "name": "A1: KSR Railway Station",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "4536076200",
+        "name": "A: KSR Bengaluru Railway Stn. Side",
+        "tags": {
+          "name": "A: KSR Bengaluru Railway Stn. Side",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "ref": "A"
+        }
+      },
+      {
+        "type": "node",
+        "id": "4865775644",
+        "name": "D: BMTC Bus Stand",
+        "tags": {
+          "level": "0",
+          "name": "D: BMTC Bus Stand",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "ref": "D"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5305932615",
+        "name": "C: Upparpete Police Station",
+        "tags": {
+          "alt_name": "B: Tank Bund Road",
+          "level": "0",
+          "name": "C: Upparpete Police Station",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "ref": "C",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5305932617",
+        "name": "Nadaprabhu Kempegowda Station, Majestic (Purple Line)",
+        "tags": {
+          "alt_name": "Majestic Metro Station",
+          "code": "KGWA",
+          "layer": "-1",
+          "level": "-1",
+          "name": "Nadaprabhu Kempegowda Station, Majestic (Purple Line)",
+          "name:etymology:wikidata": "Q6387049",
+          "name:kn": "\u0c95\u0cc6\u0c82\u0caa\u0cc7\u0c97\u0ccc\u0ca1",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5462852027",
+        "name": "B: Chikka Lalbagh",
+        "tags": {
+          "level": "0",
+          "name": "B: Chikka Lalbagh",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "ref": "B",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5462859407",
+        "name": "Unnamed",
+        "tags": {
+          "level": "0",
+          "operator": "BMRCL",
+          "railway": "subway_entrance",
+          "ref": "A",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5464787094",
+        "name": "Nadaprabhu Kempegowda Station, Majestic (Green Line)",
+        "tags": {
+          "alt_name": "Majestic Metro Station",
+          "code": "KGWA",
+          "layer": "-2",
+          "level": "-2",
+          "name": "Nadaprabhu Kempegowda Station, Majestic (Green Line)",
+          "name:etymology:wikidata": "Q6387049",
+          "name:kn": "\u0c95\u0cc6\u0c82\u0caa\u0cc7\u0c97\u0ccc\u0ca1",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5760197788",
+        "name": "Krantivira Sangolli Rayanna Railway Station",
+        "tags": {
+          "code": "BRCS",
+          "name": "Krantivira Sangolli Rayanna Railway Station",
+          "name:kn": "\u0ca8\u0c97\u0cb0 \u0cb0\u0cc8\u0cb2\u0cc1 \u0ca8\u0cbf\u0cb2\u0ccd\u0ca6\u0cbe\u0ca3",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "platforms": "2",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes",
+          "wikidata": "Q39070950",
+          "wikipedia": "en:City Railway Station metro station (Bangalore)"
+        }
+      },
+      {
+        "type": "node",
+        "id": "5760197800",
+        "name": "Nadaprabhu Kempegowda Station, Majestic (Purple Line)",
+        "tags": {
+          "alt_name": "Majestic Metro Station",
+          "code": "KGWA",
+          "layer": "-1",
+          "level": "-1",
+          "name": "Nadaprabhu Kempegowda Station, Majestic (Purple Line)",
+          "name:etymology:wikidata": "Q6387049",
+          "name:kn": "\u0c95\u0cc6\u0c82\u0caa\u0cc7\u0c97\u0ccc\u0ca1",
+          "network": "Namma Metro",
+          "note": "Contributors are requested to not edit the \"network\" and the \"operator\" tags. (2023/11/08)",
+          "operator": "Bangalore Metro Rail Corporation Limited",
+          "public_transport": "stop_position",
+          "public_transport:version": "2",
+          "railway": "stop",
+          "source": "http://www.bmrc.co.in/English/Network.htm",
+          "subway": "yes",
+          "wheelchair": "yes"
+        }
+      }
+    ]
+  },
+  "bus": {
+    "total_elements_sampled": 1566,
+    "overlap_matrix": {
+      "highway_bus_stop_only": 42,
+      "pt_platform_bus_yes_only": 102,
+      "both_highway_and_pt": 196,
+      "amenity_bus_station": 16
+    },
+    "operator_values": [
+      [
+        "BMTC",
+        1478
+      ],
+      [
+        "KSRTC",
+        4
+      ],
+      [
+        "SRS Travels",
+        1
+      ],
+      [
+        "VRL Travels",
+        1
+      ],
+      [
+        "BMRC",
+        1
+      ],
+      [
+        "Indian Institute Of Management Bangalore",
+        1
+      ],
+      [
+        "Bengaluru Metropolitan Transport Corporation",
+        1
+      ],
+      [
+        "BMTC Volvo",
+        1
+      ],
+      [
+        "ELCITA",
+        1
+      ]
+    ],
+    "highway_values": [
+      [
+        "none",
+        1328
+      ],
+      [
+        "bus_stop",
+        238
+      ]
+    ],
+    "public_transport_values": [
+      [
+        "none",
+        889
+      ],
+      [
+        "platform",
+        304
+      ],
+      [
+        "stop_position",
+        220
+      ],
+      [
+        "stop_area",
+        140
+      ],
+      [
+        "station",
+        12
+      ],
+      [
+        "yes",
+        1
+      ]
+    ],
+    "common_keys": [
+      [
+        "name",
+        1541
+      ],
+      [
+        "operator",
+        1489
+      ],
+      [
+        "network",
+        1288
+      ],
+      [
+        "network:wikidata",
+        1246
+      ],
+      [
+        "network:wikipedia",
+        1178
+      ],
+      [
+        "type",
+        972
+      ],
+      [
+        "ref",
+        819
+      ],
+      [
+        "public_transport:version",
+        762
+      ],
+      [
+        "route",
+        736
+      ],
+      [
+        "name:kn",
+        697
+      ],
+      [
+        "to",
+        684
+      ],
+      [
+        "public_transport",
+        677
+      ],
+      [
+        "from",
+        674
+      ],
+      [
+        "bus",
+        542
+      ],
+      [
+        "name:en",
+        392
+      ],
+      [
+        "via",
+        310
+      ],
+      [
+        "highway",
+        238
+      ],
+      [
+        "shelter",
+        235
+      ],
+      [
+        "bench",
+        224
+      ],
+      [
+        "wheelchair",
+        209
+      ]
+    ],
+    "sample_elements": [
+      {
+        "type": "node",
+        "id": "347295628",
+        "name": "Platform 28A",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 28A",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "347295648",
+        "name": "Platform 23",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 23",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "1809771508",
+        "name": "SRS Bus Station",
+        "tags": {
+          "amenity": "bus_station",
+          "name": "SRS Bus Station",
+          "operator": "SRS Travels",
+          "website": "https://www.srsbooking.com/"
+        }
+      },
+      {
+        "type": "node",
+        "id": "1809771510",
+        "name": "VRL Bus Station",
+        "tags": {
+          "amenity": "bus_station",
+          "name": "VRL Bus Station",
+          "operator": "VRL Travels",
+          "website": "https://www.vrlbus.in/vrl2013/booking_home_page.aspx"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2393928350",
+        "name": "Railway Station, Majestic",
+        "tags": {
+          "alt_name": "Majestic, Opposite to City Railway Station",
+          "bench": "yes",
+          "bus": "yes",
+          "covered": "yes",
+          "highway": "bus_stop",
+          "name": "Railway Station, Majestic",
+          "name:en": "Railway Station, Majestic",
+          "network": "BMTC",
+          "network:wikidata": "Q3345039",
+          "network:wikipedia": "en:Bengaluru Metropolitan Transport Corporation",
+          "operator": "BMTC",
+          "public_transport": "platform",
+          "shelter": "yes",
+          "wheelchair": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2393933196",
+        "name": "Ananda Rao Circle",
+        "tags": {
+          "bench": "yes",
+          "bus": "yes",
+          "covered": "yes",
+          "highway": "bus_stop",
+          "name": "Ananda Rao Circle",
+          "name:en": "Ananda Rao Circle",
+          "name:etymology:wikidata": "Q7668131",
+          "name:etymology:wikipedia": "en:T. Ananda Rao",
+          "name:kn": "\u0c86\u0ca8\u0c82\u0ca6 \u0cb0\u0cbe\u0cb5 \u0cb5\u0cc3\u0ca4\u0ccd\u0ca4",
+          "network": "BMTC",
+          "network:wikidata": "Q3345039",
+          "network:wikipedia": "en:Bengaluru Metropolitan Transport Corporation",
+          "operator": "BMTC",
+          "public_transport": "platform",
+          "shelter": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2398074914",
+        "name": "Kempegowda Bus Station",
+        "tags": {
+          "alt_name": "Majestic Bus Station",
+          "bench": "yes",
+          "bus": "yes",
+          "fixme": "Parent relations need to be changed to include corresponding platform node in KBS",
+          "highway": "bus_stop",
+          "int_name": "BMTC Bus Stand",
+          "loc_name": "Majestic",
+          "name": "Kempegowda Bus Station",
+          "name:kn": "\u0c95\u0cc6\u0c82\u0caa\u0cc7\u0c97\u0ccc\u0ca1 \u0cac\u0cb8\u0ccd \u0ca8\u0cbf\u0cb2\u0ccd\u0ca6\u0cbe\u0ca3",
+          "name:ml": "\u0d15\u0d46\u0d02\u0d2a\u0d46\u0d17\u0d57\u0d21 \u0d2c\u0d38\u0d4d \u0d38\u0d4d\u0d31\u0d4d\u0d31\u0d47\u0d37\u0d7b",
+          "network": "BMTC",
+          "network:wikidata": "Q3345039",
+          "network:wikipedia": "en:Bengaluru Metropolitan Transport Corporation",
+          "operator": "BMTC",
+          "public_transport": "platform",
+          "shelter": "yes"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2398094147",
+        "name": "Khodays Circle",
+        "tags": {
+          "bus": "yes",
+          "highway": "bus_stop",
+          "loc_name": "SUBHASH NAGARA",
+          "name": "Khodays Circle",
+          "name:en": "Khodays Circle",
+          "name:kn": "\u0c96\u0ccb\u0ca1\u0cc6 \u0cb5\u0cc3\u0ca4\u0ccd\u0ca4",
+          "network": "BMTC",
+          "network:wikidata": "Q3345039",
+          "network:wikipedia": "en:Bengaluru Metropolitan Transport Corporation",
+          "operator": "BMTC",
+          "public_transport": "platform",
+          "shelter": "no"
+        }
+      },
+      {
+        "type": "node",
+        "id": "2476128053",
+        "name": "Platform 12",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 12",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3755608905",
+        "name": "Platform 21",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 21",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3875744057",
+        "name": "Platform 1",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 1",
+          "name:kn": "\u0c85\u0c82\u0c95\u0ca3 \u0ce7",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3875744058",
+        "name": "Platform 2",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 2",
+          "name:kn": "\u0c85\u0c82\u0c95\u0ca3 \u0ce8",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3875768038",
+        "name": "Platform 3",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 3",
+          "name:kn": "\u0c85\u0c82\u0c95\u0ca3 \u0ce9",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3875768039",
+        "name": "Platform 3A",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 3A",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      },
+      {
+        "type": "node",
+        "id": "3875768040",
+        "name": "Platform 5",
+        "tags": {
+          "bus": "yes",
+          "name": "Platform 5",
+          "name:kn": "\u0c85\u0c82\u0c95\u0ca3 \u0ceb",
+          "operator": "BMTC",
+          "public_transport": "stop_position"
+        }
+      }
+    ]
+  }
+}

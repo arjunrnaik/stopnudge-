@@ -1,0 +1,37 @@
+{
+  "pack_version": "2026.11.14-v1",
+  "generated_at_utc": "2026-11-14T13:49:01.451263+00:00",
+  "osm_data_timestamp": "2026-11-14T12:27:13Z",
+  "licence": "Open Database License (ODbL) 1.0",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "attribution_url": "https://www.openstreetmap.org/copyright",
+  "counts": {
+    "metro_operating_stations": 83,
+    "metro_unconfirmed_or_construction": 91,
+    "bus_stops_total": 5311,
+    "bus_stops_with_names": 4294,
+    "bus_stops_unnamed": 1017,
+    "bus_opposite_side_groups": 728,
+    "bus_possible_duplicates": 495
+  },
+  "checksums_sha256": {
+    "metro_stations.geojson": "71f38c5e618fe441a9e6157d8a45d1d1db95a81f6758955554dfd16247567e24",
+    "bus_stops.geojson": "04485ef8e3c8dbdea09c90f1e94e5b18e358d44cdefe084357172031e6d3cb1e",
+    "metro_stations.json": "4c59f76225d0c8ff797d2abac106bf218d3e7df0e714eb601a22bd7ed6d9fd5c",
+    "bus_stops.json": "6f60ff5c975a0e2fd4b0654977fafcfb7bc9b74fe98ed8d9079933589943567d",
+    "transit_stops.db": "953c5a8d5d69e8bb86bde6072840b32b54a91996a40b99e02da06c3f00818f3c",
+    "wakeme_transit.db": "953c5a8d5d69e8bb86bde6072840b32b54a91996a40b99e02da06c3f00818f3c",
+    "unconfirmed_metro_stations.json": "897dc27edb0a6b38c60a58f9b3f57adfcb6f8268df0a09afbd8900203ea2d844",
+    "ODBL_NOTICE.md": "d66c1db7806feb8af9b274e3fb18d89f2f54d64515ab5cb088dc932c1eda15c3"
+  },
+  "fetch_details": {
+    "metro": {
+      "osm_timestamp": "2026-11-14T12:27:13Z",
+      "query": "<from_cache>"
+    },
+    "bus": {
+      "osm_timestamp": "2026-11-14T12:28:17Z",
+      "query": "<from_cache>"
+    }
+  }
+}

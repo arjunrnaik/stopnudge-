@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Namma Metro — Interactive Network Map</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.4); opacity: 0.2; }
+    }
+    .pulse-ring {
+      animation: pulse 2.5s infinite ease-in-out;
+      transform-origin: center;
+    }
+    .station-node {
+      transition: transform 0.15s ease-out, filter 0.15s ease-out;
+      cursor: pointer;
+    }
+    .station-node:hover {
+      filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.8));
+    }
+    .track-glow {
+      filter: drop-shadow(0 0 4px currentColor);
+    }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(150, 150, 150, 0.3); border-radius: 3px; }
+  </style>
+</head>
+<body class="bg-[var(--background,#0f172a)] text-[var(--foreground,#f8fafc)] antialiased min-h-screen flex flex-col font-sans select-none">
+  
+  <!-- Header / Nav -->
+  <header class="bg-[var(--card,#1e293b)] border-b border-[var(--border,#334155)] px-4 py-3 shadow-md z-20 flex flex-wrap items-center justify-between gap-3">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-purple-600 via-emerald-500 to-amber-500 flex items-center justify-center shadow-lg">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-tight text-[var(--foreground,#f8fafc)] flex items-center gap-2">
+          Bengaluru Namma Metro
+          <span class="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-medium border border-emerald-500/30">Verified Pack</span>
+        </h1>
+        <p class="text-xs text-[var(--muted-foreground,#94a3b8)]">83 Operating Stations Reconciled • OSM Source • Offline Alarm Pipeline</p>
+      </div>
+    </div>
+
+    <!-- Quick Stats Pills -->
+    <div class="flex items-center gap-2 text-xs">
+      <div class="px-2.5 py-1 rounded-md bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+        <span class="text-[var(--muted-foreground,#94a3b8)]">Purple:</span>
+        <span class="font-semibold text-purple-300">37</span>
+      </div>
+      <div class="px-2.5 py-1 rounded-md bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span class="text-[var(--muted-foreground,#94a3b8)]">Green:</span>
+        <span class="font-semibold text-emerald-300">32</span>
+      </div>
+      <div class="px-2.5 py-1 rounded-md bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+        <span class="text-[var(--muted-foreground,#94a3b8)]">Yellow:</span>
+        <span class="font-semibold text-amber-300">16</span>
+      </div>
+      <div class="px-2.5 py-1 rounded-md bg-[var(--background,#0f172a)] border border-pink-500/30 flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-pink-500 border border-dashed border-white"></span>
+        <span class="text-[var(--muted-foreground,#94a3b8)]">Pink (u/c):</span>
+        <span class="font-semibold text-pink-300">18</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Controls Toolbar -->
+  <div class="bg-[var(--card,#1e293b)]/80 backdrop-blur-md border-b border-[var(--border,#334155)] px-4 py-2.5 z-10 flex flex-wrap items-center justify-between gap-3 text-xs">
+    
+    <!-- Filter Chips -->
+    <div class="flex items-center gap-1.5 overflow-x-auto py-0.5">
+      <span class="text-[var(--muted-foreground,#94a3b8)] font-medium mr-1">Filter Line:</span>
+      <button onclick="setLineFilter('all')" id="btn-all" class="line-btn active px-3 py-1 rounded-full font-medium transition-all bg-indigo-600 text-white shadow-sm">All Operating (83)</button>
+      <button onclick="setLineFilter('Purple')" id="btn-Purple" class="line-btn px-3 py-1 rounded-full font-medium transition-all bg-[var(--background,#0f172a)] hover:bg-purple-900/40 text-purple-300 border border-purple-500/40">Purple (37)</button>
+      <button onclick="setLineFilter('Green')" id="btn-Green" class="line-btn px-3 py-1 rounded-full font-medium transition-all bg-[var(--background,#0f172a)] hover:bg-emerald-900/40 text-emerald-300 border border-emerald-500/40">Green (32)</button>
+      <button onclick="setLineFilter('Yellow')" id="btn-Yellow" class="line-btn px-3 py-1 rounded-full font-medium transition-all bg-[var(--background,#0f172a)] hover:bg-amber-900/40 text-amber-300 border border-amber-500/40">Yellow (16)</button>
+      
+      <label class="flex items-center gap-1.5 ml-2 pl-2 border-l border-[var(--border,#334155)] cursor-pointer text-pink-300 hover:text-pink-200">
+        <input type="checkbox" id="toggle-pink" onchange="togglePinkLine(this.checked)" class="rounded text-pink-500 focus:ring-0">
+        <span>Show Pink Line (Under Construction)</span>
+      </label>
+    </div>
+
+    <!-- Search & Display Toggles -->
+    <div class="flex items-center gap-3">
+      <!-- Search Input -->
+      <div class="relative w-56">
+        <input type="text" id="station-search" oninput="handleSearch(this.value)" placeholder="Find station (e.g. Majestic, Silk Board)..." 
+          class="w-full bg-[var(--background,#0f172a)] border border-[var(--border,#334155)] text-xs rounded-lg pl-7 pr-3 py-1.5 focus:outline-none focus:border-indigo-500 text-[var(--foreground,#f8fafc)] placeholder-[var(--muted-foreground,#64748b)]">
+        <svg class="w-3.5 h-3.5 text-[var(--muted-foreground,#64748b)] absolute left-2 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+        </svg>
+      </div>
+
+      <!-- Toggle Labels -->
+      <label class="flex items-center gap-1.5 cursor-pointer text-[var(--muted-foreground,#94a3b8)] hover:text-[var(--foreground,#f8fafc)]">
+        <input type="checkbox" id="toggle-labels" onchange="toggleLabels(this.checked)" checked class="rounded text-indigo-500">
+        <span>Labels</span>
+      </label>
+
+      <!-- Zoom Reset Buttons -->
+      <div class="flex items-center border border-[var(--border,#334155)] rounded-lg overflow-hidden bg-[var(--background,#0f172a)]">
+        <button onclick="zoomBy(1.25)" title="Zoom In" class="px-2 py-1 hover:bg-[var(--card,#1e293b)] text-[var(--foreground,#f8fafc)] font-bold">+</button>
+        <button onclick="zoomBy(0.8)" title="Zoom Out" class="px-2 py-1 hover:bg-[var(--card,#1e293b)] text-[var(--foreground,#f8fafc)] font-bold border-l border-[var(--border,#334155)]">-</button>
+        <button onclick="resetZoom()" title="Fit View" class="px-2 py-1 hover:bg-[var(--card,#1e293b)] text-xs border-l border-[var(--border,#334155)]">⟲</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Map Canvas & Drawer Layout -->
+  <div class="relative flex-1 w-full overflow-hidden bg-[var(--background,#0b1120)] flex">
+    
+    <!-- SVG Map Container -->
+    <div id="map-container" class="relative flex-1 w-full h-full cursor-grab active:cursor-grabbing overflow-hidden">
+      <svg id="metro-svg" class="w-full h-full" viewBox="0 0 1050 820" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <!-- Grid Pattern -->
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/>
+          </pattern>
+          
+          <!-- Outer Area Ring Glow -->
+          <radialGradient id="hub-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#818cf8" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="#818cf8" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <!-- Base Background Grid -->
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- Pan / Zoom Transformed Group -->
+        <g id="viewport" transform="translate(0, 0) scale(1)">
+          
+          <!-- Outer Reference Boundaries (Outer Ring Road & City Center indicators) -->
+          <g id="city-guides" opacity="0.4">
+            <!-- Center Hub Marker around Majestic -->
+            <circle cx="495" cy="350" r="140" fill="url(#hub-glow)" />
+            <!-- Outer Ring Road subtle contour -->
+            <ellipse cx="505" cy="410" rx="360" ry="290" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="2" stroke-dasharray="4,6" />
+            <text x="780" y="380" fill="rgba(255,255,255,0.2)" font-size="11" letter-spacing="1.5">OUTER RING ROAD</text>
+          </g>
+
+          <!-- WakeMe Proximity Simulation Geofence Circle -->
+          <g id="geofence-layer" style="display: none;">
+            <circle id="geofence-circle" cx="0" cy="0" r="30" fill="rgba(59, 130, 246, 0.15)" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4"/>
+            <circle id="geofence-inner" cx="0" cy="0" r="4" fill="#3b82f6" />
+          </g>
+
+          <!-- Tracks Layer -->
+          <g id="tracks-layer">
+            <!-- Purple Line Track -->
+            <path id="track-purple" d="" fill="none" stroke="#9333ea" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="track-glow text-purple-600 opacity-90"/>
+            <!-- Green Line Track -->
+            <path id="track-green" d="" fill="none" stroke="#10b981" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="track-glow text-emerald-600 opacity-90"/>
+            <!-- Yellow Line Track -->
+            <path id="track-yellow" d="" fill="none" stroke="#f59e0b" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" class="track-glow text-amber-500 opacity-90"/>
+            <!-- Pink Line Track (Dashed, toggleable) -->
+            <path id="track-pink" d="" fill="none" stroke="#ec4899" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8,6" class="track-glow text-pink-500 opacity-80" style="display: none;"/>
+          </g>
+
+          <!-- Stations Layer -->
+          <g id="stations-layer"></g>
+
+          <!-- Station Labels Layer -->
+          <g id="labels-layer"></g>
+
+          <!-- Interchanges Layer (Majestic, RV Road, Jayadeva) -->
+          <g id="interchanges-layer"></g>
+        </g>
+      </svg>
+
+      <!-- Hover Tooltip -->
+      <div id="tooltip" class="absolute pointer-events-none transition-opacity duration-150 opacity-0 bg-[var(--card,#1e293b)] text-[var(--foreground,#f8fafc)] border border-[var(--border,#475569)] text-xs rounded-lg px-3 py-2 shadow-2xl z-30 min-w-[170px]">
+        <div id="tooltip-name" class="font-bold text-white text-sm">Station Name</div>
+        <div id="tooltip-kn" class="text-indigo-300 text-xs font-normal mb-1">Kannada Script</div>
+        <div class="flex items-center gap-1.5 mt-1" id="tooltip-badges"></div>
+        <div id="tooltip-coords" class="text-[var(--muted-foreground,#94a3b8)] text-[11px] mt-1.5 font-mono">12.9716° N, 77.5946° E</div>
+      </div>
+    </div>
+
+    <!-- Station Details Drawer (Slides in on Station Click) -->
+    <div id="station-drawer" class="w-80 bg-[var(--card,#1e293b)] border-l border-[var(--border,#334155)] shadow-2xl flex flex-col z-20 transition-all duration-300 transform translate-x-full">
+      
+      <!-- Drawer Header -->
+      <div class="p-4 border-b border-[var(--border,#334155)] flex items-start justify-between">
+        <div>
+          <span id="drawer-badge" class="px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide uppercase bg-purple-500/20 text-purple-300 border border-purple-500/30">Purple Line</span>
+          <h2 id="drawer-title" class="text-base font-bold text-[var(--foreground,#f8fafc)] mt-1.5 leading-snug">Station Name</h2>
+          <p id="drawer-kn" class="text-xs text-indigo-300">Kannada Name</p>
+        </div>
+        <button onclick="closeDrawer()" class="text-[var(--muted-foreground,#94a3b8)] hover:text-white p-1 rounded-md hover:bg-slate-700">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <!-- Drawer Content -->
+      <div class="p-4 space-y-4 flex-1 overflow-y-auto text-xs">
+        
+        <!-- Key Info Grid -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-[var(--background,#0f172a)] p-2.5 rounded-lg border border-[var(--border,#334155)]">
+            <span class="text-[var(--muted-foreground,#94a3b8)] block text-[11px]">Station Code</span>
+            <span id="drawer-code" class="font-mono font-semibold text-[var(--foreground,#f8fafc)] text-sm">MJST</span>
+          </div>
+          <div class="bg-[var(--background,#0f172a)] p-2.5 rounded-lg border border-[var(--border,#334155)]">
+            <span class="text-[var(--muted-foreground,#94a3b8)] block text-[11px]">Operating Status</span>
+            <span id="drawer-status" class="font-semibold text-emerald-400">Operating (100%)</span>
+          </div>
+        </div>
+
+        <!-- Coordinates & Geometry -->
+        <div class="bg-[var(--background,#0f172a)] p-3 rounded-lg border border-[var(--border,#334155)] space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="text-[var(--muted-foreground,#94a3b8)]">Latitude</span>
+            <span id="drawer-lat" class="font-mono text-slate-200">12.975700° N</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-[var(--muted-foreground,#94a3b8)]">Longitude</span>
+            <span id="drawer-lon" class="font-mono text-slate-200">77.572800° E</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-[var(--muted-foreground,#94a3b8)]">OSM Source Node</span>
+            <span id="drawer-osm-id" class="font-mono text-indigo-400">osm_node_12345</span>
+          </div>
+        </div>
+
+        <!-- WakeMe Geofence Proximity Simulator -->
+        <div class="bg-indigo-950/40 border border-indigo-500/30 p-3 rounded-lg space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="font-semibold text-indigo-300 flex items-center gap-1.5">
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+              WakeMe Proximity Alarm
+            </span>
+            <span id="geofence-radius-val" class="font-mono font-bold text-indigo-200">500 m</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Simulate Android app geofence triggering an alarm before arrival:</p>
+          <input type="range" id="geofence-slider" min="200" max="2500" step="100" value="500" oninput="updateGeofenceRadius(this.value)" class="w-full accent-indigo-500">
+          <div class="flex justify-between text-[10px] text-slate-400">
+            <span>200m (Immediate)</span>
+            <span>1000m</span>
+            <span>2500m (Advanced)</span>
+          </div>
+        </div>
+
+        <!-- External Link -->
+        <a id="drawer-osm-link" href="#" target="_blank" class="block w-full text-center py-2 px-3 rounded-lg bg-[var(--background,#0f172a)] hover:bg-slate-700 border border-[var(--border,#334155)] font-medium text-slate-300 transition-colors">
+          View Raw Node on OpenStreetMap ↗
+        </a>
+      </div>
+      
+      <!-- Drawer Footer -->
+      <div class="p-3 border-t border-[var(--border,#334155)] bg-[var(--background,#0f172a)] text-[11px] text-[var(--muted-foreground,#94a3b8)] flex items-center justify-between">
+        <span>Room DB: wakeme_transit.db</span>
+        <span class="text-emerald-400">Verified</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Embedded Station & Track Data -->
+  <script>
+    const STATIONS = [{"id": "osm_node_11521199307", "name": "Biocon Hebbagodi", "name_en": "Biocon Hebbagodi", "name_kn": "ಬಯೋಕಾನ್ ಹೆಬ್ಬಗೋಡಿ", "latitude": 12.829033, "longitude": 77.681374, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "HBGI", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_11941173068", "name": "Nagasandra", "name_en": "Nagasandra", "name_kn": "ನಾಗಸಂದ್ರ", "latitude": 13.047954, "longitude": 77.500142, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "NGSA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_11941186869", "name": "Yeshwantpur", "name_en": "Yeshwantpur", "name_kn": "ಯಶವಂತಪುರ", "latitude": 13.023268, "longitude": 77.549875, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "YPM", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_11941186870", "name": "Kadugodi Tree Park", "name_en": "Kadugodi Tree Park", "name_kn": "ಕಾಡುಗೋಡಿ ಟ್ರೀ ಪಾರ್ಕ್", "latitude": 12.98565, "longitude": 77.747012, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "KDGD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_1576973953", "name": "Madavara", "name_en": "Madavara", "name_kn": "ಮದವರ", "latitude": 13.057421, "longitude": 77.472806, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "BIET", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_1576973954", "name": "Chikkabidarakallu", "name_en": "Chikkabidarakallu", "name_kn": "ಚಿಕ್ಕಬಿದರಕಲ್ಲು", "latitude": 13.052362, "longitude": 77.487915, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "JIDL", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_1576973980", "name": "Manjunathanagara", "name_en": "Manjunathanagara", "name_kn": "ಮಂಜುನಾಥನಗರ", "latitude": 13.05009, "longitude": 77.494446, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "MNJN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_3302642058", "name": "Jayadeva Hospital", "name_en": "Jayadeva Hospital", "name_kn": "ಜಯದೇವ ಆಸ್ಪತ್ರೆ", "latitude": 12.916731, "longitude": 77.599966, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "JDHP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_4548694596", "name": "Benniganahalli", "name_en": "Benniganahalli", "name_kn": "ಬೆನ್ನಿಗಾನಹಳ್ಳಿ", "latitude": 12.996496, "longitude": 77.668479, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": null, "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197744", "name": "Whitefield (Kadugodi)", "name_en": "Whitefield (Kadugodi)", "name_kn": "ವೈಟ್‌ಫೀಲ್ಡ್ (ಕಾಡುಗೋಡಿ)", "latitude": 12.995743, "longitude": 77.757949, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "WHTM", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197745", "name": "Hopefarm Channasandra", "name_en": "Hopefarm Channasandra", "name_kn": "ಹೋಪ್ ಫಾರ್ಮ್ ಚನ್ನಸಂದ್ರ", "latitude": 12.987297, "longitude": 77.753884, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "UWVL", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197749", "name": "Pattandur Agrahara", "name_en": "Pattandur Agrahara", "name_kn": "ಪಟ್ಟಂದೂರು ಅಗ್ರಹಾರ", "latitude": 12.987639, "longitude": 77.737772, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "ITPL", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197751", "name": "Sri Sathya Sai Hospital", "name_en": "Sri Sathya Sai Hospital", "name_kn": "ಶ್ರೀ ಸತ್ಯ ಸಾಯಿ ಆಸ್ಪತ್ರೆ", "latitude": 12.981195, "longitude": 77.727536, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "SSHP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197754", "name": "Nallurahalli", "name_en": "Nallurahalli", "name_kn": "ನಲ್ಲೂರಹಳ್ಳಿ", "latitude": 12.976641, "longitude": 77.724885, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "VDHP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197755", "name": "Kundalahalli", "name_en": "Kundalahalli", "name_kn": "ಕುಂದಲಹಳ್ಳಿ", "latitude": 12.977594, "longitude": 77.715559, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "KDNH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197757", "name": "Seetharampalya", "name_en": "Seetharampalya", "name_kn": "ಸೀತಾರಾಮ ಪಾಳ್ಯ", "latitude": 12.980856, "longitude": 77.708785, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "VWIA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197761", "name": "Hoodi", "name_en": "Hoodi", "name_kn": "ಹೂಡಿ", "latitude": 12.988803, "longitude": 77.711326, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "DKIA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197762", "name": "Garudacharpalya", "name_en": "Garudacharpalya", "name_kn": "ಗರುಡಾಚಾರ್ ಪಾಳ್ಯ", "latitude": 12.99345, "longitude": 77.703677, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "GDCP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197764", "name": "Singayyanapalya", "name_en": "Singayyanapalya", "name_kn": "ಸಿಂಗಯ್ಯನಪಾಳ್ಯ", "latitude": 12.996545, "longitude": 77.692718, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "MDVP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197765", "name": "Krishnarajapura", "name_en": "Krishnarajapura", "name_kn": "ಕೃಷ್ಣರಾಜಪುರ (ಕೆ.ಆರ್.ಪುರ)", "latitude": 12.999902, "longitude": 77.67767, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "KRAM", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760197806", "name": "Delta Electronics Bommasandra", "name_en": "Delta Electronics Bommasandra", "name_kn": "ಡೆಲ್ಟಾ ಎಲೆಕ್ಟ್ರಾನಿಕ್ಸ್ ಬೊಮ್ಮಸಂದ್ರ", "latitude": 12.819394, "longitude": 77.688345, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "BMSD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198122", "name": "Huskur Road", "name_en": "Huskur Road", "name_kn": "ಹುಸ್ಕೂರು ರಸ್ತೆ", "latitude": 12.839157, "longitude": 77.677372, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "HSKR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198133", "name": "Infosys Foundation Konappana Agrahara", "name_en": "Infosys Foundation Konappana Agrahara", "name_kn": "ಇನ್ಫೋಸಿಸ್ ಫೌಂಡೇಶನ್ ಕೊನಪ್ಪನ ಅಗ್ರಹಾರ", "latitude": 12.84644, "longitude": 77.671187, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "ECTN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198145", "name": "Electronic City", "name_en": "Electronic City", "name_kn": "ಎಲೆಕ್ಟ್ರಾನಿಕ್ ಸಿಟಿ", "latitude": 12.856505, "longitude": 77.663523, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "ETCT", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198153", "name": "Beratena Agrahara", "name_en": "Beratena Agrahara", "name_kn": "ಬೆರಟೇನ ಅಗ್ರಹಾರ", "latitude": 12.863878, "longitude": 77.657904, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "HOSR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198162", "name": "Hosa Road", "name_en": "Hosa Road", "name_kn": "ಹೊಸ ರಸ್ತೆ", "latitude": 12.870749, "longitude": 77.652447, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "BSRD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198182", "name": "Singasandra", "name_en": "Singasandra", "name_kn": "ಸಿಂಗಸಂದ್ರ", "latitude": 12.880818, "longitude": 77.644846, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "CKBR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198187", "name": "Kudlu Gate", "name_en": "Kudlu Gate", "name_kn": "ಕುಡ್ಲು ಗೇಟ್", "latitude": 12.889926, "longitude": 77.639216, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "MSRN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198198", "name": "Hongasandra", "name_en": "Hongasandra", "name_kn": "ಹೊಂಗಸಂದ್ರ", "latitude": 12.901695, "longitude": 77.631986, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "OFDC", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198202", "name": "Bommanahalli", "name_en": "Bommanahalli", "name_kn": "ಬೊಮ್ಮನಹಳ್ಳಿ", "latitude": 12.910616, "longitude": 77.626478, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "HSRL", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198212", "name": "Central Silk Board", "name_en": "Central Silk Board", "name_kn": "ಸೆಂಟ್ರಲ್ ಸಿಲ್ಕ ಬೋರ್ಡ್", "latitude": 12.916582, "longitude": 77.620567, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "SBJT", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198226", "name": "BTM Layout", "name_en": "BTM Layout", "name_kn": "ಬಿಟಿಎಂ ಬಡಾವಣೆ", "latitude": 12.916588, "longitude": 77.608118, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "BTML", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5760198239", "name": "Ragigudda", "name_en": "Ragigudda", "name_kn": "ರಾಗಿಗುಡ್ಡ", "latitude": 12.917081, "longitude": 77.588302, "mode": "METRO", "metro_lines": ["Yellow"], "operator": "BMRCL", "ref": "RGDT", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5960788724", "name": "Dasarahalli", "name_en": "Dasarahalli", "name_kn": "ದಾಸರಹಳ್ಳಿ", "latitude": 13.043261, "longitude": 77.512553, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "DSH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5960788725", "name": "Jalahalli", "name_en": "Jalahalli", "name_kn": "ಜಾಲಹಳ್ಳಿ", "latitude": 13.03941, "longitude": 77.519735, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "JLHL", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_5960788726", "name": "Srirampura", "name_en": "Srirampura", "name_kn": "ಶ್ರೀರಾಮಪುರ", "latitude": 12.996525, "longitude": 77.563196, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "SPRU", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857549", "name": "Baiyappanahalli", "name_en": "Baiyappanahalli", "name_kn": "ಬೈಯ್ಯಪ್ಪನಹಳ್ಳಿ ಮೆಟ್ರೋ ನಿಲ್ದಾಣ", "latitude": 12.990759, "longitude": 77.652361, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "BYPH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857550", "name": "Swami Vivekananda Road", "name_en": "Swami Vivekananda Road", "name_kn": "ಸ್ವಾಮಿ ವಿವೇಕಾನಂದ ರಸ್ತೆ", "latitude": 12.985931, "longitude": 77.644897, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "SVRD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857551", "name": "Indiranagar", "name_en": "Indiranagar", "name_kn": "ಇಂದಿರಾನಗರ", "latitude": 12.978333, "longitude": 77.638661, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "IDN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857552", "name": "Halasuru", "name_en": "Halasuru", "name_kn": "ಹಲಸೂರು", "latitude": 12.976499, "longitude": 77.626686, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "HLRU", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857553", "name": "Trinity", "name_en": "Trinity", "name_kn": "ಟ್ರಿನಿಟಿ ಮೆಟ್ರೊ ನಿಲ್ದಾಣ", "latitude": 12.973022, "longitude": 77.61702, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "TTY", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857554", "name": "Mahatma Gandhi Road", "name_en": "Mahatma Gandhi Road", "name_kn": "ಮಹಾತ್ಮ ಗಾಂಧಿ ರಸ್ತೆ", "latitude": 12.975526, "longitude": 77.60679, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "MAGR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857555", "name": "Cubbon Park", "name_en": "Cubbon Park", "name_kn": "ಕಬ್ಬನ್ ಪಾರ್ಕ್", "latitude": 12.980958, "longitude": 77.597576, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "CBPK", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857556", "name": "Dr. B. R. Ambedkar Station, Vidhana Soudha", "name_en": "Dr. B. R. Ambedkar Station, Vidhana Soudha", "name_kn": "ಡಾ.ಬಿ.ಆರ್. ಅಂಬೇಡ್ಕರ್ ಠಾಣೆ, ವಿಧಾನಸೌಧ", "latitude": 12.978742, "longitude": 77.591639, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "VDSA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857557", "name": "Sir M. Visvesvaraya Stn., Central College", "name_en": "Sir M. Visvesvaraya Stn., Central College", "name_kn": "ಸರ್ ಎಂ ವಿಶ್ವೇಶ್ವರಯ್ಯ - ಸೆಂಟ್ರಲ್ ಕಾಲೇಜು", "latitude": 12.97452, "longitude": 77.58422, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "VSWA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857558", "name": "Nadaprabhu Kempegowda Station, Majestic", "name_en": "Nadaprabhu Kempegowda Station, Majestic", "name_kn": "ನಾಡಪ್ರಭು ಕೆಂಪೇಗೌಡ ನಿಲ್ದಾಣ, ಮೆಜೆಸ್ಟಿಕ್", "latitude": 12.975708, "longitude": 77.572876, "mode": "METRO", "metro_lines": ["Green", "Purple"], "operator": "BMRCL", "ref": "KGWA", "group_id": "metro_interchange_nadaprabhu kempegowda  majestic", "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857559", "name": "Krantivira Sangolli Rayanna Railway Station", "name_en": "Krantivira Sangolli Rayanna Railway Station", "name_kn": "ಕ್ರಾಂತಿವೀರ ಸಂಗೊಳ್ಳಿ ರಾಯಣ್ಣ", "latitude": 12.975877, "longitude": 77.565377, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "SRCS", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857560", "name": "Magadi Road", "name_en": "Magadi Road", "name_kn": "ಮಾಗಡಿ ರಸ್ತೆ ಮೆಟ್ರೊ", "latitude": 12.975632, "longitude": 77.555352, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "MIRD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857561", "name": "Sri Balagangadharanatha Swamiji Station, Hosahalli", "name_en": "Sri Balagangadharanatha Swamiji Station, Hosahalli", "name_kn": "ಶ್ರೀ ಬಾಲಗಂಗಾಧರನಾಥ ಮೆಟ್ರೋ", "latitude": 12.974293, "longitude": 77.545621, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "HSLI", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857562", "name": "Vijayanagar", "name_en": "Vijayanagar", "name_kn": "ವಿಜಯನಗರ", "latitude": 12.970956, "longitude": 77.537404, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "VJN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857563", "name": "Attiguppe", "name_en": "Attiguppe", "name_kn": "ಅತ್ತಿಗುಪ್ಪೆ ಮೆಟ್ರೋ", "latitude": 12.961893, "longitude": 77.533579, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "AGPP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857564", "name": "Deepanjali Nagar", "name_en": "Deepanjali Nagar", "name_kn": "ದೀಪಾಂಜಲಿ ನಗರ", "latitude": 12.952058, "longitude": 77.537012, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "DJNR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6400857565", "name": "Mysore Road", "name_en": "Mysore Road", "name_kn": "ಮೈಸೂರು ರಸ್ತೆ ಮೆಟ್ರೋ", "latitude": 12.946718, "longitude": 77.530159, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "MYRD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706688", "name": "Mantri Square Sampige Road", "name_en": "Mantri Square Sampige Road", "name_kn": "ಮಂತ್ರಿ ಸ್ಕ್ವೇರ್ ಸಂಪಿಗೆ ರಸ್ತೆ", "latitude": 12.990463, "longitude": 77.570729, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "SPGD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706689", "name": "Mahakavi Kuvempu Road", "name_en": "Mahakavi Kuvempu Road", "name_kn": "ಮಹಾಕವಿ ಕುವೆಂಪು ರಸ್ತೆ", "latitude": 12.99853, "longitude": 77.556899, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "KVPR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706690", "name": "Rajajinagar", "name_en": "Rajajinagar", "name_kn": "ರಾಜಾಜಿನಗರ", "latitude": 13.000525, "longitude": 77.549657, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "RJNR", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706691", "name": "Mahalakshmi", "name_en": "Mahalakshmi", "name_kn": "ಮಹಾಲಕ್ಷ್ಮಿ", "latitude": 13.008047, "longitude": 77.548807, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "MHLI", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706692", "name": "Sandal Soap Factory", "name_en": "Sandal Soap Factory", "name_kn": "ಸಾಂಡಲ್ ಸೋಪ್ ಕಾರ್ಖಾನೆ", "latitude": 13.014654, "longitude": 77.553984, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "SSFY", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706695", "name": "Peenya", "name_en": "Peenya", "name_kn": "ಪೀಣ್ಯ", "latitude": 13.033019, "longitude": 77.533201, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "PEYA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6410706696", "name": "Peenya Industry", "name_en": "Peenya Industry", "name_kn": "ಪೀಣ್ಯ ಇಂಡಸ್ಟ್ರಿ", "latitude": 13.036318, "longitude": 77.525492, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "PYID", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710292", "name": "Yelachenahalli", "name_en": "Yelachenahalli", "name_kn": "ಯಲಚೇನಹಳ್ಳಿ", "latitude": 12.89605, "longitude": 77.570119, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "PUTH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710293", "name": "Jaya Prakash Nagar", "name_en": "Jaya Prakash Nagar", "name_kn": "ಜೆಪಿ ನಗರ", "latitude": 12.907475, "longitude": 77.573128, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "JPN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710294", "name": "Banashankari", "name_en": "Banashankari", "name_kn": "ಬನಶಂಕರಿ", "latitude": 12.915221, "longitude": 77.573598, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "BSNK", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710295", "name": "Rashtreeya Vidyalaya Road", "name_en": "Rashtreeya Vidyalaya Road", "name_kn": "ರಾಷ್ಟ್ರೀಯ ವಿದ್ಯಾಲಯ ರಸ್ತೆ", "latitude": 12.921581, "longitude": 77.580202, "mode": "METRO", "metro_lines": ["Green", "Yellow"], "operator": "BMRCL", "ref": "RVR", "group_id": "metro_interchange_rashtreeya vidyalaya road", "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710296", "name": "Jayanagar", "name_en": "Jayanagar", "name_kn": "ಜಯನಗರ", "latitude": 12.929507, "longitude": 77.580144, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "JYN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710297", "name": "South End Circle", "name_en": "South End Circle", "name_kn": "ತಿ.ನಂ.ಶ್ರೀ ವೃತ್ತ", "latitude": 12.938257, "longitude": 77.580056, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "SECE", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710298", "name": "Lalbagh", "name_en": "Lalbagh", "name_kn": "ಲಾಲ್ ಬಾಗ್", "latitude": 12.946526, "longitude": 77.580016, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "LBGH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710299", "name": "National College", "name_en": "National College", "name_kn": "ನ್ಯಾಶನಲ್ ಕಾಲೇಜು", "latitude": 12.950527, "longitude": 77.57369, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "NLC", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710300", "name": "Krishna Rajendra Market", "name_en": "Krishna Rajendra Market", "name_kn": "ಕೃಷ್ಣರಾಜೇಂದ್ರ ಮಾರುಕಟ್ಟೆ", "latitude": 12.960879, "longitude": 77.574658, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "KRMT", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_6432710301", "name": "Chickpete", "name_en": "Chickpete", "name_kn": "ಚಿಕ್ಕಪೇಟೆ", "latitude": 12.966897, "longitude": 77.574557, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "CKPE", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_7784456820", "name": "Kengeri", "name_en": "Kengeri", "name_kn": "ಕೆಂಗೇರಿ", "latitude": 12.907993, "longitude": 77.476524, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "KGIT", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9049846515", "name": "Jnanabharathi", "name_en": "Jnanabharathi", "name_kn": "ಜ್ಞಾನ ಭಾರತಿ", "latitude": 12.93542, "longitude": 77.512177, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "BGUC", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9050797592", "name": "Pantharapalya - Nayandahalli", "name_en": "Pantharapalya - Nayandahalli", "name_kn": "ಪಂತರಪಾಳ್ಯ - ನಾಯಂಡಹಳ್ಳಿ", "latitude": 12.941671, "longitude": 77.525117, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "NYHM", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9051395755", "name": "Kengeri Bus Terminal", "name_en": "Kengeri Bus Terminal", "name_kn": "ಕೆಂಗೇರಿ ಬಸ್ ಟರ್ಮಿನಲ್", "latitude": 12.914788, "longitude": 77.487773, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "MLSD", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9051410519", "name": "Rajarajeshwari Nagar", "name_en": "Rajarajeshwari Nagar", "name_kn": "ರಾಜರಾಜೇಶ್ವರಿ ನಗರ", "latitude": 12.9366, "longitude": 77.519679, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "RRRN", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9051417969", "name": "Pattanagere", "name_en": "Pattanagere", "name_kn": "ಪಟ್ಟಣಗೆರೆ", "latitude": 12.924302, "longitude": 77.49828, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "PATG", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919570131", "name": "Challaghatta", "name_en": "Challaghatta", "name_kn": "ಚಲ್ಲಘಟ್ಟ", "latitude": 12.897354, "longitude": 77.461288, "mode": "METRO", "metro_lines": ["Purple"], "operator": "BMRCL", "ref": "CLGA", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919651773", "name": "Silk Institute", "name_en": "Silk Institute", "name_kn": "ರೇಷ್ಮೆ ಸಂಸ್ಥೆ", "latitude": 12.86173, "longitude": 77.529955, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "APTS", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919651774", "name": "Thalaghattapura", "name_en": "Thalaghattapura", "name_kn": "ತಲಘಟ್ಟಪುರ", "latitude": 12.87141, "longitude": 77.538396, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "TGTP", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919651775", "name": "Vajarahalli", "name_en": "Vajarahalli", "name_kn": "ವಾಜರಹಳ್ಳಿ", "latitude": 12.877437, "longitude": 77.544741, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "VJRH", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919651776", "name": "Doddakallasandra", "name_en": "Doddakallasandra", "name_kn": "ದೊಡ್ಡಕಲ್ಲಸಂದ್ರ", "latitude": 12.884643, "longitude": 77.552755, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "KLPK", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_9919651777", "name": "Konanakunte Cross", "name_en": "Konanakunte Cross", "name_kn": "ಕೋಣನಕುಂಟೆ ಕ್ರಾಸ್", "latitude": 12.888967, "longitude": 77.562667, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "APRC", "group_id": null, "geometry_kind": "node", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_way_1353733806", "name": "Goraguntepalya", "name_en": "Goraguntepalya", "name_kn": "ಗೊರಗುಂಟೆಪಾಳ್ಯ", "latitude": 13.028332, "longitude": 77.540848, "mode": "METRO", "metro_lines": ["Green"], "operator": "BMRCL", "ref": "YPI", "group_id": null, "geometry_kind": "way", "flags": [], "source": "OpenStreetMap", "osm_timestamp": null, "last_checked_date": "2026-11-14", "verified": true}, {"id": "osm_node_14330409086", "name": "Kalena Agrahara", "name_en": "Kalena Agrahara", "name_kn": "ಕಾಳೇನ ಅಗ್ರಹಾರ", "latitude": 12.871209, "longitude": 77.59363, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_14330409084", "name": "Hulimavu", "name_en": "Hulimavu", "name_kn": "ಹುಳಿಮಾವು", "latitude": 12.8804, "longitude": 77.595821, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_14330409081", "name": "Bilekahalli IIM-B", "name_en": "Bilekahalli IIM-B", "name_kn": "ಬಿಳೇಕಹಳ್ಳಿ ಐಐಎಂ-ಬಿ", "latitude": 12.895384, "longitude": 77.599531, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_14330409080", "name": "N S Palya", "name_en": "N S Palya", "name_kn": "ಎನ್ ಎಸ್ ಪಾಳ್ಯ", "latitude": 12.909433, "longitude": 77.600221, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_9906325547", "name": "JP Nagar 4th Phase", "name_en": "JP Nagar 4th Phase", "name_kn": "ಜೆಪಿ ನಗರ 4 ನೇ ಹಂತ", "latitude": 12.909848, "longitude": 77.600091, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_14330409078", "name": "Suddaguntepalya", "name_en": "Suddaguntepalya", "name_kn": "ಸುದ್ದಗುಂಟೆಪಾಳ್ಯ", "latitude": 12.929015, "longitude": 77.600542, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_4969383807", "name": "Dairy Circle", "name_en": "Dairy Circle", "name_kn": "", "latitude": 12.941223, "longitude": 77.602429, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1578382496", "name": "Lakkasandra", "name_en": "Lakkasandra", "name_kn": "ಲಕ್ಕಸಂದ್ರ", "latitude": 12.949486, "longitude": 77.603035, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_4969391953", "name": "Langford Town", "name_en": "Langford Town", "name_kn": "ಲ್ಯಾಂಗ್ಫೋರ್ಡ್ ಟೌನ್", "latitude": 12.956231, "longitude": 77.605864, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1578382785", "name": "Rashtriya Military School Metro Station", "name_en": "Rashtriya Military School Metro Station", "name_kn": "ರಾಷ್ಟ್ರೀಯ ಮಿಲಿಟರಿ ಶಾಲೆ", "latitude": 12.965276, "longitude": 77.606948, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_4698518654", "name": "Mahatma Gandhi Road", "name_en": "Mahatma Gandhi Road", "name_kn": "ಮಹಾತ್ಮ ಗಾಂಧಿ ರಸ್ತೆ", "latitude": 12.976235, "longitude": 77.608381, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1579059716", "name": "Shivajinagar", "name_en": "Shivajinagar", "name_kn": "ಶಿವಾಜಿನಗರ", "latitude": 12.983849, "longitude": 77.602035, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_13800769520", "name": "Cantonment", "name_en": "Cantonment", "name_kn": "ಕಂಟೋನ್ಮೆಂಟ್", "latitude": 12.991793, "longitude": 77.60622, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_13800769513", "name": "Pottery Town", "name_en": "Pottery Town", "name_kn": "ಪೊಟರಿ ಟೌನ್", "latitude": 13.000652, "longitude": 77.609432, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1578382143", "name": "Tannery Road", "name_en": "Tannery Road", "name_kn": "ತನ್ನೆರಿ ರೋಡ್", "latitude": 13.00959, "longitude": 77.613949, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1579059713", "name": "Venkateshapura", "name_en": "Venkateshapura", "name_kn": "ವೆಂಕಟೇಶಪುರ", "latitude": 13.017306, "longitude": 77.618018, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_1579059710", "name": "Kadugundanahalli", "name_en": "Kadugundanahalli", "name_kn": "ಕಡುಗುಂಡನಹಳ್ಳಿ", "latitude": 13.029958, "longitude": 77.620727, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}, {"id": "osm_node_4975616695", "name": "Nagawara", "name_en": "Nagawara", "name_kn": "ನಾಗವಾರ", "latitude": 13.041216, "longitude": 77.62502, "metro_lines": ["Pink (u/c)"], "mode": "METRO", "is_unconfirmed": true, "operator": "BMRCL", "ref": "PINK-UC"}];
+    const TRACK_PURPLE = [[12.897354, 77.461288], [12.907993, 77.476524], [12.914788, 77.487773], [12.924302, 77.49828], [12.93542, 77.512177], [12.9366, 77.519679], [12.941671, 77.525117], [12.946718, 77.530159], [12.961893, 77.533579], [12.952058, 77.537012], [12.970956, 77.537404], [12.974293, 77.545621], [12.975632, 77.555352], [12.975877, 77.565377], [12.975708, 77.572876], [12.97452, 77.58422], [12.978742, 77.591639], [12.980958, 77.597576], [12.975526, 77.60679], [12.973022, 77.61702], [12.976499, 77.626686], [12.978333, 77.638661], [12.985931, 77.644897], [12.990759, 77.652361], [12.996496, 77.668479], [12.999902, 77.67767], [12.996545, 77.692718], [12.99345, 77.703677], [12.980856, 77.708785], [12.988803, 77.711326], [12.977594, 77.715559], [12.976641, 77.724885], [12.981195, 77.727536], [12.987639, 77.737772], [12.98565, 77.747012], [12.987297, 77.753884], [12.995743, 77.757949]];
+    const TRACK_GREEN = [[13.057421, 77.472806], [13.052362, 77.487915], [13.05009, 77.494446], [13.047954, 77.500142], [13.043261, 77.512553], [13.03941, 77.519735], [13.036318, 77.525492], [13.033019, 77.533201], [13.028332, 77.540848], [13.023268, 77.549875], [13.014654, 77.553984], [13.008047, 77.548807], [13.000525, 77.549657], [12.99853, 77.556899], [12.996525, 77.563196], [12.990463, 77.570729], [12.975708, 77.572876], [12.966897, 77.574557], [12.960879, 77.574658], [12.950527, 77.57369], [12.946526, 77.580016], [12.938257, 77.580056], [12.929507, 77.580144], [12.921581, 77.580202], [12.915221, 77.573598], [12.907475, 77.573128], [12.89605, 77.570119], [12.888967, 77.562667], [12.884643, 77.552755], [12.877437, 77.544741], [12.87141, 77.538396], [12.86173, 77.529955]];
+    const TRACK_YELLOW = [[12.921581, 77.580202], [12.917081, 77.588302], [12.916731, 77.599966], [12.916588, 77.608118], [12.916582, 77.620567], [12.910616, 77.626478], [12.901695, 77.631986], [12.889926, 77.639216], [12.880818, 77.644846], [12.870749, 77.652447], [12.863878, 77.657904], [12.856505, 77.663523], [12.84644, 77.671187], [12.839157, 77.677372], [12.829033, 77.681374], [12.819394, 77.688345]];
+    const TRACK_PINK = [[12.871209, 77.59363], [12.8804, 77.595821], [12.895384, 77.599531], [12.909433, 77.600221], [12.909848, 77.600091], [12.929015, 77.600542], [12.941223, 77.602429], [12.949486, 77.603035], [12.956231, 77.605864], [12.965276, 77.606948], [12.976235, 77.608381], [12.983849, 77.602035], [12.991793, 77.60622], [13.000652, 77.609432], [13.00959, 77.613949], [13.017306, 77.618018], [13.029958, 77.620727], [13.041216, 77.62502]];
+    const BBOX = {"min_lat": 12.80511238, "max_lat": 13.07170262, "min_lon": 77.44348834, "max_lon": 77.77574865999999};
+
+    // Color Palette
+    const LINE_COLORS = {
+      "Purple": "#9333ea",
+      "Green": "#10b981",
+      "Yellow": "#f59e0b",
+      "Pink (u/c)": "#ec4899"
+    };
+
+    // State
+    let currentFilter = "all";
+    let showPink = false;
+    let showLabels = true;
+    let selectedStation = null;
+    let geofenceRadiusMeters = 500;
+
+    // Pan & Zoom Transform State
+    let scale = 1;
+    let pointX = 0;
+    let pointY = 0;
+    let isPanning = false;
+    let startX = 0;
+    let startY = 0;
+
+    const viewport = document.getElementById("viewport");
+    const container = document.getElementById("map-container");
+    const tooltip = document.getElementById("tooltip");
+    const geofenceLayer = document.getElementById("geofence-layer");
+    const geofenceCircle = document.getElementById("geofence-circle");
+
+    // Coordinate Projection: Lat/Lon -> SVG (1050 x 820)
+    const SVG_WIDTH = 1050;
+    const SVG_HEIGHT = 820;
+    const PAD = 40;
+
+    function project(lat, lon) {
+      const x = PAD + ((lon - BBOX.min_lon) / (BBOX.max_lon - BBOX.min_lon)) * (SVG_WIDTH - 2 * PAD);
+      const y = PAD + ((BBOX.max_lat - lat) / (BBOX.max_lat - BBOX.min_lat)) * (SVG_HEIGHT - 2 * PAD);
+      return [x, y];
+    }
+
+    // Meters to SVG scale factor at 12.97° N latitude
+    function metersToSvg(meters) {
+      const latRangeKm = (BBOX.max_lat - BBOX.min_lat) * 110.8;
+      const svgHeight = SVG_HEIGHT - 2 * PAD;
+      const metersPerSvgUnit = (latRangeKm * 1000) / svgHeight;
+      return meters / metersPerSvgUnit;
+    }
+
+    // Render Track Paths
+    function renderTracks() {
+      const buildPath = (coords) => {
+        return coords.map((c, i) => {
+          const [x, y] = project(c[0], c[1]);
+          return (i === 0 ? "M" : "L") + `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(" ");
+      };
+
+      document.getElementById("track-purple").setAttribute("d", buildPath(TRACK_PURPLE));
+      document.getElementById("track-green").setAttribute("d", buildPath(TRACK_GREEN));
+      document.getElementById("track-yellow").setAttribute("d", buildPath(TRACK_YELLOW));
+      document.getElementById("track-pink").setAttribute("d", buildPath(TRACK_PINK));
+    }
+
+    // Render Station Nodes and Labels
+    function renderStations() {
+      const stationsLayer = document.getElementById("stations-layer");
+      const labelsLayer = document.getElementById("labels-layer");
+      const interchangesLayer = document.getElementById("interchanges-layer");
+
+      stationsLayer.innerHTML = "";
+      labelsLayer.innerHTML = "";
+      interchangesLayer.innerHTML = "";
+
+      STATIONS.forEach(station => {
+        const isPinkStation = station.is_unconfirmed;
+        if (isPinkStation && !showPink) return;
+
+        // Check line filter
+        if (currentFilter !== "all" && !station.metro_lines.includes(currentFilter)) return;
+
+        const [x, y] = project(station.latitude, station.longitude);
+        const lines = station.metro_lines;
+        const isInterchange = lines.length > 1;
+        const primaryLine = lines[0];
+        const mainColor = LINE_COLORS[primaryLine] || "#64748b";
+
+        // Interchange Special Rendering
+        if (isInterchange) {
+          const gInt = document.createElementNS("http://www.w3.org/2000/svg", "g");
+          gInt.setAttribute("transform", `translate(${x}, ${y})`);
+          
+          // Outer animated pulse ring
+          const pulseCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          pulseCircle.setAttribute("r", "16");
+          pulseCircle.setAttribute("fill", "none");
+          pulseCircle.setAttribute("stroke", mainColor);
+          pulseCircle.setAttribute("stroke-width", "2");
+          pulseCircle.setAttribute("class", "pulse-ring");
+          gInt.appendChild(pulseCircle);
+
+          // Outer solid ring
+          const ring = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          ring.setAttribute("r", "10");
+          ring.setAttribute("fill", "#0f172a");
+          ring.setAttribute("stroke", "#ffffff");
+          ring.setAttribute("stroke-width", "2.5");
+          gInt.appendChild(ring);
+
+          // Multi-color inner dots
+          const dot1 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          dot1.setAttribute("cx", "-3");
+          dot1.setAttribute("r", "3.5");
+          dot1.setAttribute("fill", LINE_COLORS[lines[0]]);
+          gInt.appendChild(dot1);
+
+          const dot2 = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+          dot2.setAttribute("cx", "3");
+          dot2.setAttribute("r", "3.5");
+          dot2.setAttribute("fill", LINE_COLORS[lines[1]]);
+          gInt.appendChild(dot2);
+
+          interchangesLayer.appendChild(gInt);
+        }
+
+        // Standard Station Node
+        const gNode = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        gNode.setAttribute("class", "station-node");
+        gNode.setAttribute("data-id", station.id);
+        gNode.setAttribute("transform", `translate(${x}, ${y})`);
+
+        // Node Circle
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("r", isInterchange ? "12" : (isPinkStation ? "5" : "6.5"));
+        circle.setAttribute("fill", isInterchange ? "transparent" : mainColor);
+        circle.setAttribute("stroke", isPinkStation ? "#f472b6" : "#ffffff");
+        circle.setAttribute("stroke-width", isPinkStation ? "1.5" : "2");
+        if (isPinkStation) circle.setAttribute("stroke-dasharray", "3,2");
+        gNode.appendChild(circle);
+
+        // Events
+        gNode.addEventListener("mouseenter", (e) => showTooltip(e, station));
+        gNode.addEventListener("mousemove", (e) => moveTooltip(e));
+        gNode.addEventListener("mouseleave", hideTooltip);
+        gNode.addEventListener("click", () => selectStation(station));
+
+        stationsLayer.appendChild(gNode);
+
+        // Station Label
+        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        text.setAttribute("x", x + 9);
+        text.setAttribute("y", y + 3.5);
+        text.setAttribute("fill", isPinkStation ? "#f472b6" : "#cbd5e1");
+        text.setAttribute("font-size", isInterchange ? "11.5" : "9.5");
+        text.setAttribute("font-weight", isInterchange ? "700" : "500");
+        text.setAttribute("letter-spacing", "0.2");
+        text.setAttribute("class", "station-label pointer-events-none");
+        text.textContent = station.name;
+        labelsLayer.appendChild(text);
+      });
+
+      labelsLayer.style.display = showLabels ? "block" : "none";
+    }
+
+    // Tooltip Handlers
+    function showTooltip(e, station) {
+      document.getElementById("tooltip-name").textContent = station.name;
+      document.getElementById("tooltip-kn").textContent = station.name_kn || station.name;
+      document.getElementById("tooltip-coords").textContent = `${station.latitude.toFixed(6)}° N, ${station.longitude.toFixed(6)}° E`;
+
+      const badges = document.getElementById("tooltip-badges");
+      badges.innerHTML = "";
+      station.metro_lines.forEach(line => {
+        const span = document.createElement("span");
+        span.className = "px-2 py-0.5 rounded text-[10px] font-bold text-white";
+        span.style.backgroundColor = LINE_COLORS[line] || "#64748b";
+        span.textContent = line;
+        badges.appendChild(span);
+      });
+
+      if (station.is_unconfirmed) {
+        const unBadge = document.createElement("span");
+        unBadge.className = "px-1.5 py-0.5 rounded text-[10px] font-medium bg-pink-900/60 text-pink-300 border border-pink-500/40";
+        unBadge.textContent = "Under Construction";
+        badges.appendChild(unBadge);
+      }
+
+      tooltip.classList.remove("opacity-0");
+      moveTooltip(e);
+    }
+
+    function moveTooltip(e) {
+      const rect = container.getBoundingClientRect();
+      const x = e.clientX - rect.left + 15;
+      const y = e.clientY - rect.top + 15;
+      tooltip.style.left = `${Math.min(x, rect.width - 200)}px`;
+      tooltip.style.top = `${Math.min(y, rect.height - 100)}px`;
+    }
+
+    function hideTooltip() {
+      tooltip.classList.add("opacity-0");
+    }
+
+    // Station Selection & Drawer
+    function selectStation(station) {
+      selectedStation = station;
+      const [x, y] = project(station.latitude, station.longitude);
+
+      // Update Drawer Details
+      document.getElementById("drawer-title").textContent = station.name;
+      document.getElementById("drawer-kn").textContent = station.name_kn || "—";
+      document.getElementById("drawer-code").textContent = station.ref || (station.name.substring(0, 4).toUpperCase());
+      document.getElementById("drawer-lat").textContent = `${station.latitude.toFixed(6)}° N`;
+      document.getElementById("drawer-lon").textContent = `${station.longitude.toFixed(6)}° E`;
+      document.getElementById("drawer-osm-id").textContent = station.id;
+      document.getElementById("drawer-osm-link").href = `https://www.openstreetmap.org/${station.id.replace('osm_', '').replace('_', '/')}`;
+
+      const badge = document.getElementById("drawer-badge");
+      badge.textContent = station.metro_lines.join(" • ");
+      badge.style.backgroundColor = (LINE_COLORS[station.metro_lines[0]] || "#64748b") + "33";
+      badge.style.color = LINE_COLORS[station.metro_lines[0]] || "#cbd5e1";
+
+      const status = document.getElementById("drawer-status");
+      if (station.is_unconfirmed) {
+        status.textContent = "Under Construction (Staged)";
+        status.className = "font-semibold text-pink-400";
+      } else {
+        status.textContent = "Operating (100% Reconciled)";
+        status.className = "font-semibold text-emerald-400";
+      }
+
+      // Display WakeMe Geofence Circle on Map
+      geofenceLayer.setAttribute("transform", `translate(${x}, ${y})`);
+      geofenceLayer.style.display = "block";
+      updateGeofenceRadius(geofenceRadiusMeters);
+
+      // Slide out Drawer
+      document.getElementById("station-drawer").classList.remove("translate-x-full");
+    }
+
+    function closeDrawer() {
+      document.getElementById("station-drawer").classList.add("translate-x-full");
+      geofenceLayer.style.display = "none";
+      selectedStation = null;
+    }
+
+    function updateGeofenceRadius(meters) {
+      geofenceRadiusMeters = Number(meters);
+      document.getElementById("geofence-radius-val").textContent = `${geofenceRadiusMeters} m`;
+      const rSvg = metersToSvg(geofenceRadiusMeters);
+      geofenceCircle.setAttribute("r", rSvg.toFixed(1));
+    }
+
+    // Filter Handlers
+    function setLineFilter(line) {
+      currentFilter = line;
+      document.querySelectorAll(".line-btn").forEach(btn => {
+        btn.classList.remove("active", "bg-indigo-600", "text-white");
+        btn.classList.add("bg-[var(--background,#0f172a)]");
+      });
+      const activeBtn = document.getElementById(`btn-${line}`);
+      if (activeBtn) {
+        activeBtn.classList.add("active", "bg-indigo-600", "text-white");
+        activeBtn.classList.remove("bg-[var(--background,#0f172a)]");
+      }
+      renderStations();
+    }
+
+    function togglePinkLine(checked) {
+      showPink = checked;
+      document.getElementById("track-pink").style.display = checked ? "block" : "none";
+      renderStations();
+    }
+
+    function toggleLabels(checked) {
+      showLabels = checked;
+      document.getElementById("labels-layer").style.display = checked ? "block" : "none";
+    }
+
+    // Search Handler
+    function handleSearch(query) {
+      const q = query.trim().toLowerCase();
+      if (!q) {
+        renderStations();
+        return;
+      }
+      const match = STATIONS.find(s => s.name.toLowerCase().includes(q) || (s.name_kn && s.name_kn.includes(q)));
+      if (match) {
+        // Center view on matching station
+        const [x, y] = project(match.latitude, match.longitude);
+        scale = 1.6;
+        pointX = (SVG_WIDTH / 2) - x * scale;
+        pointY = (SVG_HEIGHT / 2) - y * scale;
+        updateTransform();
+        selectStation(match);
+      }
+    }
+
+    // Pan & Zoom Logic
+    function updateTransform() {
+      viewport.setAttribute("transform", `translate(${pointX}, ${pointY}) scale(${scale})`);
+    }
+
+    function zoomBy(factor) {
+      scale = Math.min(Math.max(scale * factor, 0.6), 4.5);
+      updateTransform();
+    }
+
+    function resetZoom() {
+      scale = 1;
+      pointX = 0;
+      pointY = 0;
+      updateTransform();
+    }
+
+    container.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".station-node")) return;
+      isPanning = true;
+      startX = e.clientX - pointX;
+      startY = e.clientY - pointY;
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!isPanning) return;
+      pointX = e.clientX - startX;
+      pointY = e.clientY - startY;
+      updateTransform();
+    });
+
+    window.addEventListener("mouseup", () => {
+      isPanning = false;
+    });
+
+    container.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      const rect = container.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      const newScale = Math.min(Math.max(scale * zoomFactor, 0.6), 4.5);
+      pointX = mouseX - (mouseX - pointX) * (newScale / scale);
+      pointY = mouseY - (mouseY - pointY) * (newScale / scale);
+      scale = newScale;
+      updateTransform();
+    }, { passive: false });
+
+    // Initial Render
+    renderTracks();
+    renderStations();
+  </script>
+</body>
+</html>

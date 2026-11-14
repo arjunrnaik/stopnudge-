@@ -1,0 +1,26 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+*.log
+
+# Scratch scripts & temporary test files
+scratch/
+
+# Android build outputs & IDE
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Sensitive secrets & keys (never commit)
+*.jks
+*.keystore
+google-services.json

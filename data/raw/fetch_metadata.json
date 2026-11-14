@@ -1,0 +1,29 @@
+{
+  "pipeline_step": "step_3_fetch",
+  "generated_at_utc": "2026-11-14T12:29:33.907045+00:00",
+  "licence": "Open Database License (ODbL) 1.0",
+  "attribution": "\u00a9 OpenStreetMap contributors",
+  "attribution_url": "https://www.openstreetmap.org/copyright",
+  "datasets": {
+    "metro": {
+      "mode": "METRO",
+      "element_count": 1164,
+      "endpoint_used": "https://lz4.overpass-api.de/api/interpreter",
+      "osm_timestamp": "2026-11-14T12:27:13Z",
+      "fetched_at": "2026-11-14T12:28:48.261651+00:00",
+      "raw_file": "data\\raw\\raw_metro_20261114_122848.json",
+      "sha256": "f53fe15ab11cf85c7d8ecea7e2d3269ea65d5fe626b963458e97d298665e40ab",
+      "query": "[out:json][timeout:90];\n(\n  // Metro stations tagged as subway stations\n  node[\"railway\"=\"station\"][\"station\"=\"subway\"](12.78, 77.38, 13.25, 77.85);\n  way[\"railway\"=\"station\"][\"station\"=\"subway\"](12.78, 77.38, 13.25, 77.85);\n  \n  // Stations explicitly tagged with Namma Metro network or operator\n  node[\"railway\"=\"station\"][\"network\"~\"Namma Metro|BMRCL\",i](12.78, 77.38, 13.25, 77.85);\n  way[\"railway\"=\"station\"][\"network\"~\"Namma Metro|BMRCL\",i](12.78, 77.38, 13.25, 77.85);\n  \n  // Stations or stop positions with subway=yes and Namma Metro\n  node[\"subway\"=\"yes\"][\"network\"~\"Namma Metro|BMRCL\",i](12.78, 77.38, 13.25, 77.85);\n  node[\"railway\"=\"station\"][\"subway\"=\"yes\"](12.78, 77.38, 13.25, 77.85);\n  way[\"railway\"=\"station\"][\"subway\"=\"yes\"](12.78, 77.38, 13.25, 77.85);\n  \n  // Construction/unconfirmed stations for audit\n  node[\"railway\"=\"construction\"][\"construction\"~\"subway|station\"](12.78, 77.38, 13.25, 77.85);\n  way[\"railway\"=\"construction\"][\"construction\"~\"subway|station\"](12.78, 77.38, 13.25, 77.85);\n);\nout center body;\n>;\nout skel qt;\n"
+    },
+    "bus": {
+      "mode": "BUS",
+      "element_count": 5313,
+      "endpoint_used": "https://lz4.overpass-api.de/api/interpreter",
+      "osm_timestamp": "2026-11-14T12:28:17Z",
+      "fetched_at": "2026-11-14T12:29:33.691200+00:00",
+      "raw_file": "data\\raw\\raw_bus_20261114_122933.json",
+      "sha256": "382de424130e993ecb68872b936f239dcfd3ed74d6549b1316fa9700f14895d1",
+      "query": "[out:json][timeout:180];\n(\n  // Standard highway bus stops\n  node[\"highway\"=\"bus_stop\"](12.78, 77.38, 13.25, 77.85);\n  way[\"highway\"=\"bus_stop\"](12.78, 77.38, 13.25, 77.85);\n  \n  // Modern Public Transport v2 platforms for buses\n  node[\"public_transport\"=\"platform\"][\"bus\"=\"yes\"](12.78, 77.38, 13.25, 77.85);\n  way[\"public_transport\"=\"platform\"][\"bus\"=\"yes\"](12.78, 77.38, 13.25, 77.85);\n  \n  // Major bus stations / TTMCs\n  node[\"amenity\"=\"bus_station\"](12.78, 77.38, 13.25, 77.85);\n  way[\"amenity\"=\"bus_station\"](12.78, 77.38, 13.25, 77.85);\n);\nout center body;\n>;\nout skel qt;\n"
+    }
+  }
+}
