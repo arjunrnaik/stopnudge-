@@ -23,6 +23,12 @@ interface UserDao {
     @Query("SELECT * FROM trips WHERE status = 'ACTIVE' LIMIT 1")
     suspend fun getActiveTrip(): TripEntity?
 
+    @Query("SELECT * FROM trips WHERE status = 'ACTIVE' LIMIT 1")
+    fun getActiveTripFlow(): Flow<TripEntity?>
+
+    @Query("UPDATE trips SET status = 'CANCELLED', endedAt = :now WHERE status = 'ACTIVE'")
+    suspend fun cancelAllActiveTrips(now: Long = System.currentTimeMillis())
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrip(trip: TripEntity)
 
