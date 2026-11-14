@@ -203,6 +203,19 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
+    fun clearTripHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            userDao.clearAllTrips()
+        }
+    }
+
+    fun clearAllUserData() {
+        viewModelScope.launch(Dispatchers.IO) {
+            userDao.clearAllTrips()
+            userDao.clearAllSavedPlaces()
+        }
+    }
+
     fun checkBatteryOptimizationStatus() {
         val powerManager = getApplication<Application>().getSystemService(Context.POWER_SERVICE) as? PowerManager
         _isIgnoringBatteryOptimizations.value = powerManager?.isIgnoringBatteryOptimizations(

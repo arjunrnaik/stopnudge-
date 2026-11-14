@@ -29,6 +29,12 @@ interface UserDao {
     @Query("UPDATE trips SET status = 'CANCELLED', endedAt = :now WHERE status = 'ACTIVE'")
     suspend fun cancelAllActiveTrips(now: Long = System.currentTimeMillis())
 
+    @Query("DELETE FROM trips")
+    suspend fun clearAllTrips()
+
+    @Query("DELETE FROM saved_places")
+    suspend fun clearAllSavedPlaces()
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTrip(trip: TripEntity)
 

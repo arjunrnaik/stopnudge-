@@ -51,6 +51,21 @@ class GoogleMapsUrlParserTest {
     }
 
     @Test
+    fun testMalformedPercentEscapedUrlDoesNotCrash() {
+        // Link with invalid trailing % or malformed hex escape should not throw IllegalArgumentException
+        val malformed = "https://www.google.com/maps/place/Station%2%/@12.975708,77.572876,17z"
+        val result = GoogleMapsUrlParser.parse(malformed)
+        assertNotNull(result)
+        assertEquals(12.975708, result!!.latitude, 0.0001)
+    }
+
+    @Test
+    fun testOversizedInputRejection() {
+        val hugeInput = "a".repeat(5000)
+        assertNull(GoogleMapsUrlParser.parse(hugeInput))
+    }
+
+    @Test
     fun testBengaluruBoundsCheck() {
         assertTrue(GoogleMapsUrlParser.isWithinBengaluruBounds(12.9716, 77.5946)) // Bengaluru Central
         assertFalse(GoogleMapsUrlParser.isWithinBengaluruBounds(18.9220, 72.8347)) // Mumbai

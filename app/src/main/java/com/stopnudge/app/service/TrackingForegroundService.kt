@@ -4,8 +4,11 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import com.stopnudge.app.MainActivity
 import com.stopnudge.app.R
 import com.stopnudge.app.StopNudgeApp
@@ -43,7 +46,18 @@ class TrackingForegroundService : Service() {
         alertRadiusMeters = intent?.getDoubleExtra(EXTRA_ALERT_RADIUS, 500.0) ?: 500.0
 
         val notification = buildNotification("Tracking to $destinationName", "Calculating distance...")
-        startForeground(NOTIFICATION_ID, notification)
+        
+        // Android 14 (API 34) requires explicit FOREGROUND_SERVICE_TYPE_LOCATION
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            notification,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            } else {
+                0
+            }
+        )
 
         trackingManager.startTracking(destLat, destLon)
         return START_STICKY
@@ -106,6 +120,14 @@ class TrackingForegroundService : Service() {
         alarmController.stopAlarm()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // If alarm has already triggered, keep ringing until explicitly dismissed
+        if (!hasAlarmTriggered) {
+            stopAlarmAndService()
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {

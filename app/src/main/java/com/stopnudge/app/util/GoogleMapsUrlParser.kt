@@ -10,6 +10,8 @@ data class ParsedCoordinates(
 
 object GoogleMapsUrlParser {
 
+    private const val MAX_INPUT_LENGTH = 2048
+
     // Matches @12.975708,77.572876 or q=12.975708,77.572876 or query=12.975708,77.572876 or daddr=12.975708,77.572876
     private val COORD_PATTERN = Pattern.compile(
         """(?:@|q=|query=|daddr=|ll=)(-?\d{1,2}\.\d+)[,\s]+(-?\d{1,3}\.\d+)"""
@@ -21,7 +23,7 @@ object GoogleMapsUrlParser {
     )
 
     fun parse(input: String?): ParsedCoordinates? {
-        if (input.isNullOrBlank()) return null
+        if (input.isNullOrBlank() || input.length > MAX_INPUT_LENGTH) return null
         val trimmed = input.trim()
 
         // 1. Check raw coordinates
@@ -54,7 +56,11 @@ object GoogleMapsUrlParser {
         val matcher = placePattern.matcher(url)
         return if (matcher.find()) {
             val raw = matcher.group(1) ?: return null
-            java.net.URLDecoder.decode(raw.replace("+", " "), "UTF-8")
+            try {
+                java.net.URLDecoder.decode(raw.replace("+", " "), "UTF-8")
+            } catch (_: Exception) {
+                raw.replace("+", " ")
+            }
         } else {
             null
         }
