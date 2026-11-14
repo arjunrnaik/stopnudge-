@@ -33,22 +33,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Compile & Run Unit Tests
-        run: |
-          ./gradlew testDebugUnitTest --stacktrace > test_run.log 2>&1 || {
-            while IFS= read -r line; do
-              echo "::error file=app/build.gradle.kts::$line"
-            done < <(tail -n 50 test_run.log)
-            exit 1
-          }
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Assemble Debug APK
-        run: |
-          ./gradlew :app:assembleDebug --stacktrace > assemble_run.log 2>&1 || {
-            while IFS= read -r line; do
-              echo "::error file=app/build.gradle.kts::$line"
-            done < <(tail -n 50 assemble_run.log)
-            exit 1
-          }
+        run: ./gradlew :app:assembleDebug --stacktrace
 
       - name: List Generated APKs
         run: find . -name "*.apk" -ls
