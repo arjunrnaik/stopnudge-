@@ -28,48 +28,22 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v3
-        with:
-          cache-disabled: false
 
       - name: Grant Execute Permission to Gradle Wrapper
         run: chmod +x gradlew
 
       - name: Run Unit Tests
-        run: |
-          ./gradlew testDebugUnitTest --stacktrace --info 2>&1 | tee test_build.log
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Assemble Debug APK
-        if: success()
-        run: |
-          ./gradlew assembleDebug --stacktrace --info 2>&1 | tee assemble_build.log
-
-      - name: Dump Log Tail on Failure
-        if: failure()
-        run: |
-          echo "=== TAIL OF BUILD LOG ==="
-          tail -n 150 test_build.log 2>/dev/null || true
-          tail -n 150 assemble_build.log 2>/dev/null || true
-
-      - name: Upload Build Logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-logs
-          path: |
-            test_build.log
-            assemble_build.log
-            app/build/reports/
-          retention-days: 7
+        run: ./gradlew :app:assembleDebug --stacktrace
 
       - name: List Generated APKs
-        run: |
-          find app/build/outputs/ -type f -name "*.apk" -ls || true
+        run: find . -name "*.apk" -ls
 
       - name: Upload Debug APK Artifact
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: stopnudge-debug-apk
           path: app/build/outputs/apk/**/*.apk
-          if-no-files-found: error
           retention-days: 14
