@@ -2,9 +2,16 @@ package com.stopnudge.app.data.local.transit
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "metro_stations")
+@Entity(
+    tableName = "metro_stations",
+    indices = [
+        Index(value = ["latitude", "longitude"], name = "idx_metro_coords"),
+        Index(value = ["name_en"], name = "idx_metro_name")
+    ]
+)
 data class MetroStationEntity(
     @PrimaryKey
     val id: String,

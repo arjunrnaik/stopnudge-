@@ -38,6 +38,8 @@ fun TransitStopPickerScreen(
     val searchQuery by viewModel.searchQuery.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
+    val isLoadingTransit by viewModel.isLoadingTransit.collectAsState()
+    val transitErrorMessage by viewModel.transitErrorMessage.collectAsState()
     val selectedDestination by viewModel.selectedDestination.collectAsState()
     val alertRadiusMeters by viewModel.alertRadiusMeters.collectAsState()
 
@@ -89,7 +91,7 @@ fun TransitStopPickerScreen(
                 FilterChip(
                     selected = activeTab == PickerTab.BUS,
                     onClick = { activeTab = PickerTab.BUS },
-                    label = { Text("BMTC Bus") },
+                    label = { Text("BMTC Bus (${busStops.size})") },
                     leadingIcon = {
                         Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp))
                     }
@@ -98,6 +100,29 @@ fun TransitStopPickerScreen(
 
             IconButton(onClick = { showGmapsPasteCard = !showGmapsPasteCard }) {
                 Icon(
+                    Icons.Default.Share,
+                    contentDescription = "Paste Map Link",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
+        // Quick Hub Suggestions if query is empty
+        if (searchQuery.isEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf("Majestic", "MG Road", "Indiranagar", "Silk Board", "Whitefield").forEach { hub ->
+                    SuggestionChip(
+                        onClick = { viewModel.onSearchQueryChange(hub) },
+                        label = { Text(hub, style = MaterialTheme.typography.bodySmall) }
+                    )
+                }
+            }
+        }
                     Icons.Default.Share,
                     contentDescription = "Paste Map Link",
                     tint = MaterialTheme.colorScheme.primary
@@ -240,28 +265,143 @@ fun TransitStopPickerScreen(
             }
         }
 
-        // List of Stops
-        when (activeTab) {
-            PickerTab.METRO -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+        // List of Stops or Status
+        if (isLoadingTransit) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        "Loading Bengaluru transit stops...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        } else if (transitErrorMessage != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    items(metroStations) { station ->
-                        MetroStationRow(station = station) {
-                            viewModel.selectMetroStation(station)
-                        }
+                    Icon(
+                        Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(36.dp)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Transit Database Initialization Error",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        transitErrorMessage!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(onClick = { viewModel.retryLoadStops() }) {
+                        Text("Retry Loading Stops")
                     }
                 }
             }
-            PickerTab.BUS -> {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(busStops) { stop ->
-                        BusStopRow(stop = stop) {
-                            viewModel.selectBusStop(stop)
+        } else {
+            when (activeTab) {
+                PickerTab.METRO -> {
+                    if (metroStations.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Place,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    if (searchQuery.isNotBlank()) "No Metro stations found for \"$searchQuery\""
+                                    else "No Metro stations loaded",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "Try searching in English or Kannada (e.g. Majestic, MG Road)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(metroStations) { station ->
+                                MetroStationRow(station = station) {
+                                    viewModel.selectMetroStation(station)
+                                }
+                            }
+                        }
+                    }
+                }
+                PickerTab.BUS -> {
+                    if (busStops.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Default.Place,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    if (searchQuery.isNotBlank()) "No BMTC stops found for \"$searchQuery\""
+                                    else "No BMTC stops loaded",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    "Try searching for popular hubs like Silk Board, Hebbal, Majestic",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(busStops) { stop ->
+                                BusStopRow(stop = stop) {
+                                    viewModel.selectBusStop(stop)
+                                }
+                            }
                         }
                     }
                 }

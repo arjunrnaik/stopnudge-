@@ -15,18 +15,33 @@ abstract class TransitDatabase : RoomDatabase() {
     abstract fun transitDao(): TransitDao
 
     companion object {
+        private const val DB_NAME = "transit_stops_v2.db"
+        private const val ASSET_PATH = "databases/transit_stops.db"
+
         @Volatile
         private var INSTANCE: TransitDatabase? = null
 
         fun getInstance(context: Context): TransitDatabase {
             return INSTANCE ?: synchronized(this) {
+                // Clean up corrupted or partial file if previous copy was aborted
+                val dbFile = context.applicationContext.getDatabasePath(DB_NAME)
+                if (dbFile.exists() && dbFile.length() < 500_000L) {
+                    dbFile.delete()
+                }
+
+                // Clean up legacy v1 db file if present
+                val oldDb = context.applicationContext.getDatabasePath("transit_stops.db")
+                if (oldDb.exists()) {
+                    oldDb.delete()
+                }
+
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     TransitDatabase::class.java,
-                    "transit_stops.db"
+                    DB_NAME
                 )
-                    .createFromAsset("databases/transit_stops.db")
-                    .fallbackToDestructiveMigration() // Safe only for this read-only static bundled asset
+                    .createFromAsset(ASSET_PATH)
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance

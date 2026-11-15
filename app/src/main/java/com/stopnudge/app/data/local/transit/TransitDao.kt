@@ -12,10 +12,13 @@ interface TransitDao {
     @Query("SELECT * FROM bus_stops ORDER BY name ASC")
     suspend fun getAllBusStops(): List<BusStopEntity>
 
-    @Query("SELECT * FROM metro_stations WHERE name LIKE '%' || :query || '%' OR name_en LIKE '%' || :query || '%' LIMIT 30")
+    @Query("SELECT * FROM bus_stops ORDER BY name ASC LIMIT 50")
+    suspend fun getInitialBusStops(): List<BusStopEntity>
+
+    @Query("SELECT * FROM metro_stations WHERE name LIKE '%' || :query || '%' OR name_en LIKE '%' || :query || '%' OR (name_kn IS NOT NULL AND name_kn LIKE '%' || :query || '%') ORDER BY name ASC LIMIT 50")
     suspend fun searchMetroStations(query: String): List<MetroStationEntity>
 
-    @Query("SELECT * FROM bus_stops WHERE name LIKE '%' || :query || '%' OR name_en LIKE '%' || :query || '%' LIMIT 50")
+    @Query("SELECT * FROM bus_stops WHERE name LIKE '%' || :query || '%' OR name_en LIKE '%' || :query || '%' OR (name_kn IS NOT NULL AND name_kn LIKE '%' || :query || '%') ORDER BY name ASC LIMIT 50")
     suspend fun searchBusStops(query: String): List<BusStopEntity>
 
     @Query("SELECT * FROM bus_stops WHERE group_id = :groupId")

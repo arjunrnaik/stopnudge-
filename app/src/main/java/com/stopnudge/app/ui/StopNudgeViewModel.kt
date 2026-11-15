@@ -44,6 +44,12 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
     private val _busStops = MutableStateFlow<List<BusStopEntity>>(emptyList())
     val busStops: StateFlow<List<BusStopEntity>> = _busStops.asStateFlow()
 
+    private val _isLoadingTransit = MutableStateFlow(true)
+    val isLoadingTransit: StateFlow<Boolean> = _isLoadingTransit.asStateFlow()
+
+    private val _transitErrorMessage = MutableStateFlow<String?>(null)
+    val transitErrorMessage: StateFlow<String?> = _transitErrorMessage.asStateFlow()
+
     private val _selectedDestination = MutableStateFlow<SelectedDestination?>(null)
     val selectedDestination: StateFlow<SelectedDestination?> = _selectedDestination.asStateFlow()
 
@@ -67,17 +73,28 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
         checkBatteryOptimizationStatus()
     }
 
+    fun retryLoadStops() {
+        loadInitialStops()
+    }
+
     private fun loadInitialStops() {
         viewModelScope.launch(Dispatchers.IO) {
+            _isLoadingTransit.value = true
+            _transitErrorMessage.value = null
             try {
                 val metros = transitDao.getAllMetroStations()
-                val buses = transitDao.searchBusStops("Majestic")
+                val buses = transitDao.getInitialBusStops()
                 withContext(Dispatchers.Main) {
                     _metroStations.value = metros
                     _busStops.value = buses
+                    _isLoadingTransit.value = false
                 }
             } catch (e: Throwable) {
                 android.util.Log.e("StopNudge", "Failed to load initial transit stops", e)
+                withContext(Dispatchers.Main) {
+                    _isLoadingTransit.value = false
+                    _transitErrorMessage.value = e.message ?: "Failed to open transit database"
+                }
             }
         }
     }
@@ -88,7 +105,7 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 if (query.isBlank()) {
                     val metros = transitDao.getAllMetroStations()
-                    val buses = transitDao.searchBusStops("Majestic")
+                    val buses = transitDao.getInitialBusStops()
                     withContext(Dispatchers.Main) {
                         _metroStations.value = metros
                         _busStops.value = buses
