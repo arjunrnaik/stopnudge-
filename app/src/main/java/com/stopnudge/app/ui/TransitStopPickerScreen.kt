@@ -123,12 +123,6 @@ fun TransitStopPickerScreen(
                 }
             }
         }
-                    Icons.Default.Share,
-                    contentDescription = "Paste Map Link",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
 
         // Google Maps Link Paste Card
         if (showGmapsPasteCard) {
