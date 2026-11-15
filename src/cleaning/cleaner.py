@@ -180,7 +180,72 @@ def detect_metro_line(tags: Dict[str, str], name: str) -> List[str]:
     return sorted(list(lines)) if lines else ["Purple"]
 
 
-def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[CleanStop]:
+# Explicit human-verified landmark hints for high-frequency Bengaluru interchanges
+KNOWN_LANDMARKS: Dict[str, str] = {
+    # KR Puram Railway Station
+    "osm_node_251082967": "Towards Hebbal / Kalyan Nagar",
+    "osm_node_1839942326": "Towards Marathahalli / Silk Board",
+    "osm_node_5631135853": "Towards Marathahalli / Silk Board",
+    "osm_node_9986631368": "Airport Vayu Vajra Bay (KIAS)",
+    # Tin Factory
+    "osm_node_2475275940": "Towards Whitefield / ITPL / Marathahalli / Silk Board",
+    "osm_node_9997942626": "Towards KR Puram (from Kasturi Nagar/Hebbal)",
+    "osm_node_2475275941": "Towards KR Puram / Hoskote (Flyover Ramp)",
+    "osm_node_11229780737": "Towards KR Puram / Hoskote (Flyover Ramp)",
+    "osm_node_11229763336": "Towards Baiyappanahalli / Indiranagar / Majestic",
+    # Silk Board
+    "osm_node_2475275988": "Towards Marathahalli / Bellandur (ORR)",
+    "osm_node_2475275989": "Towards Electronic City / Hosur Road",
+    "osm_node_251082968": "Towards BTM / Banashankari",
+    # Hebbal
+    "osm_node_10793740902": "Towards Airport / Yelahanka",
+    "osm_node_10793740903": "Towards Mekhri Circle / Majestic",
+    "osm_node_617540169": "Towards KR Puram / Silk Board (ORR)",
+}
+
+
+def resolve_direction_hint(
+    stop: Dict[str, Any],
+    pair_partner: Optional[Dict[str, Any]] = None
+) -> Optional[str]:
+    """Resolve human-intuitive destination or corridor hint for a bus stop."""
+    sid = stop.get("id", "")
+    name = stop.get("name", "")
+    desc = stop.get("description")
+
+    if sid in KNOWN_LANDMARKS:
+        return KNOWN_LANDMARKS[sid]
+    if desc:
+        return desc.strip()
+    if "kias" in name.lower():
+        return "Airport Vayu Vajra Bay (KIAS)"
+
+    if pair_partner is not None:
+        dlat = abs(stop["latitude"] - pair_partner["latitude"])
+        dlon = abs(stop["longitude"] - pair_partner["longitude"])
+
+        # Left-hand traffic road geometry in India
+        if dlat > dlon:
+            # North-South road: East side traffic travels North, West side traffic travels South
+            if stop["longitude"] >= pair_partner["longitude"]:
+                return "Towards Northbound Corridor"
+            else:
+                return "Towards Southbound Corridor"
+        else:
+            # East-West road: North side traffic travels West (towards City/Majestic), South side travels East
+            if stop["latitude"] >= pair_partner["latitude"]:
+                return "Towards Westbound / City Centre"
+            else:
+                return "Towards Eastbound Corridor"
+
+    return None
+
+
+def clean_bus_stops(
+    elements: List[Dict[str, Any]],
+    check_date: str,
+    merge_duplicates: bool = True
+) -> List[CleanStop]:
     """Clean, spatially filter, and deduplicate bus stops."""
     raw_stops: List[Dict[str, Any]] = []
     seen_osm_ids: Set[str] = set()
@@ -227,6 +292,7 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
             else:
                 operator = raw_op.strip()
         ref = tags.get("ref")
+        desc = tags.get("description")
         timestamp = el.get("timestamp")
         
         norm_name = normalize_name(raw_name or name_en)
@@ -250,6 +316,7 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
             "geometry_kind": geom_kind,
             "operator": operator,
             "ref": ref,
+            "description": desc,
             "timestamp": timestamp,
             "flags": flags
         })
@@ -267,6 +334,7 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
         if not name_key or len(stops) == 1:
             # Single stop or unnamed stops
             for st in stops:
+                direction = resolve_direction_hint(st)
                 cleaned_stops.append(CleanStop(
                     id=st["id"],
                     name=st["name"],
@@ -284,7 +352,8 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
                     source="OpenStreetMap",
                     osm_timestamp=st["timestamp"],
                     last_checked_date=check_date,
-                    verified=False
+                    verified=False,
+                    direction_hint=direction
                 ))
             continue
 
@@ -305,6 +374,7 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
                     
             if len(cluster) == 1:
                 # Isolated stop with this name
+                direction = resolve_direction_hint(s1)
                 cleaned_stops.append(CleanStop(
                     id=s1["id"],
                     name=s1["name"],
@@ -321,24 +391,82 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
                     source="OpenStreetMap",
                     osm_timestamp=s1["timestamp"],
                     last_checked_date=check_date,
-                    verified=False
+                    verified=False,
+                    direction_hint=direction
                 ))
                 visited_ids.add(s1["id"])
             else:
                 # Opposite-side or multi-platform group
                 group_hash = hashlib.md5(f"{name_key}_{cluster[0]['latitude']:.3f}_{cluster[0]['longitude']:.3f}".encode()).hexdigest()[:8]
                 grp_id = f"bmtc_grp_{group_hash}"
-                
-                for member in cluster:
+
+                if merge_duplicates:
+                    # Sub-cluster near duplicates (< 15m) and merge them into best representative node
+                    sub_visited = set()
+                    deduped_members = []
+                    for m1 in cluster:
+                        if m1["id"] in sub_visited:
+                            continue
+                        near_dups = [m1]
+                        for m2 in cluster:
+                            if m2["id"] != m1["id"] and m2["id"] not in sub_visited:
+                                d = haversine_distance(m1["latitude"], m1["longitude"], m2["latitude"], m2["longitude"])
+                                if d < DUPLICATE_RADIUS_METERS:
+                                    near_dups.append(m2)
+
+                        best = max(near_dups, key=lambda x: (
+                            1 if x.get("name_kn") else 0,
+                            1 if x.get("operator") else 0,
+                            1 if x.get("ref") else 0,
+                            1 if x.get("description") else 0,
+                            -len(x["id"])
+                        ))
+                        # Inherit fields from duplicates
+                        if not best.get("name_kn"):
+                            for other in near_dups:
+                                if other.get("name_kn"):
+                                    best["name_kn"] = other["name_kn"]
+                                    break
+                        if not best.get("operator"):
+                            for other in near_dups:
+                                if other.get("operator"):
+                                    best["operator"] = other["operator"]
+                                    break
+                        if not best.get("description"):
+                            for other in near_dups:
+                                if other.get("description"):
+                                    best["description"] = other["description"]
+                                    break
+
+                        deduped_members.append(best)
+                        for dup in near_dups:
+                            sub_visited.add(dup["id"])
+                            visited_ids.add(dup["id"])
+
+                    active_members = deduped_members
+                else:
+                    active_members = cluster
+                    for member in cluster:
+                        visited_ids.add(member["id"])
+
+                # Assign direction hints for active members
+                for idx, member in enumerate(active_members):
                     flags = list(member["flags"])
-                    # Check if near-duplicate (< 15m)
-                    for other in cluster:
-                        if other["id"] != member["id"]:
-                            d = haversine_distance(member["latitude"], member["longitude"], other["latitude"], other["longitude"])
-                            if d < DUPLICATE_RADIUS_METERS:
-                                if "possible_duplicate" not in flags:
-                                    flags.append("possible_duplicate")
-                                    
+                    if not merge_duplicates:
+                        for other in active_members:
+                            if other["id"] != member["id"]:
+                                d = haversine_distance(member["latitude"], member["longitude"], other["latitude"], other["longitude"])
+                                if d < DUPLICATE_RADIUS_METERS:
+                                    if "possible_duplicate" not in flags:
+                                        flags.append("possible_duplicate")
+
+                    # If exactly 2 active members (standard opposite-side pair), cross-reference each other
+                    pair_partner = None
+                    if len(active_members) == 2:
+                        pair_partner = active_members[1 if idx == 0 else 0]
+
+                    direction = resolve_direction_hint(member, pair_partner)
+
                     cleaned_stops.append(CleanStop(
                         id=member["id"],
                         name=member["name"],
@@ -355,9 +483,9 @@ def clean_bus_stops(elements: List[Dict[str, Any]], check_date: str) -> List[Cle
                         source="OpenStreetMap",
                         osm_timestamp=member["timestamp"],
                         last_checked_date=check_date,
-                        verified=False
+                        verified=False,
+                        direction_hint=direction
                     ))
-                    visited_ids.add(member["id"])
 
     # Stable sort by ID for idempotency
     cleaned_stops.sort(key=lambda x: x.id)

@@ -124,11 +124,15 @@ def test_near_duplicate_bus_stops_flagged():
         }
     ]
 
-    cleaned = clean_bus_stops(elements, check_date="2026-11-14")
+    cleaned = clean_bus_stops(elements, check_date="2026-11-14", merge_duplicates=False)
     assert len(cleaned) == 2
     # At least one should be flagged as possible duplicate
     has_dup_flag = any("possible_duplicate" in c.flags for c in cleaned)
     assert has_dup_flag is True
+
+    # When merge_duplicates=True, the physical duplicate is cleanly merged into 1 stop
+    merged = clean_bus_stops(elements, check_date="2026-11-14", merge_duplicates=True)
+    assert len(merged) == 1
 
 
 def test_unnamed_bus_stop_kept_with_flag():

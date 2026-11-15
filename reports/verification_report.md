@@ -1,7 +1,7 @@
 # Bengaluru Transit Data Pack — Verification & Audit Report
 
-**Generated At:** 2026-11-14 13:49:04 UTC  
-**Pack Version:** `2026.11.14-v1`  
+**Generated At:** 2026-11-15 08:36:10 UTC  
+**Pack Version:** `2026.11.15-v1`  
 **OSM Snapshot Timestamp:** `2026-11-14T12:27:13Z`  
 **Licence:** ODbL 1.0 (Attribution: © OpenStreetMap contributors)  
 
@@ -12,7 +12,7 @@
 | Transit Mode | Raw Elements Fetched | Clean Operating Units | Verification Basis | Reality Status |
 | :--- | :--- | :--- | :--- | :--- |
 | **Namma Metro** | 174 | **83 operating stations** | Reconciled against BMRCL official network | **100% ground-truthed** against operating lines |
-| **BMTC Bus Stops** | 5311 | **5311 stops** | Community OSM mapping & 50-stop survey sample | **Empirical OSM snapshot** (unbounded reality) |
+| **BMTC Bus Stops** | 5062 | **5062 stops** | Community OSM mapping & 50-stop survey sample | **Empirical OSM snapshot** (unbounded reality) |
 | **Opposite-Side Bus Groups** | - | **728 directional groups** | Spatial distance clustering (15–80m) | Preserved & linked for geofence alarms |
 
 ---
@@ -62,12 +62,12 @@
 > **Transparency Regarding Completeness**: As stated in the approved plan, **completeness cannot be proven against an official reference because no official open BMTC stop master list is published**.
 
 ### Bus Dataset Metrics
-- **Total Clean Bus Stops**: 5311
-- **Stops With Names**: 4294
+- **Total Clean Bus Stops**: 5062
+- **Stops With Names**: 4045
 - **Stops Without Names**: 1017 (Retained with `no_name` flag; names never invented)
-- **Stops With Operator Tag**: 2427
-- **Near-Duplicate Flags (<15m)**: 495 (flagged for review)
-- **Opposite-Side Directional Groups**: 1631 stops grouped across road medians
+- **Stops With Operator Tag**: 2249
+- **Near-Duplicate Flags (<15m)**: 0 (flagged for review)
+- **Opposite-Side Directional Groups**: 1382 stops grouped across road medians
 
 ### Order-of-Magnitude Contextual Comparison
 - **OpenCity Reference Context**: OpenCity's BMTC dataset describes **~9,600 stops** (publisher BMTC, date unknown, no licence).
@@ -78,10 +78,10 @@
 Top major transit density hubs identified in Bengaluru:
 | Grid Center | Bus Stops Count | Key Locations Represented |
 | :--- | :--- | :--- |
-| (12.98, 77.57) | 277 | Railway Station, Majestic |
-| (12.92, 77.62) | 126 | Madiwala, Silk Board, Silk Board |
+| (12.98, 77.57) | 275 |  |
+| (12.92, 77.62) | 122 | Madiwala, Silk Board, Silk Board |
 | (12.96, 77.58) | 95 |  |
-| (12.98, 77.6) | 67 | MG Statue, Cubbon Park Metro Station |
+| (12.98, 77.6) | 63 | Cubbon Park Metro Station |
 | (12.92, 77.57) | 61 | Banashankari TTMC, Banashankari Bus Station (Towards Kadirenahalli), Banashankari TTMC |
 
 ### Human Spot-Check Survey Sample (50 Stops)

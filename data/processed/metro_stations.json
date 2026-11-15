@@ -17,8 +17,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_11941173068",
@@ -38,8 +39,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_11941186869",
@@ -59,8 +61,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_11941186870",
@@ -80,8 +83,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_1576973953",
@@ -101,8 +105,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_1576973954",
@@ -122,8 +127,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_1576973980",
@@ -143,8 +149,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_3302642058",
@@ -164,8 +171,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_4548694596",
@@ -185,8 +193,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197744",
@@ -206,8 +215,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197745",
@@ -227,8 +237,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197749",
@@ -248,8 +259,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197751",
@@ -269,8 +281,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197754",
@@ -290,8 +303,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197755",
@@ -311,8 +325,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197757",
@@ -332,8 +347,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197761",
@@ -353,8 +369,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197762",
@@ -374,8 +391,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197764",
@@ -395,8 +413,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197765",
@@ -416,8 +435,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760197806",
@@ -437,8 +457,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198122",
@@ -458,8 +479,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198133",
@@ -479,8 +501,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198145",
@@ -500,8 +523,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198153",
@@ -521,8 +545,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198162",
@@ -542,8 +567,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198182",
@@ -563,8 +589,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198187",
@@ -584,8 +611,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198198",
@@ -605,8 +633,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198202",
@@ -626,8 +655,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198212",
@@ -647,8 +677,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198226",
@@ -668,8 +699,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5760198239",
@@ -689,8 +721,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5960788724",
@@ -710,8 +743,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5960788725",
@@ -731,8 +765,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_5960788726",
@@ -752,8 +787,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857549",
@@ -773,8 +809,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857550",
@@ -794,8 +831,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857551",
@@ -815,8 +853,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857552",
@@ -836,8 +875,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857553",
@@ -857,8 +897,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857554",
@@ -878,8 +919,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857555",
@@ -899,8 +941,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857556",
@@ -920,8 +963,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857557",
@@ -941,8 +985,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857558",
@@ -963,8 +1008,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857559",
@@ -984,8 +1030,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857560",
@@ -1005,8 +1052,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857561",
@@ -1026,8 +1074,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857562",
@@ -1047,8 +1096,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857563",
@@ -1068,8 +1118,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857564",
@@ -1089,8 +1140,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6400857565",
@@ -1110,8 +1162,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706688",
@@ -1131,8 +1184,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706689",
@@ -1152,8 +1206,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706690",
@@ -1173,8 +1228,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706691",
@@ -1194,8 +1250,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706692",
@@ -1215,8 +1272,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706695",
@@ -1236,8 +1294,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6410706696",
@@ -1257,8 +1316,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710292",
@@ -1278,8 +1338,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710293",
@@ -1299,8 +1360,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710294",
@@ -1320,8 +1382,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710295",
@@ -1342,8 +1405,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710296",
@@ -1363,8 +1427,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710297",
@@ -1384,8 +1449,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710298",
@@ -1405,8 +1471,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710299",
@@ -1426,8 +1493,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710300",
@@ -1447,8 +1515,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_6432710301",
@@ -1468,8 +1537,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_7784456820",
@@ -1489,8 +1559,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9049846515",
@@ -1510,8 +1581,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9050797592",
@@ -1531,8 +1603,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9051395755",
@@ -1552,8 +1625,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9051410519",
@@ -1573,8 +1647,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9051417969",
@@ -1594,8 +1669,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919570131",
@@ -1615,8 +1691,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919651773",
@@ -1636,8 +1713,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919651774",
@@ -1657,8 +1735,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919651775",
@@ -1678,8 +1757,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919651776",
@@ -1699,8 +1779,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_node_9919651777",
@@ -1720,8 +1801,9 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   },
   {
     "id": "osm_way_1353733806",
@@ -1741,7 +1823,8 @@
     "flags": [],
     "source": "OpenStreetMap",
     "osm_timestamp": null,
-    "last_checked_date": "2026-11-14",
-    "verified": true
+    "last_checked_date": "2026-11-15",
+    "verified": true,
+    "direction_hint": null
   }
 ]

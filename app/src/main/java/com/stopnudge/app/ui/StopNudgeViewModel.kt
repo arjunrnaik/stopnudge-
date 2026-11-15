@@ -137,7 +137,7 @@ class StopNudgeViewModel(application: Application) : AndroidViewModel(applicatio
     fun selectBusStop(stop: BusStopEntity) {
         _selectedDestination.value = SelectedDestination(
             name = stop.name,
-            subtitle = stop.operator ?: "BMTC Bus Stop",
+            subtitle = stop.directionHint ?: stop.operator ?: "BMTC Bus Stop",
             latitude = stop.latitude,
             longitude = stop.longitude,
             mode = "BUS"

@@ -65,7 +65,8 @@ def write_sqlite(
         source TEXT NOT NULL,
         osm_timestamp TEXT,
         last_checked_date TEXT NOT NULL,
-        verified INTEGER NOT NULL
+        verified INTEGER NOT NULL,
+        direction_hint TEXT
     );
     """)
 
@@ -113,7 +114,7 @@ def write_sqlite(
     # Insert Bus
     for b in bus_stops:
         cursor.execute("""
-        INSERT INTO bus_stops VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO bus_stops VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             b.id,
             b.name,
@@ -131,7 +132,8 @@ def write_sqlite(
             b.source,
             b.osm_timestamp,
             b.last_checked_date,
-            1 if b.verified else 0
+            1 if b.verified else 0,
+            b.direction_hint
         ))
 
     # Insert Metadata

@@ -15,7 +15,7 @@ abstract class TransitDatabase : RoomDatabase() {
     abstract fun transitDao(): TransitDao
 
     companion object {
-        private const val DB_NAME = "transit_stops_v2.db"
+        private const val DB_NAME = "transit_stops_v3.db"
         private const val ASSET_PATH = "databases/transit_stops.db"
 
         @Volatile
@@ -29,10 +29,12 @@ abstract class TransitDatabase : RoomDatabase() {
                     dbFile.delete()
                 }
 
-                // Clean up legacy v1 db file if present
-                val oldDb = context.applicationContext.getDatabasePath("transit_stops.db")
-                if (oldDb.exists()) {
-                    oldDb.delete()
+                // Clean up legacy v1 and v2 db files if present
+                for (legacyName in listOf("transit_stops.db", "transit_stops_v2.db")) {
+                    val oldDb = context.applicationContext.getDatabasePath(legacyName)
+                    if (oldDb.exists()) {
+                        oldDb.delete()
+                    }
                 }
 
                 val instance = Room.databaseBuilder(

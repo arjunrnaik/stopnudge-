@@ -1,5 +1,7 @@
 package com.stopnudge.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -406,6 +408,7 @@ fun TransitStopPickerScreen(
 
 @Composable
 fun MetroStationRow(station: MetroStationEntity, onClick: () -> Unit) {
+    val context = LocalContext.current
     val lineColor = when {
         station.metroLines.contains("Purple", ignoreCase = true) -> Color(0xFF7A2082)
         station.metroLines.contains("Green", ignoreCase = true) -> Color(0xFF008752)
@@ -454,17 +457,26 @@ fun MetroStationRow(station: MetroStationEntity, onClick: () -> Unit) {
                     }
                 }
             }
-            Icon(
-                Icons.Default.Place,
-                contentDescription = "Select",
-                tint = MaterialTheme.colorScheme.primary
-            )
+            IconButton(
+                onClick = {
+                    val uri = Uri.parse("geo:0,0?q=${station.latitude},${station.longitude}(${Uri.encode(station.name + " Metro Station")})")
+                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                    context.startActivity(intent)
+                }
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = "View on Map",
+                    tint = MaterialTheme.colorScheme.outline
+                )
+            }
         }
     }
 }
 
 @Composable
 fun BusStopRow(stop: BusStopEntity, onClick: () -> Unit) {
+    val context = LocalContext.current
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -489,17 +501,43 @@ fun BusStopRow(stop: BusStopEntity, onClick: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    text = stop.operator ?: "BMTC (Bengaluru)",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                if (stop.directionHint != null) {
+                    Text(
+                        text = "↳ ${stop.directionHint}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = stop.operator ?: "BMTC",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                    stop.nameKn?.let {
+                        Text(
+                            text = "• $it",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
+            }
+            IconButton(
+                onClick = {
+                    val label = stop.name + (stop.directionHint?.let { " ($it)" } ?: "")
+                    val uri = Uri.parse("geo:0,0?q=${stop.latitude},${stop.longitude}(${Uri.encode(label)})")
+                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                    context.startActivity(intent)
+                }
+            ) {
+                Icon(
+                    Icons.Default.LocationOn,
+                    contentDescription = "View on Map",
+                    tint = MaterialTheme.colorScheme.outline
                 )
             }
-            Icon(
-                Icons.Default.Place,
-                contentDescription = "Select",
-                tint = MaterialTheme.colorScheme.primary
-            )
         }
     }
 }

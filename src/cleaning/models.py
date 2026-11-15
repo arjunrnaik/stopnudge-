@@ -24,3 +24,4 @@ class CleanStop:
     osm_timestamp: Optional[str] = None
     last_checked_date: str = ""
     verified: bool = False
+    direction_hint: Optional[str] = None

@@ -38,5 +38,7 @@ data class BusStopEntity(
     val osmTimestamp: String?,
     @ColumnInfo(name = "last_checked_date")
     val lastCheckedDate: String,
-    val verified: Int
+    val verified: Int,
+    @ColumnInfo(name = "direction_hint")
+    val directionHint: String? = null
 )
