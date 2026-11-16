@@ -103,7 +103,7 @@ class WakeMeTrackingService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        return NotificationCompat.Builder(this, WakeMeApp.CHANNEL_TRACKING)
+        return NotificationCompat.Builder(this, WakeMeApp.TRACKING_CHANNEL_ID)
             .setContentTitle("WakeMe: $title")
             .setContentText(statusText)
             .setSmallIcon(android.R.drawable.ic_dialog_map)
@@ -194,7 +194,7 @@ class WakeMeTrackingService : Service() {
 
     private fun postGentleReminderNotification(config: DestinationConfig) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notif = NotificationCompat.Builder(this, WakeMeApp.CHANNEL_GENTLE_REMINDER)
+        val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
             .setContentTitle("Arrived at ${config.name}")
             .setContentText(if (config.reminderNote.isNotEmpty()) config.reminderNote else "You have reached your destination geofence.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
