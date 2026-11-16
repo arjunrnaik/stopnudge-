@@ -1,10 +1,10 @@
-name: StopNudge Android Build
+name: Android Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, v2 ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, v2 ]
   workflow_dispatch:
 
 concurrency:
@@ -35,15 +35,15 @@ jobs:
       - name: Compile & Run Unit Tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
-      - name: Assemble Debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+      - name: Assemble Debug APKs
+        run: ./gradlew assembleDebug --stacktrace
 
       - name: List Generated APKs
         run: find . -name "*.apk" -ls
 
-      - name: Upload Debug APK Artifact
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: stopnudge-debug-apk
-          path: app/build/outputs/apk/**/*.apk
+          name: wakeme-debug-apks
+          path: "**/build/outputs/apk/**/*.apk"
           retention-days: 14

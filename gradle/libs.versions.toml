@@ -14,6 +14,7 @@ room = "2.6.1"
 playServicesLocation = "21.3.0"
 coroutines = "1.8.1"
 materialIconsExtended = "1.6.8"
+osmdroid = "6.1.18"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -42,6 +43,7 @@ androidx-room-compiler = { group = "androidx.room", name = "room-compiler", vers
 # Location & Background Services
 play-services-location = { group = "com.google.android.gms", name = "play-services-location", version.ref = "playServicesLocation" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+osmdroid-android = { group = "org.osmdroid", name = "osmdroid-android", version.ref = "osmdroid" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

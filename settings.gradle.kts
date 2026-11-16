@@ -19,5 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "StopNudge"
+rootProject.name = "WakeMe"
 include(":app")
+include(":wakeme")
