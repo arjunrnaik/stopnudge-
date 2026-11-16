@@ -17,6 +17,7 @@
     <!-- Wake & Alarms -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -48,9 +49,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Background Tracking Foreground Service -->
+        <!-- Full-screen Wake-Lock Dismiss Activity -->
+        <activity
+            android:name=".alarm.AlarmDismissActivity"
+            android:exported="false"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.WakeMe" />
+
+        <!-- Pure Hardware GNSS Satellite Tracking Service -->
         <service
-            android:name=".service.TrackingForegroundService"
+            android:name=".service.WakeMeTrackingService"
             android:exported="false"
             android:foregroundServiceType="location" />
 

@@ -1,10 +1,10 @@
-name: Android Build
+name: WakeMe Android Build
 
 on:
   push:
-    branches: [ main, v2 ]
+    branches: [ v2 ]
   pull_request:
-    branches: [ main, v2 ]
+    branches: [ v2 ]
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build Debug APK & Run Unit Tests
+    name: Build WakeMe Debug APK & Run Unit Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -33,17 +33,17 @@ jobs:
         run: chmod +x gradlew
 
       - name: Compile & Run Unit Tests
-        run: ./gradlew testDebugUnitTest --stacktrace
+        run: ./gradlew :wakeme:testDebugUnitTest --stacktrace
 
-      - name: Assemble Debug APKs
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Assemble WakeMe Debug APK
+        run: ./gradlew :wakeme:assembleDebug --stacktrace
 
-      - name: List Generated APKs
-        run: find . -name "*.apk" -ls
+      - name: List Generated APK
+        run: ls -lh wakeme/build/outputs/apk/debug/wakeme-debug.apk
 
-      - name: Upload APK Artifacts
+      - name: Upload WakeMe Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wakeme-debug-apks
-          path: "**/build/outputs/apk/**/*.apk"
+          name: wakeme-debug-apk
+          path: wakeme/build/outputs/apk/debug/wakeme-debug.apk
           retention-days: 14

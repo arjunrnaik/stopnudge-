@@ -20,5 +20,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "WakeMe"
-include(":app")
 include(":wakeme")

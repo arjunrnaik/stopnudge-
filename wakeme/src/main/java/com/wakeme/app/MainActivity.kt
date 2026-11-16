@@ -53,7 +53,12 @@ class MainActivity : ComponentActivity() {
                     WakeMeMapScreen(
                         viewModel = viewModel,
                         onStartTracking = {
-                            // Phase 3 will bind tracking service
+                            val config = viewModel.getDestinationConfig()
+                            if (viewModel.isTrackingActive.value) {
+                                com.wakeme.app.service.WakeMeTrackingService.start(this@MainActivity, config)
+                            } else {
+                                com.wakeme.app.service.WakeMeTrackingService.stop(this@MainActivity)
+                            }
                         }
                     )
                 }
