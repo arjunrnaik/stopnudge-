@@ -39,6 +39,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WakeMeTheme {
+                val sharedText by sharedTextState
+                LaunchedEffect(sharedText) {
+                    sharedText?.let { text ->
+                        viewModel.handleSharedText(text)
+                    }
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

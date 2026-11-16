@@ -1,6 +1,5 @@
 package com.wakeme.app.ui
 
-import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -11,9 +10,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -24,14 +27,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.wakeme.app.data.SearchResultItem
+import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import kotlinx.coroutines.Job
@@ -58,6 +65,7 @@ fun WakeMeMapScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val coroutineScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
 
     val targetLocation by viewModel.targetLocation.collectAsState()
     val targetName by viewModel.targetName.collectAsState()
@@ -69,6 +77,10 @@ fun WakeMeMapScreen(
     val metroStations by viewModel.metroStations.collectAsState()
     val isTrackingActive by viewModel.isTrackingActive.collectAsState()
 
+    val searchQuery by viewModel.searchQuery.collectAsState()
+    val searchResults by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+
     var isMapMoving by remember { mutableStateOf(false) }
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var locationOverlayRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
@@ -76,6 +88,13 @@ fun WakeMeMapScreen(
     var transitMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
 
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+
+    // Observe camera move target events (e.g. from search or Google Maps intent)
+    LaunchedEffect(viewModel) {
+        viewModel.cameraMoveTarget.collect { target ->
+            mapViewRef?.controller?.animateTo(target)
+        }
+    }
 
     // Lifecycle observer for MapView
     DisposableEffect(lifecycleOwner) {
@@ -184,7 +203,7 @@ fun WakeMeMapScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = 120.dp), // offset slightly above the bottom sheet
+                .padding(bottom = 120.dp),
             contentAlignment = Alignment.Center
         ) {
             // Drop Shadow on the ground (exact map coordinate point)
@@ -228,11 +247,11 @@ fun WakeMeMapScreen(
             }
         }
 
-        // 3. Floating Quick Action Controls (Top End)
+        // 3. Floating Quick Action Controls (Top End, placed below the search bar)
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 48.dp, end = 16.dp),
+                .padding(top = 116.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Recenter GPS Button
@@ -277,7 +296,40 @@ fun WakeMeMapScreen(
             }
         }
 
-        // 4. Bottom Configuration Card (Destination, Radius & Alert Modes)
+        // 4. Top Unified Search Bar & Live Dropdown
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 44.dp)
+        ) {
+            WakeMeSearchBar(
+                query = searchQuery,
+                onQueryChange = { viewModel.onSearchQueryChanged(it) },
+                onClear = {
+                    viewModel.clearSearch()
+                    focusManager.clearFocus()
+                },
+                isSearching = isSearching
+            )
+
+            AnimatedVisibility(
+                visible = searchResults.isNotEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Spacer(modifier = Modifier.height(8.dp))
+                SearchResultsDropdown(
+                    results = searchResults,
+                    onSelect = { item ->
+                        viewModel.onSearchResultSelected(item)
+                        focusManager.clearFocus()
+                    }
+                )
+            }
+        }
+
+        // 5. Bottom Configuration Card (Destination, Radius & Alert Modes)
         WakeMeBottomDestinationCard(
             modifier = Modifier.align(Alignment.BottomCenter),
             targetName = targetName,
@@ -296,6 +348,147 @@ fun WakeMeMapScreen(
                 onStartTracking()
             }
         )
+    }
+}
+
+@Composable
+fun WakeMeSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+    isSearching: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .shadow(elevation = 8.dp, shape = RoundedCornerShape(28.dp)),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = "Search",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            Spacer(modifier = Modifier.width(10.dp))
+
+            TextField(
+                value = query,
+                onValueChange = onQueryChange,
+                placeholder = {
+                    Text(
+                        "Search stop, metro, or place...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    disabledContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search)
+            )
+
+            if (isSearching) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            } else if (query.isNotEmpty()) {
+                IconButton(onClick = onClear) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Clear",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SearchResultsDropdown(
+    results: List<SearchResultItem>,
+    onSelect: (SearchResultItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = 280.dp)
+            .shadow(elevation = 12.dp, shape = RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 4.dp
+    ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            contentPadding = PaddingValues(vertical = 6.dp)
+        ) {
+            items(results) { item ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(item) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val icon = when (item.type) {
+                        SearchResultType.METRO -> Icons.Default.DirectionsTransit
+                        SearchResultType.BUS -> Icons.Default.DirectionsBus
+                        SearchResultType.ONLINE_PLACE -> Icons.Default.Place
+                    }
+                    val iconColor = when (item.type) {
+                        SearchResultType.METRO -> MaterialTheme.colorScheme.primary
+                        SearchResultType.BUS -> MaterialTheme.colorScheme.secondary
+                        SearchResultType.ONLINE_PLACE -> MaterialTheme.colorScheme.tertiary
+                    }
+
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(24.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.title,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = item.subtitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            }
+        }
     }
 }
 

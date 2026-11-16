@@ -3,15 +3,23 @@ package com.wakeme.app.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wakeme.app.data.SearchResultItem
+import com.wakeme.app.data.SearchRepository
 import com.wakeme.app.data.local.transit.BusStopEntity
 import com.wakeme.app.data.local.transit.MetroStationEntity
 import com.wakeme.app.data.local.transit.TransitDatabase
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
+import com.wakeme.app.util.GoogleMapsUrlParser
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
@@ -19,6 +27,8 @@ import org.osmdroid.util.GeoPoint
 class WakeMeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val transitDao = TransitDatabase.getInstance(application).transitDao()
+    private val searchRepository = SearchRepository(application)
+    private var searchJob: Job? = null
 
     // Default Bengaluru coordinates
     val defaultCenter = GeoPoint(12.9716, 77.5946)
@@ -53,6 +63,20 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _isTrackingActive = MutableStateFlow(false)
     val isTrackingActive: StateFlow<Boolean> = _isTrackingActive.asStateFlow()
 
+    // Unified Search State
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _searchResults = MutableStateFlow<List<SearchResultItem>>(emptyList())
+    val searchResults: StateFlow<List<SearchResultItem>> = _searchResults.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
+    // Event emitted when the map camera should animate to a specific point
+    private val _cameraMoveTarget = MutableSharedFlow<GeoPoint>(extraBufferCapacity = 1)
+    val cameraMoveTarget: SharedFlow<GeoPoint> = _cameraMoveTarget.asSharedFlow()
+
     init {
         // Preload metro stations in background
         viewModelScope.launch(Dispatchers.IO) {
@@ -60,6 +84,57 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 val metros = transitDao.getAllMetroStations()
                 _metroStations.value = metros
             } catch (_: Exception) {
+            }
+        }
+    }
+
+    fun onSearchQueryChanged(query: String) {
+        _searchQuery.value = query
+        searchJob?.cancel()
+
+        if (query.trim().isEmpty()) {
+            _searchResults.value = emptyList()
+            _isSearching.value = false
+            return
+        }
+
+        _isSearching.value = true
+        searchJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(250) // Debounce typing
+            try {
+                val results = searchRepository.search(query)
+                _searchResults.value = results
+            } catch (_: Exception) {
+                _searchResults.value = emptyList()
+            } finally {
+                _isSearching.value = false
+            }
+        }
+    }
+
+    fun onSearchResultSelected(item: SearchResultItem) {
+        val geoPoint = GeoPoint(item.latitude, item.longitude)
+        _targetLocation.value = geoPoint
+        _targetName.value = item.title
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _cameraMoveTarget.tryEmit(geoPoint)
+    }
+
+    fun clearSearch() {
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _isSearching.value = false
+    }
+
+    fun handleSharedText(sharedText: String) {
+        viewModelScope.launch {
+            val parsed = GoogleMapsUrlParser.parseSharedText(sharedText)
+            if (parsed != null) {
+                val geoPoint = GeoPoint(parsed.latitude, parsed.longitude)
+                _targetLocation.value = geoPoint
+                _targetName.value = parsed.name ?: "Shared Google Maps Location"
+                _cameraMoveTarget.tryEmit(geoPoint)
             }
         }
     }
