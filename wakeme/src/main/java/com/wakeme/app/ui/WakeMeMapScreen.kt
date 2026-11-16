@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -39,6 +38,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
+import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import kotlinx.coroutines.Job
@@ -76,6 +76,7 @@ fun WakeMeMapScreen(
     val showTransitOverlay by viewModel.showTransitOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
     val isTrackingActive by viewModel.isTrackingActive.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
 
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -88,6 +89,8 @@ fun WakeMeMapScreen(
     var transitMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
 
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+    var showSaveFavoriteDialog by remember { mutableStateOf(false) }
+    var favoriteCustomName by remember { mutableStateOf("") }
 
     // Observe camera move target events (e.g. from search or Google Maps intent)
     LaunchedEffect(viewModel) {
@@ -247,11 +250,11 @@ fun WakeMeMapScreen(
             }
         }
 
-        // 3. Floating Quick Action Controls (Top End, placed below the search bar)
+        // 3. Floating Quick Action Controls (Top End)
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 116.dp, end = 16.dp),
+                .padding(top = 160.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             // Recenter GPS Button
@@ -296,7 +299,7 @@ fun WakeMeMapScreen(
             }
         }
 
-        // 4. Top Unified Search Bar & Live Dropdown
+        // 4. Top Unified Search Bar, Results Dropdown & 1-Tap Favorites Carousel
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -313,6 +316,7 @@ fun WakeMeMapScreen(
                 isSearching = isSearching
             )
 
+            // When searching: show dropdown results
             AnimatedVisibility(
                 visible = searchResults.isNotEmpty(),
                 enter = fadeIn(),
@@ -327,9 +331,22 @@ fun WakeMeMapScreen(
                     }
                 )
             }
+
+            // When NOT searching: show 1-Tap Quick Favorites Carousel
+            if (searchResults.isEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                QuickFavoritesCarousel(
+                    favorites = favorites,
+                    onSelect = { viewModel.selectFavorite(it) },
+                    onAddCurrent = {
+                        favoriteCustomName = targetName
+                        showSaveFavoriteDialog = true
+                    }
+                )
+            }
         }
 
-        // 5. Bottom Configuration Card (Destination, Radius & Alert Modes)
+        // 5. Bottom Configuration Card (Destination, Radius, Alert Modes & Notes)
         WakeMeBottomDestinationCard(
             modifier = Modifier.align(Alignment.BottomCenter),
             targetName = targetName,
@@ -343,11 +360,107 @@ fun WakeMeMapScreen(
             reminderNote = reminderNote,
             onReminderNoteChange = { viewModel.setReminderNote(it) },
             isTrackingActive = isTrackingActive,
+            onSaveAsFavorite = {
+                favoriteCustomName = targetName
+                showSaveFavoriteDialog = true
+            },
             onConfirm = {
                 viewModel.setTrackingActive(!isTrackingActive)
                 onStartTracking()
             }
         )
+
+        // Save Favorite Dialog
+        if (showSaveFavoriteDialog) {
+            AlertDialog(
+                onDismissRequest = { showSaveFavoriteDialog = false },
+                title = { Text("Save Favorite Place") },
+                text = {
+                    Column {
+                        Text(
+                            text = "Save this place for 1-tap alarms anytime:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = favoriteCustomName,
+                            onValueChange = { favoriteCustomName = it },
+                            label = { Text("Place Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.saveCurrentAsFavorite(favoriteCustomName)
+                            showSaveFavoriteDialog = false
+                        }
+                    ) {
+                        Text("Save")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSaveFavoriteDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun QuickFavoritesCarousel(
+    favorites: List<FavoritePlaceEntity>,
+    onSelect: (FavoritePlaceEntity) -> Unit,
+    onAddCurrent: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Quick + Add Button
+        AssistChip(
+            onClick = onAddCurrent,
+            leadingIcon = {
+                Icon(Icons.Default.BookmarkAdd, contentDescription = "Save Favorite", modifier = Modifier.size(16.dp))
+            },
+            label = { Text("Save Pin") },
+            colors = AssistChipDefaults.assistChipColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+            )
+        )
+
+        // Saved favorites
+        favorites.forEach { fav ->
+            val icon = when (fav.category.uppercase()) {
+                "HOME" -> Icons.Default.Home
+                "WORK" -> Icons.Default.Work
+                "TRANSIT" -> Icons.Default.DirectionsTransit
+                else -> Icons.Default.Star
+            }
+            SuggestionChip(
+                onClick = { onSelect(fav) },
+                icon = {
+                    Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                },
+                label = {
+                    Text(
+                        text = fav.name,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                },
+                colors = SuggestionChipDefaults.suggestionChipColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                )
+            )
+        }
     }
 }
 
@@ -505,6 +618,7 @@ fun WakeMeBottomDestinationCard(
     reminderNote: String,
     onReminderNoteChange: (String) -> Unit,
     isTrackingActive: Boolean,
+    onSaveAsFavorite: () -> Unit,
     onConfirm: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -519,7 +633,7 @@ fun WakeMeBottomDestinationCard(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp)
+                .padding(horizontal = 20.dp, vertical = 14.dp)
         ) {
             // Drag handle
             Box(
@@ -530,9 +644,9 @@ fun WakeMeBottomDestinationCard(
                     .align(Alignment.CenterHorizontally)
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Destination header
+            // Destination header with Save Favorite Icon
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth()
@@ -558,9 +672,17 @@ fun WakeMeBottomDestinationCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                IconButton(onClick = onSaveAsFavorite) {
+                    Icon(
+                        imageVector = Icons.Default.BookmarkAdd,
+                        contentDescription = "Save as Favorite",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Geofence Radius Selector
             Row(
@@ -586,7 +708,7 @@ fun WakeMeBottomDestinationCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 6.dp)
+                    .padding(vertical = 4.dp)
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -602,13 +724,14 @@ fun WakeMeBottomDestinationCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Alert Mode Selector (Wake-up Alarm vs Gentle Reminder)
+            // Alert Mode & Audio Routing Selectors
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Alert Mode
                 AlertMode.values().forEach { mode ->
                     val isSelected = (alertMode == mode)
                     OutlinedButton(
@@ -623,9 +746,9 @@ fun WakeMeBottomDestinationCard(
                         Icon(
                             imageVector = if (mode == AlertMode.WAKEUP_ALARM) Icons.Default.Alarm else Icons.Default.NotificationsActive,
                             contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(6.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         Text(
                             text = if (mode == AlertMode.WAKEUP_ALARM) "Alarm" else "Reminder",
                             style = MaterialTheme.typography.labelMedium,
@@ -635,14 +758,33 @@ fun WakeMeBottomDestinationCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Primary Start Tracking Button
+            // Optional Reminder Note Text Field
+            OutlinedTextField(
+                value = reminderNote,
+                onValueChange = onReminderNoteChange,
+                placeholder = {
+                    Text(
+                        "Optional note (e.g. Collect bag, change platform)",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                },
+                leadingIcon = {
+                    Icon(Icons.Default.EditNote, contentDescription = null, modifier = Modifier.size(20.dp))
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Primary Start/Stop Tracking Button
             Button(
                 onClick = onConfirm,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(48.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isTrackingActive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                 ),

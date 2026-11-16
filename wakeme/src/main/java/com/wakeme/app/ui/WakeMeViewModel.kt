@@ -5,6 +5,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchRepository
+import com.wakeme.app.data.local.favorites.FavoritePlaceDao
+import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
+import com.wakeme.app.data.local.favorites.WakeMeUserDatabase
 import com.wakeme.app.data.local.transit.BusStopEntity
 import com.wakeme.app.data.local.transit.MetroStationEntity
 import com.wakeme.app.data.local.transit.TransitDatabase
@@ -27,8 +30,13 @@ import org.osmdroid.util.GeoPoint
 class WakeMeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val transitDao = TransitDatabase.getInstance(application).transitDao()
+    private val favoriteDao = WakeMeUserDatabase.getInstance(application).favoritePlaceDao()
     private val searchRepository = SearchRepository(application)
     private var searchJob: Job? = null
+
+    // Saved Favorites State
+    private val _favorites = MutableStateFlow<List<FavoritePlaceEntity>>(emptyList())
+    val favorites: StateFlow<List<FavoritePlaceEntity>> = _favorites.asStateFlow()
 
     // Default Bengaluru coordinates
     val defaultCenter = GeoPoint(12.9716, 77.5946)
@@ -85,6 +93,50 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 _metroStations.value = metros
             } catch (_: Exception) {
             }
+        }
+
+        // Collect user saved favorites
+        viewModelScope.launch(Dispatchers.IO) {
+            favoriteDao.getAllFavorites().collect { list ->
+                _favorites.value = list
+            }
+        }
+    }
+
+    fun selectFavorite(fav: FavoritePlaceEntity) {
+        val geo = GeoPoint(fav.latitude, fav.longitude)
+        _targetLocation.value = geo
+        _targetName.value = fav.name
+        _radiusMeters.value = fav.radiusMeters
+        try {
+            _alertMode.value = AlertMode.valueOf(fav.alertMode)
+        } catch (_: Exception) {}
+        try {
+            _audioRouting.value = AudioRouting.valueOf(fav.audioRouting)
+        } catch (_: Exception) {}
+        _reminderNote.value = fav.reminderNote
+        _cameraMoveTarget.tryEmit(geo)
+    }
+
+    fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM") {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fav = FavoritePlaceEntity(
+                name = customName.ifBlank { _targetName.value },
+                category = category,
+                latitude = _targetLocation.value.latitude,
+                longitude = _targetLocation.value.longitude,
+                radiusMeters = _radiusMeters.value,
+                alertMode = _alertMode.value.name,
+                audioRouting = _audioRouting.value.name,
+                reminderNote = _reminderNote.value
+            )
+            favoriteDao.insertFavorite(fav)
+        }
+    }
+
+    fun deleteFavorite(id: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            favoriteDao.deleteById(id)
         }
     }
 
