@@ -8,20 +8,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import com.wakeme.app.ui.WakeMeMapScreen
+import com.wakeme.app.ui.WakeMeViewModel
 import com.wakeme.app.ui.theme.WakeMeTheme
 
 class MainActivity : ComponentActivity() {
 
     private val sharedTextState = mutableStateOf<String?>(null)
+    private val viewModel: WakeMeViewModel by viewModels()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -41,21 +43,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "WakeMe v2 — Initialized",
-                            style = MaterialTheme.typography.titleLarge
-                        )
-                    }
+                    WakeMeMapScreen(
+                        viewModel = viewModel,
+                        onStartTracking = {
+                            // Phase 3 will bind tracking service
+                        }
+                    )
                 }
             }
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIncomingIntent(intent)
     }
