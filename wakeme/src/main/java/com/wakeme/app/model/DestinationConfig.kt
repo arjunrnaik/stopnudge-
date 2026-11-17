@@ -8,6 +8,7 @@ data class DestinationConfig(
     val latitude: Double,
     val longitude: Double,
     val radiusMeters: Float = 500f,
+    val vehicleMode: VehicleMode = VehicleMode.BUS,
     val alertMode: AlertMode = AlertMode.WAKEUP_ALARM,
     val audioRouting: AudioRouting = AudioRouting.BOTH,
     val reminderNote: String = "",

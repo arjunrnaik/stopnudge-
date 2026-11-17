@@ -1,6 +1,7 @@
 package com.wakeme.app.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wakeme.app.data.SearchResultItem
@@ -14,6 +15,8 @@ import com.wakeme.app.data.local.transit.TransitDatabase
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
+import com.wakeme.app.model.VehicleMode
+import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.GoogleMapsUrlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +36,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val favoriteDao = WakeMeUserDatabase.getInstance(application).favoritePlaceDao()
     private val searchRepository = SearchRepository(application)
     private var searchJob: Job? = null
+
+    // Screen Navigation State (Uber/Rapido 3-Step Flow)
+    private val _currentScreen = MutableStateFlow(WakeMeScreen.SEARCH_LANDING)
+    val currentScreen: StateFlow<WakeMeScreen> = _currentScreen.asStateFlow()
+
+    // Vehicle Mode State (Car / Cab vs City Bus)
+    private val _selectedVehicleMode = MutableStateFlow(VehicleMode.BUS)
+    val selectedVehicleMode: StateFlow<VehicleMode> = _selectedVehicleMode.asStateFlow()
 
     // Saved Favorites State
     private val _favorites = MutableStateFlow<List<FavoritePlaceEntity>>(emptyList())
@@ -91,8 +102,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val metros = transitDao.getAllMetroStations()
                 _metroStations.value = metros
-            } catch (_: Exception) {
-            }
+            } catch (_: Exception) {}
         }
 
         // Collect user saved favorites
@@ -101,6 +111,44 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 _favorites.value = list
             }
         }
+
+        // Sync with background tracking service state
+        viewModelScope.launch {
+            WakeMeTrackingService.isTracking.collect { tracking ->
+                _isTrackingActive.value = tracking
+                if (tracking && _currentScreen.value != WakeMeScreen.ACTIVE_TRIP) {
+                    _currentScreen.value = WakeMeScreen.ACTIVE_TRIP
+                } else if (!tracking && _currentScreen.value == WakeMeScreen.ACTIVE_TRIP) {
+                    _currentScreen.value = WakeMeScreen.SEARCH_LANDING
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            WakeMeTrackingService.activeConfig.collect { config ->
+                if (config != null) {
+                    _targetName.value = config.name
+                    _targetLocation.value = GeoPoint(config.latitude, config.longitude)
+                    _radiusMeters.value = config.radiusMeters
+                    _selectedVehicleMode.value = config.vehicleMode
+                    _alertMode.value = config.alertMode
+                    _audioRouting.value = config.audioRouting
+                    _reminderNote.value = config.reminderNote
+                }
+            }
+        }
+    }
+
+    // --- Navigation ---
+
+    fun navigateTo(screen: WakeMeScreen) {
+        _currentScreen.value = screen
+    }
+
+    fun setVehicleMode(mode: VehicleMode) {
+        _selectedVehicleMode.value = mode
+        _alertMode.value = mode.alertMode
+        _radiusMeters.value = mode.defaultRadiusMeters
     }
 
     fun selectFavorite(fav: FavoritePlaceEntity) {
@@ -116,6 +164,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: Exception) {}
         _reminderNote.value = fav.reminderNote
         _cameraMoveTarget.tryEmit(geo)
+        _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
     fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM") {
@@ -171,6 +220,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _searchQuery.value = ""
         _searchResults.value = emptyList()
         _cameraMoveTarget.tryEmit(geoPoint)
+        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+    }
+
+    fun selectMapPin(geoPoint: GeoPoint, name: String? = null) {
+        _targetLocation.value = geoPoint
+        _targetName.value = name ?: String.format("%.4f° N, %.4f° E", geoPoint.latitude, geoPoint.longitude)
+        _cameraMoveTarget.tryEmit(geoPoint)
+        _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
     fun clearSearch() {
@@ -187,6 +244,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 _targetLocation.value = geoPoint
                 _targetName.value = parsed.name ?: "Shared Google Maps Location"
                 _cameraMoveTarget.tryEmit(geoPoint)
+                _currentScreen.value = WakeMeScreen.MODE_SELECTION
             }
         }
     }
@@ -224,8 +282,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 try {
                     val initialBuses = transitDao.getInitialBusStops()
                     _busStops.value = initialBuses
-                } catch (_: Exception) {
-                }
+                } catch (_: Exception) {}
             }
         }
     }
@@ -237,10 +294,24 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             latitude = target.latitude,
             longitude = target.longitude,
             radiusMeters = _radiusMeters.value,
+            vehicleMode = _selectedVehicleMode.value,
             alertMode = _alertMode.value,
             audioRouting = _audioRouting.value,
             reminderNote = _reminderNote.value
         )
+    }
+
+    fun startTracking(context: Context) {
+        val config = getDestinationConfig()
+        WakeMeTrackingService.start(context, config)
+        _isTrackingActive.value = true
+        _currentScreen.value = WakeMeScreen.ACTIVE_TRIP
+    }
+
+    fun stopTracking(context: Context) {
+        WakeMeTrackingService.stop(context)
+        _isTrackingActive.value = false
+        _currentScreen.value = WakeMeScreen.SEARCH_LANDING
     }
 
     fun setTrackingActive(active: Boolean) {

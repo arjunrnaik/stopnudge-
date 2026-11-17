@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.flow.MutableStateFlow
 import com.google.android.gms.location.*
 import com.wakeme.app.MainActivity
 import com.wakeme.app.WakeMeApp
@@ -21,6 +22,7 @@ import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
+import com.wakeme.app.model.VehicleMode
 
 class WakeMeTrackingService : Service() {
 
@@ -50,6 +52,7 @@ class WakeMeTrackingService : Service() {
                 val lat = intent.getDoubleExtra(EXTRA_LATITUDE, 0.0)
                 val lon = intent.getDoubleExtra(EXTRA_LONGITUDE, 0.0)
                 val radius = intent.getFloatExtra(EXTRA_RADIUS, 500f)
+                val vehicleMode = intent.getStringExtra(EXTRA_VEHICLE_MODE)?.let { VehicleMode.valueOf(it) } ?: VehicleMode.BUS
                 val mode = intent.getStringExtra(EXTRA_MODE)?.let { AlertMode.valueOf(it) } ?: AlertMode.WAKEUP_ALARM
                 val routing = intent.getStringExtra(EXTRA_ROUTING)?.let { AudioRouting.valueOf(it) } ?: AudioRouting.BOTH
                 val note = intent.getStringExtra(EXTRA_NOTE) ?: ""
@@ -59,11 +62,14 @@ class WakeMeTrackingService : Service() {
                     latitude = lat,
                     longitude = lon,
                     radiusMeters = radius,
+                    vehicleMode = vehicleMode,
                     alertMode = mode,
                     audioRouting = routing,
                     reminderNote = note
                 )
                 hasAlertFired = false
+                isTracking.value = true
+                activeConfig.value = destinationConfig
 
                 startForegroundNotification(name, "Initiating GPS tracking...")
                 startLocationUpdates()
@@ -154,6 +160,7 @@ class WakeMeTrackingService : Service() {
         ).toFloat()
 
         lastDistanceMeters = distanceMeters
+        liveDistanceMeters.value = distanceMeters
 
         if (distanceMeters <= config.radiusMeters) {
             if (!hasAlertFired) {
@@ -211,6 +218,9 @@ class WakeMeTrackingService : Service() {
         locationCallback = null
         WakeMeAlarmController.stopAlert(this)
         hasAlertFired = false
+        isTracking.value = false
+        liveDistanceMeters.value = null
+        activeConfig.value = null
     }
 
     override fun onDestroy() {
@@ -231,9 +241,14 @@ class WakeMeTrackingService : Service() {
         const val EXTRA_LATITUDE = "extra_latitude"
         const val EXTRA_LONGITUDE = "extra_longitude"
         const val EXTRA_RADIUS = "extra_radius"
+        const val EXTRA_VEHICLE_MODE = "extra_vehicle_mode"
         const val EXTRA_MODE = "extra_mode"
         const val EXTRA_ROUTING = "extra_routing"
         const val EXTRA_NOTE = "extra_note"
+
+        val liveDistanceMeters = MutableStateFlow<Float?>(null)
+        val isTracking = MutableStateFlow(false)
+        val activeConfig = MutableStateFlow<DestinationConfig?>(null)
 
         fun start(context: Context, config: DestinationConfig) {
             val intent = Intent(context, WakeMeTrackingService::class.java).apply {
@@ -242,6 +257,7 @@ class WakeMeTrackingService : Service() {
                 putExtra(EXTRA_LATITUDE, config.latitude)
                 putExtra(EXTRA_LONGITUDE, config.longitude)
                 putExtra(EXTRA_RADIUS, config.radiusMeters)
+                putExtra(EXTRA_VEHICLE_MODE, config.vehicleMode.name)
                 putExtra(EXTRA_MODE, config.alertMode.name)
                 putExtra(EXTRA_ROUTING, config.audioRouting.name)
                 putExtra(EXTRA_NOTE, config.reminderNote)

@@ -6,17 +6,24 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
-import com.wakeme.app.ui.WakeMeMapScreen
+import com.wakeme.app.ui.WakeMeActiveTripScreen
+import com.wakeme.app.ui.WakeMeLandingScreen
+import com.wakeme.app.ui.WakeMeModeSelectionScreen
+import com.wakeme.app.ui.WakeMeScreen
 import com.wakeme.app.ui.WakeMeViewModel
 import com.wakeme.app.ui.theme.WakeMeTheme
 
@@ -39,28 +46,41 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             WakeMeTheme {
+                val currentScreen by viewModel.currentScreen.collectAsState()
                 val sharedText by sharedTextState
+
                 LaunchedEffect(sharedText) {
                     sharedText?.let { text ->
                         viewModel.handleSharedText(text)
                     }
                 }
 
+                // Handle Android Back Navigation gracefully across the 3 screens
+                BackHandler(enabled = currentScreen == WakeMeScreen.MODE_SELECTION) {
+                    viewModel.navigateTo(WakeMeScreen.SEARCH_LANDING)
+                }
+
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    WakeMeMapScreen(
-                        viewModel = viewModel,
-                        onStartTracking = {
-                            val config = viewModel.getDestinationConfig()
-                            if (viewModel.isTrackingActive.value) {
-                                com.wakeme.app.service.WakeMeTrackingService.start(this@MainActivity, config)
-                            } else {
-                                com.wakeme.app.service.WakeMeTrackingService.stop(this@MainActivity)
+                    AnimatedContent(
+                        targetState = currentScreen,
+                        transitionSpec = { fadeIn() togetherWith fadeOut() },
+                        label = "WakeMeScreenTransition"
+                    ) { screen ->
+                        when (screen) {
+                            WakeMeScreen.SEARCH_LANDING -> {
+                                WakeMeLandingScreen(viewModel = viewModel)
+                            }
+                            WakeMeScreen.MODE_SELECTION -> {
+                                WakeMeModeSelectionScreen(viewModel = viewModel)
+                            }
+                            WakeMeScreen.ACTIVE_TRIP -> {
+                                WakeMeActiveTripScreen(viewModel = viewModel)
                             }
                         }
-                    )
+                    }
                 }
             }
         }
