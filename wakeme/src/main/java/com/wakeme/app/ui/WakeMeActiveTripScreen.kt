@@ -340,8 +340,8 @@ fun WakeMeActiveTripScreen(
                         )
                         Text(
                             text = when (audioRouting) {
-                                AudioRouting.HEADPHONES -> "🎧 Headphones Only"
-                                AudioRouting.SPEAKER -> "🔊 Phone Speaker"
+                                AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones Only"
+                                AudioRouting.SPEAKER_ONLY -> "🔊 Phone Speaker"
                                 AudioRouting.BOTH -> "🔔 Headphones + Speaker"
                             },
                             style = MaterialTheme.typography.bodyMedium,

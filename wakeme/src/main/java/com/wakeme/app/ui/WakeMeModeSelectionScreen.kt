@@ -208,8 +208,8 @@ fun WakeMeModeSelectionScreen(
                 AudioRouting.values().forEach { routing ->
                     val isSelected = (audioRouting == routing)
                     val label = when (routing) {
-                        AudioRouting.HEADPHONES -> "🎧 Headphones"
-                        AudioRouting.SPEAKER -> "🔊 Speaker"
+                        AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones"
+                        AudioRouting.SPEAKER_ONLY -> "🔊 Speaker"
                         AudioRouting.BOTH -> "🔔 Both"
                     }
                     FilterChip(
