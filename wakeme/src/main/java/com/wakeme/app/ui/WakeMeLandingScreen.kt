@@ -101,13 +101,13 @@ fun WakeMeLandingScreen(
             metroStations.forEach { metro ->
                 val marker = Marker(map).apply {
                     position = GeoPoint(metro.latitude, metro.longitude)
-                    title = metro.stationName
-                    snippet = "Metro (${metro.lineColor} Line)"
+                    title = metro.name
+                    snippet = "Metro (${metro.metroLines})"
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
                             GeoPoint(metro.latitude, metro.longitude),
-                            "${metro.stationName} Metro Station"
+                            "${metro.name} Metro Station"
                         )
                         true
                     }
@@ -188,7 +188,7 @@ fun WakeMeLandingScreen(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = Icons.Default.LocationPin,
+                imageVector = Icons.Default.LocationOn,
                 contentDescription = "Target Location Pin",
                 tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(44.dp)
@@ -503,8 +503,7 @@ private fun SearchResultRow(
         val (icon, tint) = when (item.type) {
             SearchResultType.METRO -> Icons.Default.DirectionsSubway to Color(0xFF673AB7)
             SearchResultType.BUS -> Icons.Default.DirectionsBus to Color(0xFF00897B)
-            SearchResultType.ONLINE -> Icons.Default.Place to Color(0xFF1E88E5)
-            SearchResultType.MAPS_LINK -> Icons.Default.ShareLocation to Color(0xFFE53935)
+            SearchResultType.ONLINE_PLACE -> Icons.Default.Place to Color(0xFF1E88E5)
         }
 
         Box(
