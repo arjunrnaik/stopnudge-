@@ -9,6 +9,7 @@ __pycache__/
 scratch/
 
 # Android build outputs & IDE
+*.apk
 .gradle/
 build/
 app/build/
