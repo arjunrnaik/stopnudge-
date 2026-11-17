@@ -2,6 +2,7 @@ package com.wakeme.app.ui
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -22,18 +23,29 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.service.WakeMeTrackingService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
+import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
  * Screen 3: Active Live Ride Tracking HUD.
- * Real-time satellite GPS countdown (0 cellular data needed), live speed & ETA telemetry,
- * trip progress bar, active deboard note reminder, snooze notification, test alarm button,
- * and stop tracking controls.
+ * Real-time satellite GPS countdown with accurate Road Driving Distance (OSRM),
+ * moving navigation arrow map with live route polyline in an expandable preview box,
+ * speed & ETA telemetry, snooze alert controls, and stop tracking button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -45,6 +57,7 @@ fun WakeMeActiveTripScreen(
     val coroutineScope = rememberCoroutineScope()
 
     val targetName by viewModel.targetName.collectAsState()
+    val targetLocation by viewModel.targetLocation.collectAsState()
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val selectedVehicleMode by viewModel.selectedVehicleMode.collectAsState()
     val alertMode by viewModel.alertMode.collectAsState()
@@ -52,12 +65,16 @@ fun WakeMeActiveTripScreen(
     val reminderNote by viewModel.reminderNote.collectAsState()
 
     val liveDistance by WakeMeTrackingService.liveDistanceMeters.collectAsState()
+    val straightDist by WakeMeTrackingService.straightLineDistanceMeters.collectAsState()
     val currentSpeed by WakeMeTrackingService.currentSpeedKmh.collectAsState()
     val estimatedEta by WakeMeTrackingService.estimatedEtaMinutes.collectAsState()
     val initialDist by WakeMeTrackingService.initialDistanceMeters.collectAsState()
     val isSnoozed by WakeMeAlarmController.isSnoozed.collectAsState()
+    val routePoints by WakeMeTrackingService.routePolyline.collectAsState()
+    val isRoadRoute by WakeMeTrackingService.isRoadRouteActive.collectAsState()
 
     var isTestingAlert by remember { mutableStateOf(false) }
+    var isMapExpanded by remember { mutableStateOf(false) }
 
     // Pulsing animation for the satellite indicator
     val infiniteTransition = rememberInfiniteTransition(label = "Pulse")
@@ -191,28 +208,25 @@ fun WakeMeActiveTripScreen(
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.Snooze,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Alarm Snoozed (Resuming soon...)",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Snooze,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Alarm Snoozed (Resuming in ~2 mins)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
                     }
                 }
             }
 
-            // 2. Giant Live Distance Hero Card
+            // 2. Giant Live Distance Hero Card (Real Road Distance)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -248,7 +262,7 @@ fun WakeMeActiveTripScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    val dist = liveDistance
+                    val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
                     val distanceText = if (dist != null) {
                         if (dist >= 1000f) {
                             String.format("%.1f km", dist / 1000f)
@@ -267,12 +281,17 @@ fun WakeMeActiveTripScreen(
                         textAlign = TextAlign.Center
                     )
 
-                    Text(
-                        text = "REMAINING TO DESTINATION",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = if (isRoadRoute) "ROAD DRIVING DISTANCE" else "APPROX. ROAD DISTANCE",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -387,7 +406,122 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 4. Deboard Reminder Note (if set)
+            // 4. Moving Navigation Map Box (Expandable)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(210.dp)
+                    .shadow(6.dp, RoundedCornerShape(18.dp))
+                    .clip(RoundedCornerShape(18.dp)),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Embedded Map with Directional Arrow & Follow Mode
+                    AndroidView(
+                        factory = { ctx ->
+                            MapView(ctx).apply {
+                                setTileSource(TileSourceFactory.MAPNIK)
+                                setMultiTouchControls(true)
+                                controller.setZoom(16.0)
+
+                                val myLocOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
+                                    enableMyLocation()
+                                    enableFollowLocation()
+                                }
+                                overlays.add(myLocOverlay)
+
+                                val destMarker = Marker(this).apply {
+                                    position = targetLocation
+                                    title = targetName
+                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                }
+                                overlays.add(destMarker)
+
+                                val geofenceCircle = Polygon(this).apply {
+                                    points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                                    fillPaint.color = 0x331E88E5.toInt()
+                                    outlinePaint.color = 0xFF1E88E5.toInt()
+                                    outlinePaint.strokeWidth = 3f
+                                }
+                                overlays.add(geofenceCircle)
+
+                                val poly = Polyline(this).apply {
+                                    outlinePaint.color = 0xFF1976D2.toInt()
+                                    outlinePaint.strokeWidth = 8f
+                                }
+                                overlays.add(poly)
+                            }
+                        },
+                        update = { map ->
+                            val poly = map.overlays.filterIsInstance<Polyline>().firstOrNull()
+                            if (poly != null && routePoints.isNotEmpty()) {
+                                poly.setPoints(routePoints)
+                                map.invalidate()
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+
+                    // Header Bar on Mini-Map
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "🧭 Moving Arrow View",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isRoadRoute) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "• Road Route",
+                                    color = Color(0xFF81C784),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { isMapExpanded = true },
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.OpenInFull,
+                                    contentDescription = "Expand Map",
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Expand",
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Deboard Reminder Note (if set)
             if (reminderNote.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -424,7 +558,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 5. Trip Setup Details
+            // 6. Trip Setup Details
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -488,7 +622,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 6. Test Arrival Alarm Action
+            // 7. Test Arrival Alarm Action
             OutlinedButton(
                 onClick = {
                     if (!isTestingAlert) {
@@ -521,6 +655,124 @@ fun WakeMeActiveTripScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    // Full-Screen Interactive Map Modal Dialog
+    if (isMapExpanded) {
+        Dialog(
+            onDismissRequest = { isMapExpanded = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AndroidView(
+                    factory = { ctx ->
+                        MapView(ctx).apply {
+                            setTileSource(TileSourceFactory.MAPNIK)
+                            setMultiTouchControls(true)
+                            controller.setZoom(16.5)
+
+                            val myLocOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
+                                enableMyLocation()
+                                enableFollowLocation()
+                            }
+                            overlays.add(myLocOverlay)
+
+                            val destMarker = Marker(this).apply {
+                                position = targetLocation
+                                title = targetName
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            }
+                            overlays.add(destMarker)
+
+                            val geofenceCircle = Polygon(this).apply {
+                                points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                                fillPaint.color = 0x331E88E5.toInt()
+                                outlinePaint.color = 0xFF1E88E5.toInt()
+                                outlinePaint.strokeWidth = 4f
+                            }
+                            overlays.add(geofenceCircle)
+
+                            val poly = Polyline(this).apply {
+                                outlinePaint.color = 0xFF1976D2.toInt()
+                                outlinePaint.strokeWidth = 10f
+                            }
+                            overlays.add(poly)
+                        }
+                    },
+                    update = { map ->
+                        val poly = map.overlays.filterIsInstance<Polyline>().firstOrNull()
+                        if (poly != null && routePoints.isNotEmpty()) {
+                            poly.setPoints(routePoints)
+                            map.invalidate()
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Close Button Top-Right
+                IconButton(
+                    onClick = { isMapExpanded = false },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(16.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close Expanded Map",
+                        tint = Color.White
+                    )
+                }
+
+                // Bottom Floating Telemetry Overlay
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 32.dp, start = 20.dp, end = 20.dp)
+                        .shadow(8.dp, RoundedCornerShape(16.dp)),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
+                            Text(
+                                text = if (dist != null) {
+                                    if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
+                                } else "...",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text("Remaining", style = MaterialTheme.typography.labelSmall)
+                        }
+                        VerticalDivider(modifier = Modifier.height(28.dp))
+                        Column {
+                            Text(
+                                text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text("Speed", style = MaterialTheme.typography.labelSmall)
+                        }
+                        VerticalDivider(modifier = Modifier.height(28.dp))
+                        Column {
+                            Text(
+                                text = estimatedEta?.let { "~$it min" } ?: "Near",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text("ETA", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
         }
     }
 }

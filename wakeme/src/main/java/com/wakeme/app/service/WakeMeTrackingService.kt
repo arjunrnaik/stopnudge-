@@ -13,12 +13,19 @@ import android.os.Build
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
+import org.osmdroid.util.GeoPoint
 import com.google.android.gms.location.*
 import com.wakeme.app.MainActivity
 import com.wakeme.app.WakeMeApp
 import com.wakeme.app.alarm.AlarmDismissActivity
 import com.wakeme.app.alarm.WakeMeAlarmController
+import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
@@ -26,12 +33,14 @@ import com.wakeme.app.model.VehicleMode
 
 class WakeMeTrackingService : Service() {
 
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
 
     private var destinationConfig: DestinationConfig? = null
     private var lastDistanceMeters: Float = Float.MAX_VALUE
     private var hasAlertFired = false
+    private var lastRouteFetchTime: Long = 0L
 
     override fun onCreate() {
         super.onCreate()
@@ -73,7 +82,11 @@ class WakeMeTrackingService : Service() {
                 initialDistanceMeters.value = null
                 currentSpeedKmh.value = null
                 estimatedEtaMinutes.value = null
-                isDeadReckoningActive.value = false
+                routePolyline.value = emptyList()
+                isRoadRouteActive.value = false
+                currentBearing.value = null
+                currentLocationPoint.value = null
+                lastRouteFetchTime = 0L
 
                 startForegroundNotification(name, "Initiating hardware GPS tracking...")
                 startLocationUpdates()
@@ -133,9 +146,9 @@ class WakeMeTrackingService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 3000L)
-            .setMinUpdateIntervalMillis(2000L)
-            .setMinUpdateDistanceMeters(5f)
+        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
+            .setMinUpdateIntervalMillis(1500L)
+            .setMinUpdateDistanceMeters(3f)
             .build()
 
         locationCallback = object : LocationCallback() {
@@ -156,44 +169,77 @@ class WakeMeTrackingService : Service() {
 
     private fun onNewLocation(currentLocation: Location) {
         val config = destinationConfig ?: return
-        val distanceMeters = haversineDistanceMeters(
+
+        // 1. Hardware straight-line distance for micro-geofence trigger
+        val straightDist = haversineDistanceMeters(
             currentLocation.latitude,
             currentLocation.longitude,
             config.latitude,
             config.longitude
         ).toFloat()
 
-        lastDistanceMeters = distanceMeters
-        liveDistanceMeters.value = distanceMeters
+        straightLineDistanceMeters.value = straightDist
+        lastDistanceMeters = straightDist
 
-        // Capture initial trip distance on first satellite lock
-        if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
-            initialDistanceMeters.value = distanceMeters
+        // 2. Telemetry: Location, Bearing & Speed
+        currentLocationPoint.value = GeoPoint(currentLocation.latitude, currentLocation.longitude)
+        if (currentLocation.hasBearing()) {
+            currentBearing.value = currentLocation.bearing
         }
 
-        // Live speed & ETA telemetry (pure offline calculation)
         val speedMps = if (currentLocation.hasSpeed()) currentLocation.speed else 0f
         val speedKmh = speedMps * 3.6f
         currentSpeedKmh.value = speedKmh
 
-        if (speedMps > 1.0f) { // Moving > 3.6 km/h
-            val etaSec = (distanceMeters / speedMps).toInt()
-            val etaMin = (etaSec / 60).coerceAtLeast(1)
-            estimatedEtaMinutes.value = etaMin
-        } else {
-            estimatedEtaMinutes.value = null
-        }
+        // 3. Road Distance & Route Geometry Query (OSRM with offline fallback)
+        val now = System.currentTimeMillis()
+        if (now - lastRouteFetchTime > 15_000L || liveDistanceMeters.value == null) {
+            lastRouteFetchTime = now
+            serviceScope.launch {
+                val route = RoadRoutingRepository.getRoute(
+                    currentLocation.latitude,
+                    currentLocation.longitude,
+                    config.latitude,
+                    config.longitude
+                )
+                liveDistanceMeters.value = route.distanceMeters
+                routePolyline.value = route.points
+                isRoadRouteActive.value = route.isRoadRoute
 
-        if (distanceMeters <= config.radiusMeters) {
-            if (!hasAlertFired) {
-                hasAlertFired = true
-                triggerArrivalAlert(config, distanceMeters)
+                if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
+                    initialDistanceMeters.value = route.distanceMeters
+                }
+
+                if (speedMps > 1.0f) {
+                    val etaSec = (route.distanceMeters / speedMps).toInt()
+                    val etaMin = (etaSec / 60).coerceAtLeast(1)
+                    estimatedEtaMinutes.value = etaMin
+                }
             }
         } else {
-            val distText = if (distanceMeters >= 1000f) {
-                String.format("%.1f km remaining", distanceMeters / 1000f)
+            // Extrapolate distance decrease between routing fetches
+            if (liveDistanceMeters.value == null) {
+                liveDistanceMeters.value = straightDist * 1.28f
+            }
+            if (speedMps > 1.0f && liveDistanceMeters.value != null) {
+                val etaSec = (liveDistanceMeters.value!! / speedMps).toInt()
+                val etaMin = (etaSec / 60).coerceAtLeast(1)
+                estimatedEtaMinutes.value = etaMin
+            }
+        }
+
+        // 4. Geofence Trigger Condition
+        if (straightDist <= config.radiusMeters) {
+            if (!hasAlertFired) {
+                hasAlertFired = true
+                triggerArrivalAlert(config, straightDist)
+            }
+        } else {
+            val dist = liveDistanceMeters.value ?: (straightDist * 1.28f)
+            val distText = if (dist >= 1000f) {
+                String.format("%.1f km remaining", dist / 1000f)
             } else {
-                "${distanceMeters.toInt()}m remaining"
+                "${dist.toInt()}m remaining"
             }
             val etaText = estimatedEtaMinutes.value?.let { " • ~$it min" } ?: ""
             updateNotification("$distText$etaText")
@@ -244,15 +290,20 @@ class WakeMeTrackingService : Service() {
         hasAlertFired = false
         isTracking.value = false
         liveDistanceMeters.value = null
+        straightLineDistanceMeters.value = null
         currentSpeedKmh.value = null
         estimatedEtaMinutes.value = null
         initialDistanceMeters.value = null
-        isDeadReckoningActive.value = false
+        routePolyline.value = emptyList()
+        isRoadRouteActive.value = false
+        currentBearing.value = null
+        currentLocationPoint.value = null
         activeConfig.value = null
     }
 
     override fun onDestroy() {
         stopTracking()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -274,11 +325,15 @@ class WakeMeTrackingService : Service() {
         const val EXTRA_ROUTING = "extra_routing"
         const val EXTRA_NOTE = "extra_note"
 
-        val liveDistanceMeters = MutableStateFlow<Float?>(null)
+        val liveDistanceMeters = MutableStateFlow<Float?>(null) // Real Road Driving Distance
+        val straightLineDistanceMeters = MutableStateFlow<Float?>(null) // Geodesic straight-line
         val currentSpeedKmh = MutableStateFlow<Float?>(null)
         val estimatedEtaMinutes = MutableStateFlow<Int?>(null)
         val initialDistanceMeters = MutableStateFlow<Float?>(null)
-        val isDeadReckoningActive = MutableStateFlow(false)
+        val routePolyline = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val isRoadRouteActive = MutableStateFlow(false)
+        val currentBearing = MutableStateFlow<Float?>(null)
+        val currentLocationPoint = MutableStateFlow<GeoPoint?>(null)
         val isTracking = MutableStateFlow(false)
         val activeConfig = MutableStateFlow<DestinationConfig?>(null)
 
