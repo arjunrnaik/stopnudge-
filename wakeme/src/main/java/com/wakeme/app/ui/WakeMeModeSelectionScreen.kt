@@ -17,20 +17,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.wakeme.app.model.AlertMode
+import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
+import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Screen 2: Uber/Rapido-Style Mode Selection & Trip Setup Screen.
  * Allows commuters to choose between Car/Cab (gentle reminder chime) and City Bus (loud wake-up siren),
- * tune geofence radius chips, configure audio routing, enter a deboard note, and start tracking.
+ * preview alert sounds, tune geofence radius chips, configure audio routing, enter a deboard note, and start tracking.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,12 +41,16 @@ fun WakeMeModeSelectionScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
     val targetName by viewModel.targetName.collectAsState()
     val targetLocation by viewModel.targetLocation.collectAsState()
     val selectedVehicleMode by viewModel.selectedVehicleMode.collectAsState()
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val audioRouting by viewModel.audioRouting.collectAsState()
     val reminderNote by viewModel.reminderNote.collectAsState()
+
+    var isPreviewingMode by remember { mutableStateOf<VehicleMode?>(null) }
 
     Scaffold(
         topBar = {
@@ -100,6 +106,7 @@ fun WakeMeModeSelectionScreen(
 
                     Button(
                         onClick = {
+                            WakeMeAlarmController.stopAlert(context)
                             viewModel.startTracking(context)
                         },
                         modifier = Modifier
@@ -146,10 +153,34 @@ fun WakeMeModeSelectionScreen(
 
             VehicleMode.values().forEach { mode ->
                 val isSelected = (selectedVehicleMode == mode)
+                val isPreviewing = (isPreviewingMode == mode)
                 VehicleCard(
                     mode = mode,
                     isSelected = isSelected,
-                    onClick = { viewModel.setVehicleMode(mode) }
+                    isPreviewing = isPreviewing,
+                    onClick = { viewModel.setVehicleMode(mode) },
+                    onPreviewSound = {
+                        if (isPreviewingMode == null) {
+                            isPreviewingMode = mode
+                            val previewConfig = DestinationConfig(
+                                name = "Sound Preview",
+                                latitude = 0.0,
+                                longitude = 0.0,
+                                vehicleMode = mode,
+                                alertMode = mode.alertMode,
+                                audioRouting = audioRouting
+                            )
+                            WakeMeAlarmController.triggerAlert(context, previewConfig)
+                            coroutineScope.launch {
+                                delay(2200L)
+                                WakeMeAlarmController.stopAlert(context)
+                                isPreviewingMode = null
+                            }
+                        } else {
+                            WakeMeAlarmController.stopAlert(context)
+                            isPreviewingMode = null
+                        }
+                    }
                 )
             }
 
@@ -313,7 +344,9 @@ private fun DestinationSummaryCard(
 private fun VehicleCard(
     mode: VehicleMode,
     isSelected: Boolean,
-    onClick: () -> Unit
+    isPreviewing: Boolean,
+    onClick: () -> Unit,
+    onPreviewSound: () -> Unit
 ) {
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
     val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface
@@ -328,59 +361,89 @@ private fun VehicleCard(
         color = containerColor,
         tonalElevation = if (isSelected) 4.dp else 1.dp
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(16.dp)
         ) {
-            Text(
-                text = mode.iconEmoji,
-                fontSize = 32.sp
-            )
-            Spacer(modifier = Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = mode.iconEmoji,
+                    fontSize = 32.sp
+                )
+                Spacer(modifier = Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = mode.title,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        SuggestionChip(
+                            onClick = {},
+                            label = {
+                                Text(
+                                    text = mode.alertTag,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = if (mode == VehicleMode.BUS)
+                                    MaterialTheme.colorScheme.errorContainer
+                                else
+                                    MaterialTheme.colorScheme.secondaryContainer
+                            ),
+                            border = null
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(2.dp))
                     Text(
-                        text = mode.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                text = mode.alertTag,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = if (mode == VehicleMode.BUS)
-                                MaterialTheme.colorScheme.errorContainer
-                            else
-                                MaterialTheme.colorScheme.secondaryContainer
-                        ),
-                        border = null
+                        text = mode.subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = mode.subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                RadioButton(
+                    selected = isSelected,
+                    onClick = onClick,
+                    colors = RadioButtonDefaults.colors(
+                        selectedColor = MaterialTheme.colorScheme.primary
+                    )
                 )
             }
-            RadioButton(
-                selected = isSelected,
-                onClick = onClick,
-                colors = RadioButtonDefaults.colors(
-                    selectedColor = MaterialTheme.colorScheme.primary
-                )
-            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Sound Preview Action Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = onPreviewSound,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.height(30.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isPreviewing) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (isPreviewing) "Playing..." else "Preview Sound",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }

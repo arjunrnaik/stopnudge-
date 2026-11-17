@@ -25,15 +25,15 @@ import androidx.compose.ui.unit.sp
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
-import com.wakeme.app.model.VehicleMode
 import com.wakeme.app.service.WakeMeTrackingService
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
  * Screen 3: Active Live Ride Tracking HUD.
- * Real-time satellite GPS countdown (0 cellular data needed), trip progress bar,
- * active deboard note reminder, test alarm button, and stop tracking controls.
+ * Real-time satellite GPS countdown (0 cellular data needed), live speed & ETA telemetry,
+ * trip progress bar, active deboard note reminder, snooze notification, test alarm button,
+ * and stop tracking controls.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,6 +52,11 @@ fun WakeMeActiveTripScreen(
     val reminderNote by viewModel.reminderNote.collectAsState()
 
     val liveDistance by WakeMeTrackingService.liveDistanceMeters.collectAsState()
+    val currentSpeed by WakeMeTrackingService.currentSpeedKmh.collectAsState()
+    val estimatedEta by WakeMeTrackingService.estimatedEtaMinutes.collectAsState()
+    val initialDist by WakeMeTrackingService.initialDistanceMeters.collectAsState()
+    val isSnoozed by WakeMeAlarmController.isSnoozed.collectAsState()
+
     var isTestingAlert by remember { mutableStateOf(false) }
 
     // Pulsing animation for the satellite indicator
@@ -65,6 +70,18 @@ fun WakeMeActiveTripScreen(
         ),
         label = "PulseAlpha"
     )
+
+    // Calculate journey progress percentage (0.0 to 1.0)
+    val progress = remember(liveDistance, initialDist) {
+        val dist = liveDistance
+        val init = initialDist
+        if (dist != null && init != null && init > 0f) {
+            val traveled = (init - dist).coerceAtLeast(0f)
+            (traveled / init).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -165,6 +182,36 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
+            // Snooze Banner (if commuter snoozed the alarm)
+            if (isSnoozed) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Snooze,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Alarm Snoozed (Resuming soon...)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                    }
+                }
+            }
+
             // 2. Giant Live Distance Hero Card
             Surface(
                 modifier = Modifier
@@ -177,7 +224,7 @@ fun WakeMeActiveTripScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 28.dp, horizontal = 20.dp),
+                        .padding(vertical = 24.dp, horizontal = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Row(
@@ -199,7 +246,7 @@ fun WakeMeActiveTripScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     val dist = liveDistance
                     val distanceText = if (dist != null) {
@@ -229,6 +276,38 @@ fun WakeMeActiveTripScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
+                    // Real-time Journey Progress Bar
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Trip Progress",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = "${(progress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
                     val triggerText = if (radiusMeters >= 1000f) {
                         "${(radiusMeters / 1000f).toInt()} km"
                     } else {
@@ -250,7 +329,65 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 3. Deboard Reminder Note (if set)
+            // 3. Live Telemetry HUD: Speed & ETA
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Speed Chip
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "CURRENT SPEED",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                // ETA Chip
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "ESTIMATED ARRIVAL",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = estimatedEta?.let { "⏱️ ~$it min" } ?: "⏱️ Near",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
+            // 4. Deboard Reminder Note (if set)
             if (reminderNote.isNotBlank()) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -287,7 +424,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 4. Trip Setup Details
+            // 5. Trip Setup Details
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -351,7 +488,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 5. Test Arrival Alarm Action
+            // 6. Test Arrival Alarm Action
             OutlinedButton(
                 onClick = {
                     if (!isTestingAlert) {

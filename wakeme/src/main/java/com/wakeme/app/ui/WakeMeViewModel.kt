@@ -8,6 +8,8 @@ import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchRepository
 import com.wakeme.app.data.local.favorites.FavoritePlaceDao
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
+import com.wakeme.app.data.local.favorites.RecentTripDao
+import com.wakeme.app.data.local.favorites.RecentTripEntity
 import com.wakeme.app.data.local.favorites.WakeMeUserDatabase
 import com.wakeme.app.data.local.transit.BusStopEntity
 import com.wakeme.app.data.local.transit.MetroStationEntity
@@ -34,6 +36,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     private val transitDao = TransitDatabase.getInstance(application).transitDao()
     private val favoriteDao = WakeMeUserDatabase.getInstance(application).favoritePlaceDao()
+    private val recentTripDao = WakeMeUserDatabase.getInstance(application).recentTripDao()
     private val searchRepository = SearchRepository(application)
     private var searchJob: Job? = null
 
@@ -48,6 +51,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     // Saved Favorites State
     private val _favorites = MutableStateFlow<List<FavoritePlaceEntity>>(emptyList())
     val favorites: StateFlow<List<FavoritePlaceEntity>> = _favorites.asStateFlow()
+
+    // Recent Commute Trips History State
+    private val _recentTrips = MutableStateFlow<List<RecentTripEntity>>(emptyList())
+    val recentTrips: StateFlow<List<RecentTripEntity>> = _recentTrips.asStateFlow()
 
     // Default Bengaluru coordinates
     val defaultCenter = GeoPoint(12.9716, 77.5946)
@@ -112,6 +119,13 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
+        // Collect recent trip history
+        viewModelScope.launch(Dispatchers.IO) {
+            recentTripDao.getRecentTrips().collect { list ->
+                _recentTrips.value = list
+            }
+        }
+
         // Sync with background tracking service state
         viewModelScope.launch {
             WakeMeTrackingService.isTracking.collect { tracking ->
@@ -165,6 +179,31 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _reminderNote.value = fav.reminderNote
         _cameraMoveTarget.tryEmit(geo)
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
+    }
+
+    fun selectRecentTrip(trip: RecentTripEntity) {
+        val geo = GeoPoint(trip.latitude, trip.longitude)
+        _targetLocation.value = geo
+        _targetName.value = trip.destinationName
+        _radiusMeters.value = trip.radiusMeters
+        try {
+            _selectedVehicleMode.value = VehicleMode.valueOf(trip.vehicleMode)
+        } catch (_: Exception) {}
+        try {
+            _alertMode.value = AlertMode.valueOf(trip.alertMode)
+        } catch (_: Exception) {}
+        try {
+            _audioRouting.value = AudioRouting.valueOf(trip.audioRouting)
+        } catch (_: Exception) {}
+        _reminderNote.value = trip.reminderNote
+        _cameraMoveTarget.tryEmit(geo)
+        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+    }
+
+    fun clearRecentTrips() {
+        viewModelScope.launch(Dispatchers.IO) {
+            recentTripDao.clearRecentTrips()
+        }
     }
 
     fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM") {
@@ -303,6 +342,26 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startTracking(context: Context) {
         val config = getDestinationConfig()
+
+        // Auto-persist into recent trips history
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                recentTripDao.insertRecentTrip(
+                    RecentTripEntity(
+                        destinationName = config.name,
+                        latitude = config.latitude,
+                        longitude = config.longitude,
+                        vehicleMode = config.vehicleMode.name,
+                        radiusMeters = config.radiusMeters,
+                        alertMode = config.alertMode.name,
+                        audioRouting = config.audioRouting.name,
+                        reminderNote = config.reminderNote
+                    )
+                )
+                recentTripDao.trimOldTrips()
+            } catch (_: Exception) {}
+        }
+
         WakeMeTrackingService.start(context, config)
         _isTrackingActive.value = true
         _currentScreen.value = WakeMeScreen.ACTIVE_TRIP

@@ -69,6 +69,7 @@ fun WakeMeLandingScreen(
     val showTransitOverlay by viewModel.showTransitOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
+    val recentTrips by viewModel.recentTrips.collectAsState()
 
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -397,6 +398,67 @@ fun WakeMeLandingScreen(
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                // Recent Commute Destinations (Uber/Rapido style)
+                if (recentTrips.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "RECENT DESTINATIONS",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        TextButton(
+                            onClick = { viewModel.clearRecentTrips() },
+                            contentPadding = PaddingValues(0.dp),
+                            modifier = Modifier.height(24.dp)
+                        ) {
+                            Text("Clear", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        recentTrips.forEach { trip ->
+                            val emoji = if (trip.vehicleMode == "BUS") "🚌" else "🚗"
+                            val radiusStr = if (trip.radiusMeters >= 1000f) "${(trip.radiusMeters / 1000f).toInt()}km" else "${trip.radiusMeters.toInt()}m"
+                            SuggestionChip(
+                                onClick = { viewModel.selectRecentTrip(trip) },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(emoji, fontSize = 14.sp)
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Column {
+                                            Text(
+                                                text = trip.destinationName,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 12.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "Alarm @ $radiusStr",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                },
+                                colors = SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
+                                )
+                            )
+                        }
+                    }
                 }
 
                 // Popular Commuter Hubs Shortcut Row

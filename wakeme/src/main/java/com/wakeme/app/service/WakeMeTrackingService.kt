@@ -70,8 +70,12 @@ class WakeMeTrackingService : Service() {
                 hasAlertFired = false
                 isTracking.value = true
                 activeConfig.value = destinationConfig
+                initialDistanceMeters.value = null
+                currentSpeedKmh.value = null
+                estimatedEtaMinutes.value = null
+                isDeadReckoningActive.value = false
 
-                startForegroundNotification(name, "Initiating GPS tracking...")
+                startForegroundNotification(name, "Initiating hardware GPS tracking...")
                 startLocationUpdates()
             }
         }
@@ -162,6 +166,24 @@ class WakeMeTrackingService : Service() {
         lastDistanceMeters = distanceMeters
         liveDistanceMeters.value = distanceMeters
 
+        // Capture initial trip distance on first satellite lock
+        if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
+            initialDistanceMeters.value = distanceMeters
+        }
+
+        // Live speed & ETA telemetry (pure offline calculation)
+        val speedMps = if (currentLocation.hasSpeed()) currentLocation.speed else 0f
+        val speedKmh = speedMps * 3.6f
+        currentSpeedKmh.value = speedKmh
+
+        if (speedMps > 1.0f) { // Moving > 3.6 km/h
+            val etaSec = (distanceMeters / speedMps).toInt()
+            val etaMin = (etaSec / 60).coerceAtLeast(1)
+            estimatedEtaMinutes.value = etaMin
+        } else {
+            estimatedEtaMinutes.value = null
+        }
+
         if (distanceMeters <= config.radiusMeters) {
             if (!hasAlertFired) {
                 hasAlertFired = true
@@ -173,7 +195,8 @@ class WakeMeTrackingService : Service() {
             } else {
                 "${distanceMeters.toInt()}m remaining"
             }
-            updateNotification(distText)
+            val etaText = estimatedEtaMinutes.value?.let { " • ~$it min" } ?: ""
+            updateNotification("$distText$etaText")
         }
     }
 
@@ -216,10 +239,15 @@ class WakeMeTrackingService : Service() {
             fusedLocationClient.removeLocationUpdates(it)
         }
         locationCallback = null
+        WakeMeAlarmController.cancelSnooze()
         WakeMeAlarmController.stopAlert(this)
         hasAlertFired = false
         isTracking.value = false
         liveDistanceMeters.value = null
+        currentSpeedKmh.value = null
+        estimatedEtaMinutes.value = null
+        initialDistanceMeters.value = null
+        isDeadReckoningActive.value = false
         activeConfig.value = null
     }
 
@@ -247,6 +275,10 @@ class WakeMeTrackingService : Service() {
         const val EXTRA_NOTE = "extra_note"
 
         val liveDistanceMeters = MutableStateFlow<Float?>(null)
+        val currentSpeedKmh = MutableStateFlow<Float?>(null)
+        val estimatedEtaMinutes = MutableStateFlow<Int?>(null)
+        val initialDistanceMeters = MutableStateFlow<Float?>(null)
+        val isDeadReckoningActive = MutableStateFlow(false)
         val isTracking = MutableStateFlow(false)
         val activeConfig = MutableStateFlow<DestinationConfig?>(null)
 

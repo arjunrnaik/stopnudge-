@@ -6,13 +6,17 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [FavoritePlaceEntity::class],
-    version = 1,
+    entities = [
+        FavoritePlaceEntity::class,
+        RecentTripEntity::class
+    ],
+    version = 2,
     exportSchema = false
 )
 abstract class WakeMeUserDatabase : RoomDatabase() {
 
     abstract fun favoritePlaceDao(): FavoritePlaceDao
+    abstract fun recentTripDao(): RecentTripDao
 
     companion object {
         private const val DB_NAME = "wakeme_user.db"

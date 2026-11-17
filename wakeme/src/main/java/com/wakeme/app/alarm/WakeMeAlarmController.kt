@@ -14,6 +14,14 @@ import android.os.VibratorManager
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 object WakeMeAlarmController {
 
@@ -21,11 +29,19 @@ object WakeMeAlarmController {
     private var vibrator: Vibrator? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var isPlaying = false
+    private var lastConfig: DestinationConfig? = null
+    private var snoozeJob: Job? = null
+
+    private val _isSnoozed = MutableStateFlow(false)
+    val isSnoozed: StateFlow<Boolean> = _isSnoozed.asStateFlow()
 
     @Synchronized
     fun triggerAlert(context: Context, config: DestinationConfig) {
         if (isPlaying) return
         isPlaying = true
+        lastConfig = config
+        _isSnoozed.value = false
+        snoozeJob?.cancel()
 
         val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -122,8 +138,27 @@ object WakeMeAlarmController {
                 prepare()
                 start()
             }
-        } catch (e: Exception) {
-            // Fallback: if MediaPlayer fails, ensure vibration is active
+        } catch (_: Exception) {
+            // Fallback: if MediaPlayer fails, ensure vibration remains active
+        }
+    }
+
+    /**
+     * Pauses alert sound/vibration for specified duration (default 2 minutes),
+     * then automatically sounds the alert again.
+     */
+    fun snoozeAlert(context: Context, durationMs: Long = 120_000L, onSnoozeFired: (() -> Unit)? = null) {
+        val configToResume = lastConfig
+        stopAlert(context)
+        _isSnoozed.value = true
+
+        snoozeJob = CoroutineScope(Dispatchers.Main).launch {
+            delay(durationMs)
+            _isSnoozed.value = false
+            if (configToResume != null) {
+                triggerAlert(context, configToResume)
+                onSnoozeFired?.invoke()
+            }
         }
     }
 
@@ -148,6 +183,12 @@ object WakeMeAlarmController {
             }
         } catch (_: Exception) {}
         wakeLock = null
+    }
+
+    fun cancelSnooze() {
+        snoozeJob?.cancel()
+        snoozeJob = null
+        _isSnoozed.value = false
     }
 
     fun isAlertActive(): Boolean = isPlaying
