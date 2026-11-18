@@ -8,17 +8,31 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.Locale
 
-data class RouteResult(
+data class RouteCandidate(
+    val id: String,
     val distanceMeters: Float,
     val durationSeconds: Float,
     val points: List<GeoPoint>,
-    val isRoadRoute: Boolean
+    val isFastest: Boolean = false,
+    val summary: String = ""
 )
+
+data class RouteResult(
+    val fastestRoute: RouteCandidate,
+    val alternativeRoutes: List<RouteCandidate> = emptyList(),
+    val isRoadRoute: Boolean = true
+) {
+    // Backward compatibility accessors
+    val distanceMeters: Float get() = fastestRoute.distanceMeters
+    val durationSeconds: Float get() = fastestRoute.durationSeconds
+    val points: List<GeoPoint> get() = fastestRoute.points
+}
 
 object RoadRoutingRepository {
 
     /**
      * Fetches real road driving distance and route polyline coordinates via OSRM.
+     * Evaluates multiple candidate alternatives and selects the earliest arrival (fastest) route.
      * If offline or request fails, seamlessly falls back to road-curvature estimation.
      */
     suspend fun getRoute(
@@ -32,7 +46,7 @@ object RoadRoutingRepository {
         try {
             val urlString = String.format(
                 Locale.US,
-                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson",
+                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&alternatives=true",
                 startLon, startLat, destLon, destLat
             )
             val url = URL(urlString)
@@ -49,25 +63,51 @@ object RoadRoutingRepository {
                 if (json.optString("code") == "Ok") {
                     val routes = json.getJSONArray("routes")
                     if (routes.length() > 0) {
-                        val firstRoute = routes.getJSONObject(0)
-                        val roadDistance = firstRoute.getDouble("distance").toFloat()
-                        val duration = firstRoute.getDouble("duration").toFloat()
+                        val candidates = mutableListOf<RouteCandidate>()
 
-                        val geometry = firstRoute.getJSONObject("geometry")
-                        val coords = geometry.getJSONArray("coordinates")
-                        val polylinePoints = mutableListOf<GeoPoint>()
+                        for (i in 0 until routes.length()) {
+                            val routeObj = routes.getJSONObject(i)
+                            val roadDistance = routeObj.getDouble("distance").toFloat()
+                            val duration = routeObj.getDouble("duration").toFloat()
 
-                        for (i in 0 until coords.length()) {
-                            val coordPair = coords.getJSONArray(i)
-                            val lon = coordPair.getDouble(0)
-                            val lat = coordPair.getDouble(1)
-                            polylinePoints.add(GeoPoint(lat, lon))
+                            val geometry = routeObj.getJSONObject("geometry")
+                            val coords = geometry.getJSONArray("coordinates")
+                            val polylinePoints = mutableListOf<GeoPoint>()
+
+                            for (j in 0 until coords.length()) {
+                                val coordPair = coords.getJSONArray(j)
+                                val lon = coordPair.getDouble(0)
+                                val lat = coordPair.getDouble(1)
+                                polylinePoints.add(GeoPoint(lat, lon))
+                            }
+
+                            candidates.add(
+                                RouteCandidate(
+                                    id = "route_$i",
+                                    distanceMeters = roadDistance,
+                                    durationSeconds = duration,
+                                    points = polylinePoints
+                                )
+                            )
+                        }
+
+                        // Sort by duration ascending: earliest arrival time comes first!
+                        val sorted = candidates.sortedBy { it.durationSeconds }
+                        val fastest = sorted.first().copy(
+                            isFastest = true,
+                            summary = "⚡ Fastest (${(sorted.first().durationSeconds / 60).toInt().coerceAtLeast(1)}m)"
+                        )
+
+                        val alternatives = sorted.drop(1).map { route ->
+                            val deltaSec = route.durationSeconds - fastest.durationSeconds
+                            val deltaMin = (deltaSec / 60).toInt()
+                            val summaryStr = if (deltaMin > 0) "+$deltaMin min" else "Alt"
+                            route.copy(summary = summaryStr)
                         }
 
                         return@withContext RouteResult(
-                            distanceMeters = roadDistance,
-                            durationSeconds = duration,
-                            points = polylinePoints,
+                            fastestRoute = fastest,
+                            alternativeRoutes = alternatives,
                             isRoadRoute = true
                         )
                     }
@@ -84,11 +124,18 @@ object RoadRoutingRepository {
             GeoPoint(startLat, startLon),
             GeoPoint(destLat, destLon)
         )
-
-        RouteResult(
+        val fallbackRoute = RouteCandidate(
+            id = "fallback",
             distanceMeters = estimatedRoadDistance,
             durationSeconds = estimatedDuration,
             points = directPoints,
+            isFastest = true,
+            summary = "Direct"
+        )
+
+        RouteResult(
+            fastestRoute = fallbackRoute,
+            alternativeRoutes = emptyList(),
             isRoadRoute = false
         )
     }

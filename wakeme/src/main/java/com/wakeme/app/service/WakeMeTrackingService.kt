@@ -26,6 +26,7 @@ import com.wakeme.app.WakeMeApp
 import com.wakeme.app.alarm.AlarmDismissActivity
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.data.RoadRoutingRepository
+import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
@@ -41,6 +42,7 @@ class WakeMeTrackingService : Service() {
     private var lastDistanceMeters: Float = Float.MAX_VALUE
     private var hasAlertFired = false
     private var lastRouteFetchTime: Long = 0L
+    private var consecutiveOffRouteCount = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -83,6 +85,9 @@ class WakeMeTrackingService : Service() {
                 currentSpeedKmh.value = null
                 estimatedEtaMinutes.value = null
                 routePolyline.value = emptyList()
+                alternativeRoutes.value = emptyList()
+                isRerouting.value = false
+                consecutiveOffRouteCount = 0
                 isRoadRouteActive.value = false
                 currentBearing.value = null
                 currentLocationPoint.value = null
@@ -191,9 +196,49 @@ class WakeMeTrackingService : Service() {
         val speedKmh = speedMps * 3.6f
         currentSpeedKmh.value = speedKmh
 
-        // 3. Road Distance & Route Geometry Query (OSRM with offline fallback)
+        // 3. Dynamic Off-Route Deviation Detection & Dynamic Rerouting (Google Maps style)
+        val currentPoly = routePolyline.value
+        var triggeredOffRouteReroute = false
+        if (currentPoly.size >= 2 && !isRerouting.value) {
+            val offDist = distanceToPolylineMeters(currentLocation.latitude, currentLocation.longitude, currentPoly)
+            if (offDist > 55.0 && speedMps > 0.8f) {
+                consecutiveOffRouteCount++
+                if (consecutiveOffRouteCount >= 2) {
+                    consecutiveOffRouteCount = 0
+                    triggeredOffRouteReroute = true
+                    isRerouting.value = true
+                    serviceScope.launch {
+                        try {
+                            val route = RoadRoutingRepository.getRoute(
+                                currentLocation.latitude,
+                                currentLocation.longitude,
+                                config.latitude,
+                                config.longitude
+                            )
+                            liveDistanceMeters.value = route.distanceMeters
+                            routePolyline.value = route.points
+                            alternativeRoutes.value = route.alternativeRoutes
+                            isRoadRouteActive.value = route.isRoadRoute
+                            lastRouteFetchTime = System.currentTimeMillis()
+
+                            if (speedMps > 1.0f) {
+                                val etaSec = (route.distanceMeters / speedMps).toInt()
+                                val etaMin = (etaSec / 60).coerceAtLeast(1)
+                                estimatedEtaMinutes.value = etaMin
+                            }
+                        } finally {
+                            isRerouting.value = false
+                        }
+                    }
+                }
+            } else {
+                consecutiveOffRouteCount = 0
+            }
+        }
+
+        // 4. Periodic Road Distance & Multi-Route Fetch (every 20s or on startup)
         val now = System.currentTimeMillis()
-        if (now - lastRouteFetchTime > 15_000L || liveDistanceMeters.value == null) {
+        if (!triggeredOffRouteReroute && (now - lastRouteFetchTime > 20_000L || liveDistanceMeters.value == null)) {
             lastRouteFetchTime = now
             serviceScope.launch {
                 val route = RoadRoutingRepository.getRoute(
@@ -204,6 +249,7 @@ class WakeMeTrackingService : Service() {
                 )
                 liveDistanceMeters.value = route.distanceMeters
                 routePolyline.value = route.points
+                alternativeRoutes.value = route.alternativeRoutes
                 isRoadRouteActive.value = route.isRoadRoute
 
                 if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
@@ -216,7 +262,7 @@ class WakeMeTrackingService : Service() {
                     estimatedEtaMinutes.value = etaMin
                 }
             }
-        } else {
+        } else if (!triggeredOffRouteReroute) {
             // Extrapolate distance decrease between routing fetches
             if (liveDistanceMeters.value == null) {
                 liveDistanceMeters.value = straightDist * 1.28f
@@ -295,6 +341,9 @@ class WakeMeTrackingService : Service() {
         estimatedEtaMinutes.value = null
         initialDistanceMeters.value = null
         routePolyline.value = emptyList()
+        alternativeRoutes.value = emptyList()
+        isRerouting.value = false
+        consecutiveOffRouteCount = 0
         isRoadRouteActive.value = false
         currentBearing.value = null
         currentLocationPoint.value = null
@@ -331,6 +380,8 @@ class WakeMeTrackingService : Service() {
         val estimatedEtaMinutes = MutableStateFlow<Int?>(null)
         val initialDistanceMeters = MutableStateFlow<Float?>(null)
         val routePolyline = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val alternativeRoutes = MutableStateFlow<List<RouteCandidate>>(emptyList())
+        val isRerouting = MutableStateFlow(false)
         val isRoadRouteActive = MutableStateFlow(false)
         val currentBearing = MutableStateFlow<Float?>(null)
         val currentLocationPoint = MutableStateFlow<GeoPoint?>(null)
@@ -361,6 +412,66 @@ class WakeMeTrackingService : Service() {
                 action = ACTION_STOP_TRACKING
             }
             context.startService(intent)
+        }
+
+        fun selectAlternativeRoute(candidate: RouteCandidate) {
+            routePolyline.value = candidate.points
+            liveDistanceMeters.value = candidate.distanceMeters
+            val speedKmh = currentSpeedKmh.value ?: 0f
+            val speedMps = speedKmh / 3.6f
+            if (speedMps > 1.0f) {
+                val etaSec = (candidate.distanceMeters / speedMps).toInt()
+                estimatedEtaMinutes.value = (etaSec / 60).coerceAtLeast(1)
+            }
+        }
+
+        /**
+         * Computes minimum cross-track distance from a GPS fix to the active polyline.
+         */
+        fun distanceToPolylineMeters(lat: Double, lon: Double, polyline: List<GeoPoint>): Double {
+            if (polyline.isEmpty()) return Double.MAX_VALUE
+            if (polyline.size == 1) {
+                return haversineDistanceMeters(lat, lon, polyline[0].latitude, polyline[0].longitude)
+            }
+            var minDistance = Double.MAX_VALUE
+            for (i in 0 until polyline.size - 1) {
+                val p1 = polyline[i]
+                val p2 = polyline[i + 1]
+                val d = distanceToSegmentMeters(lat, lon, p1.latitude, p1.longitude, p2.latitude, p2.longitude)
+                if (d < minDistance) {
+                    minDistance = d
+                    if (minDistance < 15.0) break
+                }
+            }
+            return minDistance
+        }
+
+        /**
+         * Fast metric perpendicular distance from point (lat, lon) to segment (lat1, lon1)-(lat2, lon2).
+         */
+        fun distanceToSegmentMeters(
+            lat: Double, lon: Double,
+            lat1: Double, lon1: Double,
+            lat2: Double, lon2: Double
+        ): Double {
+            val cosLat = Math.cos(Math.toRadians(lat1))
+            val mPerDegLat = 111320.0
+            val mPerDegLon = 111320.0 * cosLat
+
+            val x = (lon - lon1) * mPerDegLon
+            val y = (lat - lat1) * mPerDegLat
+            val dx = (lon2 - lon1) * mPerDegLon
+            val dy = (lat2 - lat1) * mPerDegLat
+
+            val segLenSq = dx * dx + dy * dy
+            if (segLenSq < 1e-6) {
+                return Math.hypot(x, y)
+            }
+
+            val t = ((x * dx + y * dy) / segLenSq).coerceIn(0.0, 1.0)
+            val projX = t * dx
+            val projY = t * dy
+            return Math.hypot(x - projX, y - projY)
         }
 
         /**

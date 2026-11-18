@@ -1,8 +1,10 @@
 package com.wakeme.app.ui
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wakeme.app.alarm.WakeMeAlarmController
+import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.service.WakeMeTrackingService
@@ -72,10 +75,14 @@ fun WakeMeActiveTripScreen(
     val initialDist by WakeMeTrackingService.initialDistanceMeters.collectAsState()
     val isSnoozed by WakeMeAlarmController.isSnoozed.collectAsState()
     val routePoints by WakeMeTrackingService.routePolyline.collectAsState()
+    val alternativeRoutes by WakeMeTrackingService.alternativeRoutes.collectAsState()
+    val isRerouting by WakeMeTrackingService.isRerouting.collectAsState()
     val isRoadRoute by WakeMeTrackingService.isRoadRouteActive.collectAsState()
+    val currentBearing by WakeMeTrackingService.currentBearing.collectAsState()
 
     var isTestingAlert by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(false) }
+    var isHeadingUp by remember { mutableStateOf(true) }
 
     // Pulsing animation for the satellite indicator
     val infiniteTransition = rememberInfiniteTransition(label = "Pulse")
@@ -407,6 +414,39 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
+            // Google Maps-Style "Recalculating..." Banner
+            AnimatedVisibility(
+                visible = isRerouting,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Recalculating earliest route...",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                    }
+                }
+            }
+
             // 4. Moving Navigation Map Box (Expandable)
             Surface(
                 modifier = Modifier
@@ -447,23 +487,70 @@ fun WakeMeActiveTripScreen(
                                     outlinePaint.strokeWidth = 3f
                                 }
                                 overlays.add(geofenceCircle)
-
-                                val poly = Polyline(this).apply {
-                                    outlinePaint.color = 0xFF1976D2.toInt()
-                                    outlinePaint.strokeWidth = 8f
-                                }
-                                overlays.add(poly)
                             }
                         },
                         update = { map ->
-                            val poly = map.overlays.filterIsInstance<Polyline>().firstOrNull()
-                            if (poly != null && routePoints.isNotEmpty()) {
-                                poly.setPoints(routePoints)
-                                map.invalidate()
+                            // Remove existing route polylines
+                            val currentPolys = map.overlays.filterIsInstance<Polyline>()
+                            map.overlays.removeAll(currentPolys)
+
+                            // 1. Draw alternative routes underneath in muted slate gray
+                            for (alt in alternativeRoutes) {
+                                val altPoly = Polyline(map).apply {
+                                    setPoints(alt.points)
+                                    outlinePaint.color = 0xFF90A4AE.toInt()
+                                    outlinePaint.strokeWidth = 6f
+                                }
+                                map.overlays.add(altPoly)
                             }
+
+                            // 2. Draw fastest / active route on top in vibrant blue
+                            if (routePoints.isNotEmpty()) {
+                                val activePoly = Polyline(map).apply {
+                                    setPoints(routePoints)
+                                    outlinePaint.color = 0xFF1976D2.toInt()
+                                    outlinePaint.strokeWidth = 9f
+                                }
+                                map.overlays.add(activePoly)
+                            }
+
+                            // 3. Dynamic Heading-Up Rotation: Map turns with vehicle
+                            if (isHeadingUp && currentBearing != null) {
+                                map.mapOrientation = -currentBearing!!
+                            } else {
+                                map.mapOrientation = 0f
+                            }
+
+                            map.invalidate()
                         },
                         modifier = Modifier.fillMaxSize()
                     )
+
+                    // Compass Mode Toggle FAB (Heading-Up vs North-Up)
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { isHeadingUp = !isHeadingUp }
+                            .shadow(4.dp, RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(if (isHeadingUp) "🧭" else "⬆️", fontSize = 12.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = if (isHeadingUp) "Heading" else "North",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
 
                     // Header Bar on Mini-Map
                     Row(
@@ -519,6 +606,41 @@ fun WakeMeActiveTripScreen(
                                 )
                             }
                         }
+                    }
+                }
+            }
+
+            // Alternative Routes Selection Chips
+            if (alternativeRoutes.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "ROUTES:",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    FilterChip(
+                        selected = true,
+                        onClick = { /* active */ },
+                        label = { Text("⚡ Earliest") },
+                        leadingIcon = {
+                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                        }
+                    )
+                    alternativeRoutes.forEach { alt ->
+                        FilterChip(
+                            selected = false,
+                            onClick = {
+                                WakeMeTrackingService.selectAlternativeRoute(alt)
+                            },
+                            label = { Text(if (alt.summary.isNotBlank()) alt.summary else "Alt") }
+                        )
                     }
                 }
             }
@@ -695,83 +817,170 @@ fun WakeMeActiveTripScreen(
                                 outlinePaint.strokeWidth = 4f
                             }
                             overlays.add(geofenceCircle)
-
-                            val poly = Polyline(this).apply {
-                                outlinePaint.color = 0xFF1976D2.toInt()
-                                outlinePaint.strokeWidth = 10f
-                            }
-                            overlays.add(poly)
                         }
                     },
                     update = { map ->
-                        val poly = map.overlays.filterIsInstance<Polyline>().firstOrNull()
-                        if (poly != null && routePoints.isNotEmpty()) {
-                            poly.setPoints(routePoints)
-                            map.invalidate()
+                        // Remove existing route polylines
+                        val currentPolys = map.overlays.filterIsInstance<Polyline>()
+                        map.overlays.removeAll(currentPolys)
+
+                        // 1. Draw alternative routes underneath in muted slate gray
+                        for (alt in alternativeRoutes) {
+                            val altPoly = Polyline(map).apply {
+                                setPoints(alt.points)
+                                outlinePaint.color = 0xFF90A4AE.toInt()
+                                outlinePaint.strokeWidth = 7f
+                            }
+                            map.overlays.add(altPoly)
                         }
+
+                        // 2. Draw fastest / active route on top in vibrant blue
+                        if (routePoints.isNotEmpty()) {
+                            val activePoly = Polyline(map).apply {
+                                setPoints(routePoints)
+                                outlinePaint.color = 0xFF1976D2.toInt()
+                                outlinePaint.strokeWidth = 11f
+                            }
+                            map.overlays.add(activePoly)
+                        }
+
+                        // 3. Dynamic Heading-Up Rotation
+                        if (isHeadingUp && currentBearing != null) {
+                            map.mapOrientation = -currentBearing!!
+                        } else {
+                            map.mapOrientation = 0f
+                        }
+
+                        map.invalidate()
                     },
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Close Button Top-Right
-                IconButton(
-                    onClick = { isMapExpanded = false },
+                // Top Controls: Compass Toggle (Left) & Close Button (Right)
+                Row(
                     modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(16.dp)
-                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Close Expanded Map",
-                        tint = Color.White
-                    )
-                }
-
-                // Bottom Floating Telemetry Overlay
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 32.dp, start = 20.dp, end = 20.dp)
-                        .shadow(8.dp, RoundedCornerShape(16.dp)),
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { isHeadingUp = !isHeadingUp }
+                            .shadow(4.dp, RoundedCornerShape(14.dp)),
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
                     ) {
-                        Column {
-                            val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(if (isHeadingUp) "🧭" else "⬆️", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (dist != null) {
-                                    if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
-                                } else "...",
-                                style = MaterialTheme.typography.titleMedium,
+                                text = if (isHeadingUp) "Heading-Up (Auto)" else "North-Up (Locked)",
+                                style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            Text("Remaining", style = MaterialTheme.typography.labelSmall)
                         }
-                        VerticalDivider(modifier = Modifier.height(28.dp))
-                        Column {
+                    }
+
+                    IconButton(
+                        onClick = { isMapExpanded = false },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close Expanded Map",
+                            tint = Color.White
+                        )
+                    }
+                }
+
+                // Bottom Floating Telemetry Overlay & Route Switcher
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (alternativeRoutes.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
-                                text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
+                                "ROUTES:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
-                            Text("Speed", style = MaterialTheme.typography.labelSmall)
+                            FilterChip(
+                                selected = true,
+                                onClick = { /* active */ },
+                                label = { Text("⚡ Earliest") }
+                            )
+                            alternativeRoutes.forEach { alt ->
+                                FilterChip(
+                                    selected = false,
+                                    onClick = {
+                                        WakeMeTrackingService.selectAlternativeRoute(alt)
+                                    },
+                                    label = { Text(if (alt.summary.isNotBlank()) alt.summary else "Alt") }
+                                )
+                            }
                         }
-                        VerticalDivider(modifier = Modifier.height(28.dp))
-                        Column {
-                            Text(
-                                text = estimatedEta?.let { "~$it min" } ?: "Near",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text("ETA", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    Surface(
+                        modifier = Modifier.shadow(8.dp, RoundedCornerShape(16.dp)),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 6.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
+                                Text(
+                                    text = if (dist != null) {
+                                        if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
+                                    } else "...",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text("Remaining", style = MaterialTheme.typography.labelSmall)
+                            }
+                            VerticalDivider(modifier = Modifier.height(28.dp))
+                            Column {
+                                Text(
+                                    text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text("Speed", style = MaterialTheme.typography.labelSmall)
+                            }
+                            VerticalDivider(modifier = Modifier.height(28.dp))
+                            Column {
+                                Text(
+                                    text = estimatedEta?.let { "~$it min" } ?: "Near",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text("ETA", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }

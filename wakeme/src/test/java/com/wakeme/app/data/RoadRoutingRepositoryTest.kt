@@ -22,6 +22,15 @@ class RoadRoutingRepositoryTest {
         assertTrue("Distance should be positive and >= 4000m, was ${result.distanceMeters}", result.distanceMeters >= 4000f)
         assertTrue("Duration should be positive, was ${result.durationSeconds}", result.durationSeconds > 0f)
         assertTrue("Should contain at least 2 points (origin & destination), was ${result.points.size}", result.points.size >= 2)
+        assertTrue("Fastest route should have isFastest=true", result.fastestRoute.isFastest)
+
+        // If alternatives exist, verify fastest route has shortest duration (earliest ETA)
+        for (alt in result.alternativeRoutes) {
+            assertTrue(
+                "Fastest route duration (${result.fastestRoute.durationSeconds}s) must be <= alternative duration (${alt.durationSeconds}s)",
+                result.fastestRoute.durationSeconds <= alt.durationSeconds
+            )
+        }
     }
 
     @Test
