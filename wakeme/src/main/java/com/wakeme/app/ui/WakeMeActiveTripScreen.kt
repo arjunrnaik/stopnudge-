@@ -76,6 +76,8 @@ fun WakeMeActiveTripScreen(
     val isSnoozed by WakeMeAlarmController.isSnoozed.collectAsState()
     val routePoints by WakeMeTrackingService.routePolyline.collectAsState()
     val alternativeRoutes by WakeMeTrackingService.alternativeRoutes.collectAsState()
+    val allCandidateRoutes by WakeMeTrackingService.allCandidateRoutes.collectAsState()
+    val selectedRouteId by WakeMeTrackingService.selectedRouteId.collectAsState()
     val isRerouting by WakeMeTrackingService.isRerouting.collectAsState()
     val isRoadRoute by WakeMeTrackingService.isRoadRouteActive.collectAsState()
     val currentBearing by WakeMeTrackingService.currentBearing.collectAsState()
@@ -499,7 +501,12 @@ fun WakeMeActiveTripScreen(
                                 val altPoly = Polyline(map).apply {
                                     setPoints(alt.points)
                                     outlinePaint.color = 0xFF90A4AE.toInt()
-                                    outlinePaint.strokeWidth = 6f
+                                    outlinePaint.strokeWidth = 7f
+                                    infoWindow = null
+                                    setOnClickListener { _, _, _ ->
+                                        WakeMeTrackingService.selectRoute(alt.id)
+                                        true
+                                    }
                                 }
                                 map.overlays.add(altPoly)
                             }
@@ -509,7 +516,9 @@ fun WakeMeActiveTripScreen(
                                 val activePoly = Polyline(map).apply {
                                     setPoints(routePoints)
                                     outlinePaint.color = 0xFF1976D2.toInt()
-                                    outlinePaint.strokeWidth = 9f
+                                    outlinePaint.strokeWidth = 10f
+                                    infoWindow = null
+                                    setOnClickListener { _, _, _ -> true }
                                 }
                                 map.overlays.add(activePoly)
                             }
@@ -611,7 +620,7 @@ fun WakeMeActiveTripScreen(
             }
 
             // Alternative Routes Selection Chips
-            if (alternativeRoutes.isNotEmpty()) {
+            if (allCandidateRoutes.size > 1) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -625,21 +634,23 @@ fun WakeMeActiveTripScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    FilterChip(
-                        selected = true,
-                        onClick = { /* active */ },
-                        label = { Text("⚡ Earliest") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-                        }
-                    )
-                    alternativeRoutes.forEach { alt ->
+                    allCandidateRoutes.forEach { route ->
+                        val isSelected = route.id == selectedRouteId
                         FilterChip(
-                            selected = false,
+                            selected = isSelected,
                             onClick = {
-                                WakeMeTrackingService.selectAlternativeRoute(alt)
+                                WakeMeTrackingService.selectRoute(route.id)
                             },
-                            label = { Text(if (alt.summary.isNotBlank()) alt.summary else "Alt") }
+                            label = { Text(route.summary) },
+                            leadingIcon = if (isSelected) {
+                                {
+                                    Icon(
+                                        Icons.Default.Check,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            } else null
                         )
                     }
                 }
@@ -830,6 +841,11 @@ fun WakeMeActiveTripScreen(
                                 setPoints(alt.points)
                                 outlinePaint.color = 0xFF90A4AE.toInt()
                                 outlinePaint.strokeWidth = 7f
+                                infoWindow = null
+                                setOnClickListener { _, _, _ ->
+                                    WakeMeTrackingService.selectRoute(alt.id)
+                                    true
+                                }
                             }
                             map.overlays.add(altPoly)
                         }
@@ -840,6 +856,8 @@ fun WakeMeActiveTripScreen(
                                 setPoints(routePoints)
                                 outlinePaint.color = 0xFF1976D2.toInt()
                                 outlinePaint.strokeWidth = 11f
+                                infoWindow = null
+                                setOnClickListener { _, _, _ -> true }
                             }
                             map.overlays.add(activePoly)
                         }
@@ -909,7 +927,7 @@ fun WakeMeActiveTripScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    if (alternativeRoutes.isNotEmpty()) {
+                    if (allCandidateRoutes.size > 1) {
                         Row(
                             modifier = Modifier
                                 .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
@@ -923,18 +941,23 @@ fun WakeMeActiveTripScreen(
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            FilterChip(
-                                selected = true,
-                                onClick = { /* active */ },
-                                label = { Text("⚡ Earliest") }
-                            )
-                            alternativeRoutes.forEach { alt ->
+                            allCandidateRoutes.forEach { route ->
+                                val isSelected = route.id == selectedRouteId
                                 FilterChip(
-                                    selected = false,
+                                    selected = isSelected,
                                     onClick = {
-                                        WakeMeTrackingService.selectAlternativeRoute(alt)
+                                        WakeMeTrackingService.selectRoute(route.id)
                                     },
-                                    label = { Text(if (alt.summary.isNotBlank()) alt.summary else "Alt") }
+                                    label = { Text(route.summary) },
+                                    leadingIcon = if (isSelected) {
+                                        {
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    } else null
                                 )
                             }
                         }

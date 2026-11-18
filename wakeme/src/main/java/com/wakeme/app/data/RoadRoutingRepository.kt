@@ -94,15 +94,16 @@ object RoadRoutingRepository {
                         // Sort by duration ascending: earliest arrival time comes first!
                         val sorted = candidates.sortedBy { it.durationSeconds }
                         val fastest = sorted.first().copy(
+                            id = "fastest",
                             isFastest = true,
                             summary = "⚡ Fastest (${(sorted.first().durationSeconds / 60).toInt().coerceAtLeast(1)}m)"
                         )
 
-                        val alternatives = sorted.drop(1).map { route ->
+                        val alternatives = sorted.drop(1).mapIndexed { idx, route ->
                             val deltaSec = route.durationSeconds - fastest.durationSeconds
                             val deltaMin = (deltaSec / 60).toInt()
-                            val summaryStr = if (deltaMin > 0) "+$deltaMin min" else "Alt"
-                            route.copy(summary = summaryStr)
+                            val summaryStr = if (deltaMin > 0) "+$deltaMin min" else "Alt ${idx + 1}"
+                            route.copy(id = "alt_$idx", summary = summaryStr)
                         }
 
                         return@withContext RouteResult(

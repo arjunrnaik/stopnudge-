@@ -86,6 +86,8 @@ class WakeMeTrackingService : Service() {
                 estimatedEtaMinutes.value = null
                 routePolyline.value = emptyList()
                 alternativeRoutes.value = emptyList()
+                allCandidateRoutes.value = emptyList()
+                selectedRouteId.value = "fastest"
                 isRerouting.value = false
                 consecutiveOffRouteCount = 0
                 isRoadRouteActive.value = false
@@ -215,14 +217,20 @@ class WakeMeTrackingService : Service() {
                                 config.latitude,
                                 config.longitude
                             )
-                            liveDistanceMeters.value = route.distanceMeters
-                            routePolyline.value = route.points
-                            alternativeRoutes.value = route.alternativeRoutes
+                            val allRoutes = listOf(route.fastestRoute) + route.alternativeRoutes
+                            allCandidateRoutes.value = allRoutes
+
+                            val currentSelId = selectedRouteId.value
+                            val activeRoute = allRoutes.find { it.id == currentSelId } ?: route.fastestRoute
+                            selectedRouteId.value = activeRoute.id
+                            routePolyline.value = activeRoute.points
+                            alternativeRoutes.value = allRoutes.filter { it.id != activeRoute.id }
+                            liveDistanceMeters.value = activeRoute.distanceMeters
                             isRoadRouteActive.value = route.isRoadRoute
                             lastRouteFetchTime = System.currentTimeMillis()
 
                             if (speedMps > 1.0f) {
-                                val etaSec = (route.distanceMeters / speedMps).toInt()
+                                val etaSec = (activeRoute.distanceMeters / speedMps).toInt()
                                 val etaMin = (etaSec / 60).coerceAtLeast(1)
                                 estimatedEtaMinutes.value = etaMin
                             }
@@ -247,17 +255,23 @@ class WakeMeTrackingService : Service() {
                     config.latitude,
                     config.longitude
                 )
-                liveDistanceMeters.value = route.distanceMeters
-                routePolyline.value = route.points
-                alternativeRoutes.value = route.alternativeRoutes
+                val allRoutes = listOf(route.fastestRoute) + route.alternativeRoutes
+                allCandidateRoutes.value = allRoutes
+
+                val currentSelId = selectedRouteId.value
+                val activeRoute = allRoutes.find { it.id == currentSelId } ?: route.fastestRoute
+                selectedRouteId.value = activeRoute.id
+                routePolyline.value = activeRoute.points
+                alternativeRoutes.value = allRoutes.filter { it.id != activeRoute.id }
+                liveDistanceMeters.value = activeRoute.distanceMeters
                 isRoadRouteActive.value = route.isRoadRoute
 
                 if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
-                    initialDistanceMeters.value = route.distanceMeters
+                    initialDistanceMeters.value = activeRoute.distanceMeters
                 }
 
                 if (speedMps > 1.0f) {
-                    val etaSec = (route.distanceMeters / speedMps).toInt()
+                    val etaSec = (activeRoute.distanceMeters / speedMps).toInt()
                     val etaMin = (etaSec / 60).coerceAtLeast(1)
                     estimatedEtaMinutes.value = etaMin
                 }
@@ -342,6 +356,8 @@ class WakeMeTrackingService : Service() {
         initialDistanceMeters.value = null
         routePolyline.value = emptyList()
         alternativeRoutes.value = emptyList()
+        allCandidateRoutes.value = emptyList()
+        selectedRouteId.value = null
         isRerouting.value = false
         consecutiveOffRouteCount = 0
         isRoadRouteActive.value = false
@@ -381,6 +397,8 @@ class WakeMeTrackingService : Service() {
         val initialDistanceMeters = MutableStateFlow<Float?>(null)
         val routePolyline = MutableStateFlow<List<GeoPoint>>(emptyList())
         val alternativeRoutes = MutableStateFlow<List<RouteCandidate>>(emptyList())
+        val allCandidateRoutes = MutableStateFlow<List<RouteCandidate>>(emptyList())
+        val selectedRouteId = MutableStateFlow<String?>("fastest")
         val isRerouting = MutableStateFlow(false)
         val isRoadRouteActive = MutableStateFlow(false)
         val currentBearing = MutableStateFlow<Float?>(null)
@@ -414,15 +432,24 @@ class WakeMeTrackingService : Service() {
             context.startService(intent)
         }
 
-        fun selectAlternativeRoute(candidate: RouteCandidate) {
-            routePolyline.value = candidate.points
-            liveDistanceMeters.value = candidate.distanceMeters
+        fun selectRoute(routeId: String) {
+            val all = allCandidateRoutes.value
+            val target = all.find { it.id == routeId } ?: return
+            selectedRouteId.value = target.id
+            routePolyline.value = target.points
+            alternativeRoutes.value = all.filter { it.id != target.id }
+            liveDistanceMeters.value = target.distanceMeters
+
             val speedKmh = currentSpeedKmh.value ?: 0f
             val speedMps = speedKmh / 3.6f
             if (speedMps > 1.0f) {
-                val etaSec = (candidate.distanceMeters / speedMps).toInt()
+                val etaSec = (target.distanceMeters / speedMps).toInt()
                 estimatedEtaMinutes.value = (etaSec / 60).coerceAtLeast(1)
             }
+        }
+
+        fun selectAlternativeRoute(candidate: RouteCandidate) {
+            selectRoute(candidate.id)
         }
 
         /**
