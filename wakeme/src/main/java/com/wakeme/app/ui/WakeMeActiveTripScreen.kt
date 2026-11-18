@@ -30,6 +30,7 @@ import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.service.WakeMeTrackingService
+import com.wakeme.app.util.LocationMarkerUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -429,6 +430,7 @@ fun WakeMeActiveTripScreen(
                                     enableMyLocation()
                                     enableFollowLocation()
                                 }
+                                LocationMarkerUtils.applyModernLocationOverlay(ctx, myLocOverlay)
                                 overlays.add(myLocOverlay)
 
                                 val destMarker = Marker(this).apply {
@@ -676,6 +678,7 @@ fun WakeMeActiveTripScreen(
                                 enableMyLocation()
                                 enableFollowLocation()
                             }
+                            LocationMarkerUtils.applyModernLocationOverlay(ctx, myLocOverlay)
                             overlays.add(myLocOverlay)
 
                             val destMarker = Marker(this).apply {

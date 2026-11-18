@@ -1,5 +1,6 @@
 package com.wakeme.app.ui
 
+import android.view.MotionEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,6 +37,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
+import com.wakeme.app.util.LocationMarkerUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -46,13 +48,15 @@ import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
  * Screen 1: Uber/Rapido-Style Search Landing Screen.
- * Full-screen map background with live GPS dot, prominent "Where are you heading?" search bar,
- * 1-tap quick favorites carousel, transit stop shortcuts, and "Pin on Map" floating button.
+ * Full-screen map background with modern medium-sized blue GPS dot (no "yellow man"),
+ * clean view with NO permanent center pin, tap-anywhere-on-map to drop & adjust pin,
+ * prominent "Where are you heading?" search bar, 1-tap favorites carousel, and transit shortcuts.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -80,6 +84,10 @@ fun WakeMeLandingScreen(
     var currentMapCenter by remember { mutableStateOf(targetLocation) }
     var transitMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
+
+    // Tap-to-drop pin state (replaces permanent center pin)
+    var droppedPinLocation by remember { mutableStateOf<GeoPoint?>(null) }
+    var droppedPinMarker by remember { mutableStateOf<Marker?>(null) }
 
     var showSavePinDialog by remember { mutableStateOf(false) }
     var savePinName by remember { mutableStateOf("") }
@@ -133,12 +141,41 @@ fun WakeMeLandingScreen(
                     controller.setZoom(15.0)
                     controller.setCenter(targetLocation)
 
+                    // Modern medium blue GPS dot & navigation arrow (replaces the yellow person icon)
                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
                         enableMyLocation()
                         enableFollowLocation()
                     }
+                    LocationMarkerUtils.applyModernLocationOverlay(ctx, locOverlay)
                     overlays.add(locOverlay)
                     locationOverlayRef = locOverlay
+
+                    // Tap on Map to drop / move pin overlay
+                    val tapOverlay = object : Overlay() {
+                        override fun onSingleTapConfirmed(e: MotionEvent, mapView: MapView): Boolean {
+                            val geo = mapView.projection.fromPixels(e.x.toInt(), e.y.toInt()) as? GeoPoint
+                            if (geo != null) {
+                                droppedPinLocation = geo
+
+                                if (droppedPinMarker == null) {
+                                    val marker = Marker(mapView).apply {
+                                        position = geo
+                                        title = "Selected Location"
+                                        snippet = "Tap anywhere to move pin"
+                                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                    }
+                                    mapView.overlays.add(marker)
+                                    droppedPinMarker = marker
+                                } else {
+                                    droppedPinMarker?.position = geo
+                                }
+                                mapView.invalidate()
+                                return true
+                            }
+                            return false
+                        }
+                    }
+                    overlays.add(tapOverlay)
 
                     addMapListener(object : MapListener {
                         override fun onScroll(event: ScrollEvent?): Boolean {
@@ -179,21 +216,6 @@ fun WakeMeLandingScreen(
                 lifecycleOwner.lifecycle.removeObserver(observer)
                 mapViewRef?.onDetach()
             }
-        }
-
-        // Center Target Crosshair Pin (Drop Pin on Map)
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .padding(bottom = 32.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.LocationOn,
-                contentDescription = "Target Location Pin",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(44.dp)
-            )
         }
 
         // 2. Top Header: Search Bar & 1-Tap Quick Favorites Carousel
@@ -358,7 +380,7 @@ fun WakeMeLandingScreen(
             }
         }
 
-        // 4. Bottom Section: "Pin on Map" CTA & Popular Transit Junctions
+        // 4. Bottom Section: Dropped Pin Card OR Commuter Suggestions
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -374,30 +396,93 @@ fun WakeMeLandingScreen(
                     .padding(horizontal = 20.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Pin on Map Main Action Button
-                Button(
-                    onClick = {
-                        viewModel.selectMapPin(currentMapCenter)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.NearMe,
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Set Destination at Pin",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                val pin = droppedPinLocation
+                if (pin != null) {
+                    // Dropped Pin Action Card
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = "Dropped Pin Destination",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = String.format("%.4f° N, %.4f° E (Tap to move)", pin.latitude, pin.longitude),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        IconButton(
+                            onClick = {
+                                droppedPinMarker?.let { mapViewRef?.overlays?.remove(it) }
+                                droppedPinMarker = null
+                                droppedPinLocation = null
+                                mapViewRef?.invalidate()
+                            }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear Pin")
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.selectMapPin(pin)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Navigation,
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Set Destination & Choose Mode ➔",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else {
+                    // Tap on map guide hint
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("👆", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Tap anywhere on the map to drop a destination pin.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                 }
 
                 // Recent Commute Destinations (Uber/Rapido style)
@@ -525,6 +610,10 @@ fun WakeMeLandingScreen(
                 Button(
                     onClick = {
                         if (savePinName.isNotBlank()) {
+                            val pinToSave = droppedPinLocation ?: currentMapCenter
+                            if (pinToSave != null) {
+                                viewModel.setDestination(pinToSave, savePinName)
+                            }
                             viewModel.saveCurrentAsFavorite(savePinName)
                             savePinName = ""
                             showSavePinDialog = false
