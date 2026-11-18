@@ -206,13 +206,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM") {
+    fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM", location: GeoPoint? = null) {
+        val target = location ?: _targetLocation.value
         viewModelScope.launch(Dispatchers.IO) {
             val fav = FavoritePlaceEntity(
                 name = customName.ifBlank { _targetName.value },
                 category = category,
-                latitude = _targetLocation.value.latitude,
-                longitude = _targetLocation.value.longitude,
+                latitude = target.latitude,
+                longitude = target.longitude,
                 radiusMeters = _radiusMeters.value,
                 alertMode = _alertMode.value.name,
                 audioRouting = _audioRouting.value.name,

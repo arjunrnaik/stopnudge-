@@ -611,10 +611,7 @@ fun WakeMeLandingScreen(
                     onClick = {
                         if (savePinName.isNotBlank()) {
                             val pinToSave = droppedPinLocation ?: currentMapCenter
-                            if (pinToSave != null) {
-                                viewModel.setDestination(pinToSave, savePinName)
-                            }
-                            viewModel.saveCurrentAsFavorite(savePinName)
+                            viewModel.saveCurrentAsFavorite(savePinName, location = pinToSave)
                             savePinName = ""
                             showSavePinDialog = false
                         }

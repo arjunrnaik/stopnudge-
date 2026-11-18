@@ -21,8 +21,8 @@ object LocationMarkerUtils {
         val dotBitmap = createMediumBlueDotBitmap(context, sizeDp = 26)
         val arrowBitmap = createDirectionalChevronBitmap(context, sizeDp = 30)
 
-        overlay.setPersonBitmap(dotBitmap)
-        overlay.setDirectionArrow(arrowBitmap, arrowBitmap)
+        overlay.setPersonIcon(dotBitmap)
+        overlay.setDirectionArrow(dotBitmap, arrowBitmap)
         overlay.setPersonAnchor(0.5f, 0.5f)
         overlay.setDirectionAnchor(0.5f, 0.5f)
     }
