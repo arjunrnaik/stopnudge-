@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLDecoder
 import java.util.regex.Pattern
 
 data class ParsedLocation(
@@ -16,34 +17,28 @@ object GoogleMapsUrlParser {
 
     private val COORD_PATTERN = Pattern.compile("(-?\\d{1,2}\\.\\d{3,10})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,10})")
     private val AT_COORD_PATTERN = Pattern.compile("@(-?\\d{1,2}\\.\\d{3,10}),(-?\\d{1,3}\\.\\d{3,10})")
-    private val QUERY_COORD_PATTERN = Pattern.compile("[?&](?:q|query|ll)=(-?\\d{1,2}\\.\\d{3,10}),(-?\\d{1,3}\\.\\d{3,10})")
+    private val QUERY_COORD_PATTERN = Pattern.compile("[?&](?:q|query|ll|saddr|daddr)=(-?\\d{1,2}\\.\\d{3,10})(?:,|%2[cC])(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
+    private val DATA_COORD_PATTERN = Pattern.compile("!3d(-?\\d{1,2}\\.\\d{3,10})!4d(-?\\d{1,3}\\.\\d{3,10})")
+    private val GEO_URI_PATTERN = Pattern.compile("geo:(-?\\d{1,2}\\.\\d{3,10}),(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
+    private val DMS_PATTERN = Pattern.compile("(\\d{1,2})°(\\d{1,2})'([\\d.]+)\"([NS])\\s*,?\\s*(\\d{1,3})°(\\d{1,2})'([\\d.]+)\"([EW])", Pattern.CASE_INSENSITIVE)
     private val URL_PATTERN = Pattern.compile("https?://\\S+")
 
     /**
      * Parses raw text shared from Google Maps, WhatsApp, or browser.
-     * Handles direct lat/lng, full Google Maps URLs, and short goo.gl links.
+     * Handles direct lat/lng, DMS coordinates, Google Maps URLs, and short maps.app.goo.gl links.
      */
     suspend fun parseSharedText(text: String): ParsedLocation? = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
-
-        // 1. Check for URL within text
-        val urlMatcher = URL_PATTERN.matcher(trimmed)
-        var extractedUrl: String? = null
-        if (urlMatcher.find()) {
-            extractedUrl = urlMatcher.group()
+        val decoded = try {
+            URLDecoder.decode(trimmed, "UTF-8")
+        } catch (_: Exception) {
+            trimmed
         }
 
-        // Try extracting place title (first line before the URL if available)
-        val candidateName = if (extractedUrl != null) {
-            val lines = trimmed.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
-            lines.firstOrNull { !it.startsWith("http") && !it.contains("maps.app.goo.gl") }
-        } else {
-            null
-        }
-
-        // 2. Direct regex match on full text or query parameters
-        val directMatch = extractCoordinatesFromText(trimmed)
+        // 1. Direct regex match on full text or query parameters (including DMS and geo: URIs)
+        val directMatch = extractCoordinatesFromText(trimmed) ?: extractCoordinatesFromText(decoded)
         if (directMatch != null) {
+            val candidateName = extractCandidateName(trimmed)
             return@withContext ParsedLocation(
                 name = candidateName ?: "Shared Destination",
                 latitude = directMatch.first,
@@ -51,11 +46,20 @@ object GoogleMapsUrlParser {
             )
         }
 
-        // 3. If there is a short URL, resolve redirect
-        if (extractedUrl != null && (extractedUrl.contains("goo.gl") || extractedUrl.contains("maps.app"))) {
+        // 2. Check for URL within text
+        val urlMatcher = URL_PATTERN.matcher(trimmed)
+        var extractedUrl: String? = null
+        if (urlMatcher.find()) {
+            extractedUrl = urlMatcher.group()
+        }
+
+        // 3. If there is a URL, resolve redirects (using GET for maps.app.goo.gl compatibility)
+        if (extractedUrl != null) {
+            val candidateName = extractCandidateName(trimmed)
             val resolved = resolveRedirect(extractedUrl)
             if (resolved != null) {
-                val coords = extractCoordinatesFromText(resolved)
+                val resolvedDecoded = try { URLDecoder.decode(resolved, "UTF-8") } catch (_: Exception) { resolved }
+                val coords = extractCoordinatesFromText(resolved) ?: extractCoordinatesFromText(resolvedDecoded)
                 if (coords != null) {
                     return@withContext ParsedLocation(
                         name = candidateName ?: extractPlaceNameFromUrl(resolved) ?: "Shared Destination",
@@ -69,8 +73,20 @@ object GoogleMapsUrlParser {
         return@withContext null
     }
 
-    private fun extractCoordinatesFromText(text: String): Pair<Double, Double>? {
-        // Match @lat,lng
+    private fun extractCandidateName(text: String): String? {
+        val lines = text.split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+        return lines.firstOrNull { line ->
+            !line.startsWith("http", ignoreCase = true) &&
+            !line.contains("maps.app.goo.gl", ignoreCase = true) &&
+            !line.contains("goo.gl", ignoreCase = true) &&
+            !line.contains("Dropped pin", ignoreCase = true) &&
+            !DMS_PATTERN.matcher(line).find() &&
+            !COORD_PATTERN.matcher(line).find()
+        }
+    }
+
+    fun extractCoordinatesFromText(text: String): Pair<Double, Double>? {
+        // 1. Match @lat,lng (Google Maps standard viewport/pin format)
         val atMatcher = AT_COORD_PATTERN.matcher(text)
         if (atMatcher.find()) {
             val lat = atMatcher.group(1)?.toDoubleOrNull()
@@ -80,7 +96,17 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // Match ?q=lat,lng or &query=lat,lng
+        // 2. Match !3d{lat}!4d{lng} (Google Maps place data parameter)
+        val dataMatcher = DATA_COORD_PATTERN.matcher(text)
+        if (dataMatcher.find()) {
+            val lat = dataMatcher.group(1)?.toDoubleOrNull()
+            val lon = dataMatcher.group(2)?.toDoubleOrNull()
+            if (lat != null && lon != null && isValidCoordinate(lat, lon)) {
+                return Pair(lat, lon)
+            }
+        }
+
+        // 3. Match ?q=lat,lng or &query= or &ll= or &daddr= (supports comma and %2C)
         val queryMatcher = QUERY_COORD_PATTERN.matcher(text)
         if (queryMatcher.find()) {
             val lat = queryMatcher.group(1)?.toDoubleOrNull()
@@ -90,7 +116,41 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // Match standalone "lat, lon"
+        // 4. Match geo:lat,lng URI
+        val geoMatcher = GEO_URI_PATTERN.matcher(text)
+        if (geoMatcher.find()) {
+            val lat = geoMatcher.group(1)?.toDoubleOrNull()
+            val lon = geoMatcher.group(2)?.toDoubleOrNull()
+            if (lat != null && lon != null && isValidCoordinate(lat, lon)) {
+                return Pair(lat, lon)
+            }
+        }
+
+        // 5. Match DMS format (e.g., 12°58'12.4"N 77°35'44.2"E or 12°58'12.4"N, 77°35'44.2"E)
+        val dmsMatcher = DMS_PATTERN.matcher(text)
+        if (dmsMatcher.find()) {
+            try {
+                val latDeg = dmsMatcher.group(1)?.toDoubleOrNull() ?: 0.0
+                val latMin = dmsMatcher.group(2)?.toDoubleOrNull() ?: 0.0
+                val latSec = dmsMatcher.group(3)?.toDoubleOrNull() ?: 0.0
+                val latDir = dmsMatcher.group(4)?.uppercase() ?: "N"
+                var lat = latDeg + (latMin / 60.0) + (latSec / 3600.0)
+                if (latDir == "S") lat = -lat
+
+                val lonDeg = dmsMatcher.group(5)?.toDoubleOrNull() ?: 0.0
+                val lonMin = dmsMatcher.group(6)?.toDoubleOrNull() ?: 0.0
+                val lonSec = dmsMatcher.group(7)?.toDoubleOrNull() ?: 0.0
+                val lonDir = dmsMatcher.group(8)?.uppercase() ?: "E"
+                var lon = lonDeg + (lonMin / 60.0) + (lonSec / 3600.0)
+                if (lonDir == "W") lon = -lon
+
+                if (isValidCoordinate(lat, lon)) {
+                    return Pair(lat, lon)
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 6. Match plain decimal "lat, lon"
         val plainMatcher = COORD_PATTERN.matcher(text)
         if (plainMatcher.find()) {
             val lat = plainMatcher.group(1)?.toDoubleOrNull()
@@ -105,21 +165,53 @@ object GoogleMapsUrlParser {
 
     private fun resolveRedirect(urlString: String): String? {
         var currentUrl = urlString
-        for (i in 0 until 5) {
+        for (i in 0 until 6) {
             try {
                 val url = URL(currentUrl)
                 val connection = (url.openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
-                    requestMethod = "HEAD"
-                    connectTimeout = 5000
-                    readTimeout = 5000
-                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android; Mobile)")
+                    requestMethod = "GET" // Use GET because maps.app.goo.gl rejects HEAD with 405
+                    connectTimeout = 6000
+                    readTimeout = 6000
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Mobile Safari/537.36")
+                    setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                 }
                 val responseCode = connection.responseCode
                 if (responseCode in 300..399) {
                     val location = connection.getHeaderField("Location") ?: break
                     currentUrl = if (location.startsWith("http")) location else URL(url, location).toString()
+                    connection.disconnect()
+
+                    // Check if location header already has coordinates
+                    val coords = extractCoordinatesFromText(currentUrl)
+                    if (coords != null) {
+                        return currentUrl
+                    }
+                } else if (responseCode == 200) {
+                    // Check if HTML contains meta tags, og:url, or coordinates
+                    val preview = try {
+                        connection.inputStream.bufferedReader().use { reader ->
+                            val buf = CharArray(4096)
+                            val r = reader.read(buf, 0, 4096)
+                            if (r > 0) String(buf, 0, r) else ""
+                        }
+                    } catch (_: Exception) { "" }
+                    connection.disconnect()
+
+                    val coords = extractCoordinatesFromText(preview)
+                    if (coords != null) {
+                        return "$currentUrl?q=${coords.first},${coords.second}"
+                    }
+                    val urlInHtml = URL_PATTERN.matcher(preview).let { if (it.find()) it.group() else null }
+                    if (urlInHtml != null) {
+                        val coordsInHtmlUrl = extractCoordinatesFromText(urlInHtml)
+                        if (coordsInHtmlUrl != null) {
+                            return "$currentUrl?q=${coordsInHtmlUrl.first},${coordsInHtmlUrl.second}"
+                        }
+                    }
+                    break
                 } else {
+                    connection.disconnect()
                     break
                 }
             } catch (_: Exception) {

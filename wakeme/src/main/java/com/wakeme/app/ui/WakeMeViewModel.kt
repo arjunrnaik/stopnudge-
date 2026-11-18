@@ -223,9 +223,36 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
+    fun saveFavorite(
+        name: String,
+        category: String = "CUSTOM",
+        latitude: Double,
+        longitude: Double,
+        radiusMeters: Float = 500f,
+        reminderNote: String = ""
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val fav = FavoritePlaceEntity(
+                name = name,
+                category = category,
+                latitude = latitude,
+                longitude = longitude,
+                radiusMeters = radiusMeters,
+                reminderNote = reminderNote
+            )
+            favoriteDao.insertFavorite(fav)
+        }
+    }
+
     fun deleteFavorite(id: Long) {
         viewModelScope.launch(Dispatchers.IO) {
             favoriteDao.deleteById(id)
+        }
+    }
+
+    fun updateFavorite(place: FavoritePlaceEntity) {
+        viewModelScope.launch(Dispatchers.IO) {
+            favoriteDao.updateFavorite(place)
         }
     }
 
@@ -285,6 +312,21 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 _targetName.value = parsed.name ?: "Shared Google Maps Location"
                 _cameraMoveTarget.tryEmit(geoPoint)
                 _currentScreen.value = WakeMeScreen.MODE_SELECTION
+            } else {
+                val cleanQuery = sharedText.lines().firstOrNull { it.isNotBlank() && !it.startsWith("http", ignoreCase = true) }
+                if (!cleanQuery.isNullOrBlank()) {
+                    try {
+                        val results = searchRepository.search(cleanQuery)
+                        val top = results.firstOrNull()
+                        if (top != null) {
+                            val geoPoint = GeoPoint(top.latitude, top.longitude)
+                            _targetLocation.value = geoPoint
+                            _targetName.value = top.title
+                            _cameraMoveTarget.tryEmit(geoPoint)
+                            _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
     }

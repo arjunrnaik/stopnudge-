@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(sharedText) {
                     sharedText?.let { text ->
                         viewModel.handleSharedText(text)
+                        sharedTextState.value = null
                     }
                 }
 
@@ -88,13 +89,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         handleIncomingIntent(intent)
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
-        if (intent?.action == Intent.ACTION_SEND && intent.type == "text/plain") {
-            val sharedText = intent.getStringExtra(Intent.EXTRA_TEXT)
-            sharedTextState.value = sharedText
+        if (intent == null) return
+        var text: String? = null
+        if (intent.action == Intent.ACTION_SEND) {
+            text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                ?: intent.clipData?.let { clip ->
+                    if (clip.itemCount > 0) {
+                        clip.getItemAt(0).text?.toString() ?: clip.getItemAt(0).uri?.toString()
+                    } else null
+                }
+                ?: intent.dataString
+                ?: intent.data?.toString()
+                ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        } else if (intent.action == Intent.ACTION_VIEW) {
+            text = intent.dataString ?: intent.data?.toString() ?: intent.getStringExtra(Intent.EXTRA_TEXT)
+        }
+
+        if (!text.isNullOrBlank()) {
+            sharedTextState.value = text
         }
     }
 

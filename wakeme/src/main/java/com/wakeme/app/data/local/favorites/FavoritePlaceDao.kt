@@ -12,6 +12,9 @@ interface FavoritePlaceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFavorite(place: FavoritePlaceEntity): Long
 
+    @Update
+    suspend fun updateFavorite(place: FavoritePlaceEntity)
+
     @Delete
     suspend fun deleteFavorite(place: FavoritePlaceEntity)
 

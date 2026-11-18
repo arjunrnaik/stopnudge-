@@ -47,6 +47,31 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/*" />
+            </intent-filter>
+
+            <!-- Direct Google Maps & Geo View Links -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="geo" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="maps.google.com" />
+                <data android:scheme="http" android:host="maps.google.com" />
+                <data android:scheme="https" android:host="maps.app.goo.gl" />
+                <data android:scheme="https" android:host="goo.gl" />
+                <data android:scheme="https" android:host="www.google.com" android:pathPrefix="/maps" />
+                <data android:scheme="http" android:host="www.google.com" android:pathPrefix="/maps" />
+                <data android:scheme="https" android:host="google.com" android:pathPrefix="/maps" />
+            </intent-filter>
         </activity>
 
         <!-- Full-screen Wake-Lock Dismiss Activity -->
