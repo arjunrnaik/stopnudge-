@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.wakeme.app.data.SearchResultItem
+import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.SearchRepository
 import com.wakeme.app.data.local.favorites.FavoritePlaceDao
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
