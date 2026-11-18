@@ -4,13 +4,15 @@ import android.content.Context
 import com.wakeme.app.data.local.transit.TransitDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import kotlin.math.abs
 
 enum class SearchResultType {
-    METRO, BUS, ONLINE_PLACE
+    METRO, BUS, ONLINE_PLACE, GOOGLE_MAPS_SEARCH
 }
 
 data class SearchResultItem(
@@ -25,7 +27,11 @@ class SearchRepository(context: Context) {
 
     private val transitDao = TransitDatabase.getInstance(context).transitDao()
 
-    suspend fun search(query: String): List<SearchResultItem> = withContext(Dispatchers.IO) {
+    suspend fun search(
+        query: String,
+        centerLat: Double = 12.9716,
+        centerLon: Double = 77.5946
+    ): List<SearchResultItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return@withContext emptyList()
 
@@ -50,7 +56,7 @@ class SearchRepository(context: Context) {
         // 2. 0ms Offline SQLite Search across 5,062 BMTC bus stops
         try {
             val buses = transitDao.searchBusStops(trimmed)
-            buses.take(8).forEach { b ->
+            buses.take(6).forEach { b ->
                 results.add(
                     SearchResultItem(
                         title = b.name,
@@ -63,12 +69,56 @@ class SearchRepository(context: Context) {
             }
         } catch (_: Exception) {}
 
-        // 3. Online Geocoding via Photon (OSM-based, free, zero keys) if query is longer than 2 chars
+        // 3. Online Geocoding via Nominatim (rich street, tech park, and landmark data in India)
         if (trimmed.length >= 3) {
             try {
                 val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-                // Center biased around Bengaluru (12.9716, 77.5946)
-                val urlString = "https://photon.komoot.io/api/?q=$encodedQuery&lat=12.9716&lon=77.5946&limit=5"
+                val urlString = "https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&addressdetails=1"
+                val url = URL(urlString)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 3500
+                    readTimeout = 3500
+                    setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; Commute Alarm)")
+                }
+
+                if (conn.responseCode == 200) {
+                    val body = conn.inputStream.bufferedReader().use { it.readText() }
+                    val array = JSONArray(body)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        val lat = obj.optDouble("lat", 0.0)
+                        val lon = obj.optDouble("lon", 0.0)
+                        val displayName = obj.optString("display_name", "")
+                        val name = obj.optString("name", displayName.substringBefore(","))
+                        val parts = displayName.split(",").map { it.trim() }
+                        val subtitle = if (parts.size > 1) parts.drop(1).take(3).joinToString(", ") else "Landmark / Area"
+
+                        if (lat != 0.0 && lon != 0.0) {
+                            val isDup = results.any {
+                                abs(it.latitude - lat) < 0.0008 && abs(it.longitude - lon) < 0.0008
+                            }
+                            if (!isDup) {
+                                results.add(
+                                    SearchResultItem(
+                                        title = name.ifBlank { displayName.substringBefore(",") },
+                                        subtitle = subtitle,
+                                        latitude = lat,
+                                        longitude = lon,
+                                        type = SearchResultType.ONLINE_PLACE
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 4. Online Geocoding via Photon (fuzzy search with dynamic GPS viewport bias)
+        if (trimmed.length >= 3) {
+            try {
+                val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
+                val urlString = "https://photon.komoot.io/api/?q=$encodedQuery&lat=$centerLat&lon=$centerLon&limit=4"
                 val url = URL(urlString)
                 val conn = (url.openConnection() as HttpURLConnection).apply {
                     connectTimeout = 3000
@@ -94,21 +144,37 @@ class SearchRepository(context: Context) {
                             val street = props.optString("street", "")
                             val subtitle = listOf(street, city).filter { it.isNotEmpty() }.joinToString(", ")
 
-                            results.add(
-                                SearchResultItem(
-                                    title = name,
-                                    subtitle = if (subtitle.isNotEmpty()) subtitle else "OpenStreetMap Result",
-                                    latitude = lat,
-                                    longitude = lon,
-                                    type = SearchResultType.ONLINE_PLACE
+                            val isDup = results.any {
+                                abs(it.latitude - lat) < 0.0008 && abs(it.longitude - lon) < 0.0008
+                            }
+                            if (!isDup) {
+                                results.add(
+                                    SearchResultItem(
+                                        title = name,
+                                        subtitle = if (subtitle.isNotEmpty()) subtitle else "OpenStreetMap Result",
+                                        latitude = lat,
+                                        longitude = lon,
+                                        type = SearchResultType.ONLINE_PLACE
+                                    )
                                 )
-                            )
+                            }
                         }
                     }
                 }
-            } catch (_: Exception) {
-                // Graceful fallback to offline results when offline
-            }
+            } catch (_: Exception) {}
+        }
+
+        // 5. 1-Tap Google Maps Direct Search Shortcut
+        if (trimmed.length >= 2) {
+            results.add(
+                SearchResultItem(
+                    title = "Search \"$trimmed\" on Google Maps",
+                    subtitle = "Open in Google Maps to pick any shop, cafe, or pin ➔",
+                    latitude = 0.0,
+                    longitude = 0.0,
+                    type = SearchResultType.GOOGLE_MAPS_SEARCH
+                )
+            )
         }
 
         results

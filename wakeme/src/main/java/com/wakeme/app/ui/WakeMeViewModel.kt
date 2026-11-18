@@ -267,10 +267,15 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         _isSearching.value = true
+        val center = _targetLocation.value
         searchJob = viewModelScope.launch(Dispatchers.IO) {
             delay(250) // Debounce typing
             try {
-                val results = searchRepository.search(query)
+                val results = searchRepository.search(
+                    query = query,
+                    centerLat = center.latitude,
+                    centerLon = center.longitude
+                )
                 _searchResults.value = results
             } catch (_: Exception) {
                 _searchResults.value = emptyList()
@@ -317,7 +322,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 if (!cleanQuery.isNullOrBlank()) {
                     try {
                         val results = searchRepository.search(cleanQuery)
-                        val top = results.firstOrNull()
+                        val top = results.firstOrNull { it.type != SearchResultType.GOOGLE_MAPS_SEARCH }
                         if (top != null) {
                             val geoPoint = GeoPoint(top.latitude, top.longitude)
                             _targetLocation.value = geoPoint

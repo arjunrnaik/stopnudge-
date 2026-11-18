@@ -1,6 +1,9 @@
 package com.wakeme.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.view.MotionEvent
+import java.net.URLEncoder
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -315,7 +318,19 @@ fun WakeMeLandingScreen(
                                 item = result,
                                 onClick = {
                                     focusManager.clearFocus()
-                                    viewModel.onSearchResultSelected(result)
+                                    if (result.type == SearchResultType.GOOGLE_MAPS_SEARCH) {
+                                        val gmapsUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=" + URLEncoder.encode(searchQuery, "UTF-8"))
+                                        val mapIntent = Intent(Intent.ACTION_VIEW, gmapsUri).apply {
+                                            setPackage("com.google.android.apps.maps")
+                                        }
+                                        try {
+                                            context.startActivity(mapIntent)
+                                        } catch (_: Exception) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, gmapsUri))
+                                        }
+                                    } else {
+                                        viewModel.onSearchResultSelected(result)
+                                    }
                                 }
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -914,10 +929,13 @@ private fun SearchResultRow(
     item: SearchResultItem,
     onClick: () -> Unit
 ) {
+    val isGmaps = item.type == SearchResultType.GOOGLE_MAPS_SEARCH
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
+            .background(if (isGmaps) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else Color.Transparent)
             .padding(horizontal = 14.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -925,6 +943,7 @@ private fun SearchResultRow(
             SearchResultType.METRO -> Icons.Default.DirectionsSubway to Color(0xFF673AB7)
             SearchResultType.BUS -> Icons.Default.DirectionsBus to Color(0xFF00897B)
             SearchResultType.ONLINE_PLACE -> Icons.Default.Place to Color(0xFF1E88E5)
+            SearchResultType.GOOGLE_MAPS_SEARCH -> Icons.Default.OpenInNew to Color(0xFFEA4335)
         }
 
         Box(
@@ -948,11 +967,12 @@ private fun SearchResultRow(
             Text(
                 text = item.title,
                 style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
+                fontWeight = if (isGmaps) FontWeight.Bold else FontWeight.SemiBold,
+                color = if (isGmaps) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            item.subtitle?.let { sub ->
+            item.subtitle.let { sub ->
                 Text(
                     text = sub,
                     style = MaterialTheme.typography.bodySmall,
@@ -961,6 +981,15 @@ private fun SearchResultRow(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+        }
+
+        if (isGmaps) {
+            Icon(
+                imageVector = Icons.Default.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
