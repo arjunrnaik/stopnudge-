@@ -2,8 +2,6 @@ package com.wakeme.app.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -30,25 +28,23 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
-import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 
 /**
- * Screen 2: Mode Setup & Alarm Configuration Screen.
- * Implements the user's approved notebook sketch design:
- * - Top Route Card: Origin (Your location) -> Destination.
- * - Route Mini-Map Preview with destination pin and dynamic geofence radius circle.
- * - Mode Selector: [City Bus] [Namma Metro] [Direct Road / Auto].
- * - Wake-up Radius: [ 200m ] [ 500m ] [ 1 km ] [ 2 km ] + [ Custom... ]
- * - Audio & Vibration options: Speaker, Speaker + Headphones, Headphones, and Vibrate (+/-).
- * - Deboard reminder note & big [ START COMMUTE ALARM ] CTA.
+ * Screen 2: Mode Setup Screen ("After search & I select a place").
+ * Faithful implementation of user's notebook sketch:
+ * - Top: Origin & Destination route card (• your location | • destination).
+ * - Middle: Interactive Route Map with destination marker and dynamic geofence radius circle.
+ * - Bottom:
+ *   - Travel Mode 3-button row side-by-side: [ 🚌 City Bus ] [ 🚇 Namma Metro ] [ 🚗 Direct Road ].
+ *   - Wake-Up Radius: [ 200m ] [ 500m ] [ 1 km ] [ 2 km ] + [ Custom... ].
+ *   - Audio options: [ 🔊 Speaker ] [ 🔔 Both ] [ 🎧 Headphones ] + [ 📳 Vibrate (+/-) ].
+ *   - Details about trip summary.
+ *   - Prominent [ START COMMUTE ALARM ] CTA button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -57,7 +53,6 @@ fun WakeMeModeSelectionScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
 
     val targetName by viewModel.targetName.collectAsState()
     val targetLocation by viewModel.targetLocation.collectAsState()
@@ -65,9 +60,7 @@ fun WakeMeModeSelectionScreen(
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val audioRouting by viewModel.audioRouting.collectAsState()
     val vibrateEnabled by viewModel.vibrateEnabled.collectAsState()
-    val reminderNote by viewModel.reminderNote.collectAsState()
 
-    var isPreviewingMode by remember { mutableStateOf<VehicleMode?>(null) }
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -76,7 +69,7 @@ fun WakeMeModeSelectionScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Commute & Alarm Setup",
+                            text = "Trip Setup",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -93,7 +86,7 @@ fun WakeMeModeSelectionScreen(
                     IconButton(onClick = { viewModel.navigateTo(WakeMeScreen.SEARCH_LANDING) }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back to Map"
+                            contentDescription = "Back to Search"
                         )
                     }
                 },
@@ -103,7 +96,7 @@ fun WakeMeModeSelectionScreen(
             )
         },
         bottomBar = {
-            // Big Bottom CTA Button
+            // Big Bottom Start CTA Button (from sketch: start button)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -136,7 +129,7 @@ fun WakeMeModeSelectionScreen(
                         )
                     ) {
                         Text(
-                            text = "${selectedVehicleMode.iconEmoji} Start Alarm ($radiusLabel)",
+                            text = "${selectedVehicleMode.iconEmoji} START COMMUTE ALARM ($radiusLabel)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -152,7 +145,7 @@ fun WakeMeModeSelectionScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             // 1. Top Route Connection Card (from sketch: • your location | • destination)
             Surface(
@@ -162,38 +155,31 @@ fun WakeMeModeSelectionScreen(
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             ) {
                 Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Origin row
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
-                                .size(12.dp)
+                                .size(10.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF2E7D32)) // Green dot for origin
+                                .background(Color(0xFF2E7D32)) // Green origin dot
                         )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "Your Location",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text(
-                                text = "Current GPS Position",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Your location",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
 
-                    // Route connector line
+                    // Route connector vertical line
                     Box(
                         modifier = Modifier
-                            .padding(start = 5.dp)
+                            .padding(start = 4.dp)
                             .width(2.dp)
-                            .height(18.dp)
+                            .height(14.dp)
                             .background(MaterialTheme.colorScheme.outlineVariant)
                     )
 
@@ -205,13 +191,8 @@ fun WakeMeModeSelectionScreen(
                             tint = MaterialTheme.colorScheme.error,
                             modifier = Modifier.size(16.dp)
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Destination",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                             Text(
                                 text = targetName,
                                 style = MaterialTheme.typography.titleSmall,
@@ -230,11 +211,11 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            // 2. Compact Route Map Preview with dynamic geofence radius circle (from sketch: + Route MAP)
+            // 2. Middle Route MAP (from sketch: + Route MAP)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(160.dp)
+                    .height(200.dp)
                     .clip(RoundedCornerShape(16.dp)),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface
@@ -275,51 +256,91 @@ fun WakeMeModeSelectionScreen(
                 )
             }
 
-            // 3. Commute Vehicle Mode Selection (from sketch: [Bus] [Metro] [Direction])
+            // 3. Travel Mode Selector: 3-Button Row Side-by-Side (from sketch: [Bus] [Metro] [Direction])
             Text(
-                text = "COMMUTE VEHICLE MODE",
+                text = "TRAVEL MODE",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            VehicleMode.values().forEach { mode ->
-                val isSelected = (selectedVehicleMode == mode)
-                val isPreviewing = (isPreviewingMode == mode)
-                VehicleCard(
-                    mode = mode,
-                    isSelected = isSelected,
-                    isPreviewing = isPreviewing,
-                    onClick = { viewModel.setVehicleMode(mode) },
-                    onPreviewSound = {
-                        if (isPreviewingMode == null) {
-                            isPreviewingMode = mode
-                            val previewConfig = DestinationConfig(
-                                name = "Sound Preview",
-                                latitude = 0.0,
-                                longitude = 0.0,
-                                vehicleMode = mode,
-                                alertMode = mode.alertMode,
-                                audioRouting = audioRouting,
-                                vibrate = vibrateEnabled
-                            )
-                            WakeMeAlarmController.triggerAlert(context, previewConfig)
-                            coroutineScope.launch {
-                                delay(2200L)
-                                WakeMeAlarmController.stopAlert(context)
-                                isPreviewingMode = null
-                            }
-                        } else {
-                            WakeMeAlarmController.stopAlert(context)
-                            isPreviewingMode = null
-                        }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Bus Button
+                val isBus = selectedVehicleMode == VehicleMode.BUS
+                Surface(
+                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (isBus) 2.dp else 1.dp,
+                        if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🚌", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("BMTC / KSRTC", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                )
+                }
+
+                // Metro Button
+                val isMetro = selectedVehicleMode == VehicleMode.METRO
+                Surface(
+                    onClick = { viewModel.setVehicleMode(VehicleMode.METRO) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isMetro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (isMetro) 2.dp else 1.dp,
+                        if (isMetro) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🚇", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Namma Metro", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Line Transfer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                // Direct Road Button (sketch: Direction)
+                val isCar = selectedVehicleMode == VehicleMode.CAR
+                Surface(
+                    onClick = { viewModel.setVehicleMode(VehicleMode.CAR) },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isCar) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (isCar) 2.dp else 1.dp,
+                        if (isCar) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🚗", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Direct Road", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("Cab / Auto", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
 
             // 4. Wake-Up Radius Distance (from sketch: [200] [500] [1k] [2k] + [custom values])
             Text(
-                text = "WAKE-UP RADIUS DISTANCE",
+                text = "WAKE-UP RADIUS",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -339,19 +360,10 @@ fun WakeMeModeSelectionScreen(
                         selected = isSelected,
                         onClick = { viewModel.setRadius(preset) },
                         label = {
-                            Text(
-                                text = label,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                            Text(label, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                         },
                         leadingIcon = if (isSelected) {
-                            {
-                                Icon(
-                                    imageVector = Icons.Default.Check,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else null
                     )
                 }
@@ -368,17 +380,10 @@ fun WakeMeModeSelectionScreen(
                     selected = isCustom,
                     onClick = { showCustomRadiusDialog = true },
                     label = {
-                        Text(
-                            text = customLabel,
-                            fontWeight = if (isCustom) FontWeight.Bold else FontWeight.Normal
-                        )
+                        Text(customLabel, fontWeight = if (isCustom) FontWeight.Bold else FontWeight.Normal)
                     },
                     leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Icon(Icons.Default.Tune, null, modifier = Modifier.size(16.dp))
                     }
                 )
             }
@@ -391,7 +396,6 @@ fun WakeMeModeSelectionScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // Audio Routing Chips: Speaker Only, Speaker + Headphones, Headphones Only
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -407,18 +411,14 @@ fun WakeMeModeSelectionScreen(
                         selected = isSelected,
                         onClick = { viewModel.setAudioRouting(routing) },
                         label = {
-                            Text(
-                                text = label,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                            Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
                         },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // Vibration Toggle (+ / -)
+            // Vibration (+ / -) Toggle Chip
             FilterChip(
                 selected = vibrateEnabled,
                 onClick = { viewModel.setVibrateEnabled(!vibrateEnabled) },
@@ -438,36 +438,36 @@ fun WakeMeModeSelectionScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 6. Deboard Reminder Note (Optional)
-            Text(
-                text = "DEBOARD NOTE (OPTIONAL)",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
-
-            OutlinedTextField(
-                value = reminderNote,
-                onValueChange = { viewModel.setReminderNote(it) },
-                placeholder = {
-                    Text(
-                        "e.g. Take backpack, change to Green Line",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.EditNote,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                },
+            // 6. Details About Trip (from sketch: Details about trip)
+            Surface(
                 modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp)
-            )
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km" else "${radiusMeters.toInt()}m"
+                    Column {
+                        Text(
+                            text = "Trip Summary",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Alarm activates at $radiusLabel perimeter before $targetName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Text(selectedVehicleMode.iconEmoji, fontSize = 20.sp)
+                }
+            }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
@@ -516,114 +516,5 @@ fun WakeMeModeSelectionScreen(
                 }
             }
         )
-    }
-}
-
-@Composable
-private fun VehicleCard(
-    mode: VehicleMode,
-    isSelected: Boolean,
-    isPreviewing: Boolean,
-    onClick: () -> Unit,
-    onPreviewSound: () -> Unit
-) {
-    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    val containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .border(2.dp, borderColor, RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        color = containerColor,
-        tonalElevation = if (isSelected) 4.dp else 1.dp
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = mode.iconEmoji,
-                    fontSize = 32.sp
-                )
-                Spacer(modifier = Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = mode.title,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        SuggestionChip(
-                            onClick = {},
-                            label = {
-                                Text(
-                                    text = mode.alertTag,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = when (mode) {
-                                    VehicleMode.BUS -> MaterialTheme.colorScheme.errorContainer
-                                    VehicleMode.METRO -> MaterialTheme.colorScheme.primaryContainer
-                                    VehicleMode.CAR -> MaterialTheme.colorScheme.secondaryContainer
-                                }
-                            ),
-                            border = null
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = mode.subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                RadioButton(
-                    selected = isSelected,
-                    onClick = onClick,
-                    colors = RadioButtonDefaults.colors(
-                        selectedColor = MaterialTheme.colorScheme.primary
-                    )
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Sound Preview Action Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
-                TextButton(
-                    onClick = onPreviewSound,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    modifier = Modifier.height(30.dp)
-                ) {
-                    Icon(
-                        imageVector = if (isPreviewing) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = if (isPreviewing) "Playing..." else "Preview Sound",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-            }
-        }
     }
 }

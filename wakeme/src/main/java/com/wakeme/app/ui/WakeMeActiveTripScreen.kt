@@ -2,9 +2,9 @@ package com.wakeme.app.ui
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -29,15 +29,11 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wakeme.app.alarm.WakeMeAlarmController
-import com.wakeme.app.data.RouteCandidate
-import com.wakeme.app.model.AlertMode
-import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.LocationMarkerUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
@@ -46,10 +42,12 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
- * Screen 3: Active Live Ride Tracking HUD.
- * Real-time satellite GPS countdown with accurate Road Driving Distance (OSRM),
- * moving navigation arrow map with live route polyline in an expandable preview box,
- * speed & ETA telemetry, snooze alert controls, and stop tracking button.
+ * Screen 3: Active Commute Tracking Screen ("After start").
+ * Faithful implementation of user's notebook sketch:
+ * - Card 1 (Top): Destination name, giant live remaining distance, and Trip Progress bar.
+ * - Card 2 (Middle): Moving navigation arrow map with [Expand] button to open full-screen map.
+ * - Card 3 (Bottom): Sleep Guard Active ("Not sure" box) with [Test Ring 🔊] button.
+ * - Bottom Bar: Dedicated prominent [ END COMMUTE / STOP ALARM ] button with confirmation dialog.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,9 +62,6 @@ fun WakeMeActiveTripScreen(
     val targetLocation by viewModel.targetLocation.collectAsState()
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val selectedVehicleMode by viewModel.selectedVehicleMode.collectAsState()
-    val alertMode by viewModel.alertMode.collectAsState()
-    val audioRouting by viewModel.audioRouting.collectAsState()
-    val reminderNote by viewModel.reminderNote.collectAsState()
 
     val liveDistance by WakeMeTrackingService.liveDistanceMeters.collectAsState()
     val straightDist by WakeMeTrackingService.straightLineDistanceMeters.collectAsState()
@@ -76,9 +71,6 @@ fun WakeMeActiveTripScreen(
     val isSnoozed by WakeMeAlarmController.isSnoozed.collectAsState()
     val routePoints by WakeMeTrackingService.routePolyline.collectAsState()
     val alternativeRoutes by WakeMeTrackingService.alternativeRoutes.collectAsState()
-    val allCandidateRoutes by WakeMeTrackingService.allCandidateRoutes.collectAsState()
-    val selectedRouteId by WakeMeTrackingService.selectedRouteId.collectAsState()
-    val isRerouting by WakeMeTrackingService.isRerouting.collectAsState()
     val isRoadRoute by WakeMeTrackingService.isRoadRouteActive.collectAsState()
     val currentBearing by WakeMeTrackingService.currentBearing.collectAsState()
 
@@ -86,18 +78,6 @@ fun WakeMeActiveTripScreen(
     var isMapExpanded by remember { mutableStateOf(false) }
     var isHeadingUp by remember { mutableStateOf(true) }
     var showEndCommuteConfirmation by remember { mutableStateOf(false) }
-
-    // Pulsing animation for the satellite indicator
-    val infiniteTransition = rememberInfiniteTransition(label = "Pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.4f,
-        targetValue = 1.0f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "PulseAlpha"
-    )
 
     // Calculate journey progress percentage (0.0 to 1.0)
     val progress = remember(liveDistance, initialDist) {
@@ -115,11 +95,36 @@ fun WakeMeActiveTripScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "Live Ride Tracking",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2E7D32))
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Live Commute Tracking",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                },
+                actions = {
+                    val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()}km" else "${radiusMeters.toInt()}m"
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.padding(end = 12.dp)
+                    ) {
+                        Text(
+                            text = "Alarm: $radiusLabel",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
@@ -127,7 +132,7 @@ fun WakeMeActiveTripScreen(
             )
         },
         bottomBar = {
-            // Stop Tracking Bottom CTA
+            // Dedicated End Button (from sketch: "End button is needed")
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -177,40 +182,7 @@ fun WakeMeActiveTripScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. Hardware GNSS / Satellite Status Banner
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFF1B5E20).copy(alpha = 0.12f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(12.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF2E7D32).copy(alpha = pulseAlpha))
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Column {
-                        Text(
-                            text = "🛰️ HARDWARE GNSS ACTIVE — 0 DATA CONSUMED",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1B5E20)
-                        )
-                        Text(
-                            text = "Tracking operates offline via direct GPS satellites.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color(0xFF2E7D32)
-                        )
-                    }
-                }
-            }
-
-            // Snooze Banner (if commuter snoozed the alarm)
+            // Snooze Banner (if user snoozed the active alarm)
             if (isSnoozed) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
@@ -237,7 +209,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 2. Giant Live Distance Hero Card (Real Road Distance)
+            // 1. TOP CARD: Destination, Distance & Trip Progress (from sketch: Destination, Distance, Trip Progress)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -249,16 +221,17 @@ fun WakeMeActiveTripScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 24.dp, horizontal = 20.dp),
+                        .padding(vertical = 20.dp, horizontal = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
+                    // Destination Name
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
                             text = selectedVehicleMode.iconEmoji,
-                            fontSize = 28.sp
+                            fontSize = 24.sp
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -271,8 +244,9 @@ fun WakeMeActiveTripScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
+                    // Live Distance Countdown (Real road or approximate)
                     val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
                     val distanceText = if (dist != null) {
                         if (dist >= 1000f) {
@@ -281,32 +255,27 @@ fun WakeMeActiveTripScreen(
                             "${dist.toInt()} m"
                         }
                     } else {
-                        "Searching..."
+                        "Calculating..."
                     }
 
                     Text(
                         text = distanceText,
-                        fontSize = 44.sp,
+                        fontSize = 42.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         textAlign = TextAlign.Center
                     )
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = if (isRoadRoute) "ROAD DRIVING DISTANCE" else "APPROX. ROAD DISTANCE",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                        )
-                    }
+                    Text(
+                        text = if (isRoadRoute) "ROAD DISTANCE REMAINING" else "ESTIMATED DISTANCE REMAINING",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                    )
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Real-time Journey Progress Bar
+                    // Trip Progress Bar (0% to 100%)
                     Column(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -336,132 +305,39 @@ fun WakeMeActiveTripScreen(
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    val triggerText = if (radiusMeters >= 1000f) {
-                        "${(radiusMeters / 1000f).toInt()} km"
-                    } else {
-                        "${radiusMeters.toInt()}m"
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+                    // Live Telemetry Row (Speed & ETA)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            text = "Alarm triggers at $triggerText perimeter",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
-                }
-            }
-
-            // 3. Live Telemetry HUD: Speed & ETA
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                // Speed Chip
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "CURRENT SPEED",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
                             text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                    }
-                }
-
-                // ETA Chip
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
                         Text(
-                            text = "ESTIMATED ARRIVAL",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = estimatedEta?.let { "⏱️ ~$it min" } ?: "⏱️ Near",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = estimatedEta?.let { "⏱️ ~$it min ETA" } ?: "⏱️ Approaching",
+                            style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
             }
 
-            // Google Maps-Style "Recalculating..." Banner
-            AnimatedVisibility(
-                visible = isRerouting,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Recalculating earliest route...",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                    }
-                }
-            }
-
-            // 4. Moving Navigation Map Box (Expandable)
+            // 2. MIDDLE CARD: Map with [Expand] Button (from sketch: Map with [Expand])
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(210.dp)
+                    .height(240.dp)
                     .shadow(6.dp, RoundedCornerShape(18.dp))
                     .clip(RoundedCornerShape(18.dp)),
                 shape = RoundedCornerShape(18.dp),
                 color = MaterialTheme.colorScheme.surface
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    // Embedded Map with Directional Arrow & Follow Mode
                     AndroidView(
                         factory = { ctx ->
                             MapView(ctx).apply {
@@ -493,38 +369,31 @@ fun WakeMeActiveTripScreen(
                             }
                         },
                         update = { map ->
-                            // Remove existing route polylines
                             val currentPolys = map.overlays.filterIsInstance<Polyline>()
                             map.overlays.removeAll(currentPolys)
 
-                            // 1. Draw alternative routes underneath in muted slate gray
+                            // Alternative routes in gray
                             for (alt in alternativeRoutes) {
                                 val altPoly = Polyline(map).apply {
                                     setPoints(alt.points)
                                     outlinePaint.color = 0xFF90A4AE.toInt()
-                                    outlinePaint.strokeWidth = 7f
+                                    outlinePaint.strokeWidth = 6f
                                     infoWindow = null
-                                    setOnClickListener { _, _, _ ->
-                                        WakeMeTrackingService.selectRoute(alt.id)
-                                        true
-                                    }
                                 }
                                 map.overlays.add(altPoly)
                             }
 
-                            // 2. Draw fastest / active route on top in vibrant blue
+                            // Active route in blue
                             if (routePoints.isNotEmpty()) {
                                 val activePoly = Polyline(map).apply {
                                     setPoints(routePoints)
                                     outlinePaint.color = 0xFF1976D2.toInt()
-                                    outlinePaint.strokeWidth = 10f
+                                    outlinePaint.strokeWidth = 9f
                                     infoWindow = null
-                                    setOnClickListener { _, _, _ -> true }
                                 }
                                 map.overlays.add(activePoly)
                             }
 
-                            // 3. Dynamic Heading-Up Rotation: Map turns with vehicle
                             if (isHeadingUp && currentBearing != null) {
                                 map.mapOrientation = -currentBearing!!
                             } else {
@@ -536,234 +405,64 @@ fun WakeMeActiveTripScreen(
                         modifier = Modifier.fillMaxSize()
                     )
 
-                    // Compass Mode Toggle FAB (Heading-Up vs North-Up)
+                    // Expand Button in Top-Right Corner (from sketch: [Expand])
+                    Surface(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isMapExpanded = true },
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(8.dp),
+                        shadowElevation = 4.dp
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.OpenInFull,
+                                contentDescription = "Expand Map",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Expand",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Compass Orientation Toggle in Bottom-Right
                     Surface(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { isHeadingUp = !isHeadingUp }
-                            .shadow(4.dp, RoundedCornerShape(12.dp)),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+                            .padding(10.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { isHeadingUp = !isHeadingUp },
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                        shape = RoundedCornerShape(8.dp),
+                        shadowElevation = 4.dp
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(if (isHeadingUp) "🧭" else "⬆️", fontSize = 12.sp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (isHeadingUp) "Heading" else "North",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    // Header Bar on Mini-Map
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .fillMaxWidth()
-                            .background(Color.Black.copy(alpha = 0.65f))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "🧭 Moving Arrow View",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (isRoadRoute) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "• Road Route",
-                                    color = Color(0xFF81C784),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable { isMapExpanded = true },
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.OpenInFull,
-                                    contentDescription = "Expand Map",
-                                    tint = MaterialTheme.colorScheme.onPrimary,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "Expand",
-                                    color = MaterialTheme.colorScheme.onPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                            Text(if (isHeadingUp) "🧭 Heading" else "⬆️ North", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
             }
 
-            // Alternative Routes Selection Chips
-            if (allCandidateRoutes.size > 1) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "ROUTES:",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    allCandidateRoutes.forEach { route ->
-                        val isSelected = route.id == selectedRouteId
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                WakeMeTrackingService.selectRoute(route.id)
-                            },
-                            label = { Text(route.summary) },
-                            leadingIcon = if (isSelected) {
-                                {
-                                    Icon(
-                                        Icons.Default.Check,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            } else null
-                        )
-                    }
-                }
-            }
-
-            // 5. Deboard Reminder Note (if set)
-            if (reminderNote.isNotBlank()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f),
-                    border = null
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.StickyNote2,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = "DEBOARD REMINDER NOTE",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.tertiary
-                            )
-                            Text(
-                                text = reminderNote,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 6. Trip Setup Details
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            ) {
-                Column(
-                    modifier = Modifier.padding(14.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Commute Mode",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "${selectedVehicleMode.iconEmoji} ${selectedVehicleMode.title}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Alert Type",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = if (alertMode == AlertMode.WAKEUP_ALARM) "⏰ Loud Wake-up Siren" else "🔔 Gentle Reminder",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Audio Routing",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = when (audioRouting) {
-                                AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones Only"
-                                AudioRouting.SPEAKER_ONLY -> "🔊 Phone Speaker"
-                                AudioRouting.BOTH -> "🔔 Headphones + Speaker"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-
-            // 7. Sleep Guard Active & Test Ring Card (from sketch: "Not sure" -> Sleep Guard)
+            // 3. BOTTOM CARD: Sleep Guard Active & Test Ring (from sketch: "Not sure" -> Sleep Guard)
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -784,7 +483,7 @@ fun WakeMeActiveTripScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Alarm sounds at full volume even if phone is on Silent or DND.",
+                                text = "Alarm sounds at full volume even on Silent/DND mode.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -798,7 +497,7 @@ fun WakeMeActiveTripScreen(
                                 val config = viewModel.getDestinationConfig()
                                 WakeMeAlarmController.triggerAlert(context, config)
                                 coroutineScope.launch {
-                                    delay(5000L) // Sound test for 5 seconds
+                                    delay(5000L) // 5 seconds test ring
                                     WakeMeAlarmController.stopAlert(context)
                                     isTestingAlert = false
                                 }
@@ -824,7 +523,7 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 
@@ -848,7 +547,7 @@ fun WakeMeActiveTripScreen(
             },
             text = {
                 Text(
-                    text = "Are you sure you want to stop tracking and cancel the destination alarm?",
+                    text = "Are you sure you want to stop GPS tracking and cancel your destination alarm?",
                     style = MaterialTheme.typography.bodyMedium
                 )
             },
@@ -871,7 +570,7 @@ fun WakeMeActiveTripScreen(
         )
     }
 
-    // Full-Screen Interactive Map Modal Dialog
+    // Full-Screen Interactive Map Modal Dialog (when Expand is tapped)
     if (isMapExpanded) {
         Dialog(
             onDismissRequest = { isMapExpanded = false },
@@ -909,42 +608,17 @@ fun WakeMeActiveTripScreen(
                         }
                     },
                     update = { map ->
-                        // Remove existing route polylines
                         val currentPolys = map.overlays.filterIsInstance<Polyline>()
                         map.overlays.removeAll(currentPolys)
 
-                        // 1. Draw alternative routes underneath in muted slate gray
-                        for (alt in alternativeRoutes) {
-                            val altPoly = Polyline(map).apply {
-                                setPoints(alt.points)
-                                outlinePaint.color = 0xFF90A4AE.toInt()
-                                outlinePaint.strokeWidth = 7f
-                                infoWindow = null
-                                setOnClickListener { _, _, _ ->
-                                    WakeMeTrackingService.selectRoute(alt.id)
-                                    true
-                                }
-                            }
-                            map.overlays.add(altPoly)
-                        }
-
-                        // 2. Draw fastest / active route on top in vibrant blue
                         if (routePoints.isNotEmpty()) {
                             val activePoly = Polyline(map).apply {
                                 setPoints(routePoints)
                                 outlinePaint.color = 0xFF1976D2.toInt()
-                                outlinePaint.strokeWidth = 11f
+                                outlinePaint.strokeWidth = 10f
                                 infoWindow = null
-                                setOnClickListener { _, _, _ -> true }
                             }
                             map.overlays.add(activePoly)
-                        }
-
-                        // 3. Dynamic Heading-Up Rotation
-                        if (isHeadingUp && currentBearing != null) {
-                            map.mapOrientation = -currentBearing!!
-                        } else {
-                            map.mapOrientation = 0f
                         }
 
                         map.invalidate()
@@ -952,138 +626,17 @@ fun WakeMeActiveTripScreen(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top Controls: Compass Toggle (Left) & Close Button (Right)
-                Row(
+                // Close Button on Expanded Map
+                FloatingActionButton(
+                    onClick = { isMapExpanded = false },
                     modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .fillMaxWidth()
+                        .align(Alignment.TopEnd)
                         .padding(16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    shape = CircleShape
                 ) {
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { isHeadingUp = !isHeadingUp }
-                            .shadow(4.dp, RoundedCornerShape(14.dp)),
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(if (isHeadingUp) "🧭" else "⬆️", fontSize = 14.sp)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (isHeadingUp) "Heading-Up (Auto)" else "North-Up (Locked)",
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
-
-                    IconButton(
-                        onClick = { isMapExpanded = false },
-                        modifier = Modifier
-                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Close Expanded Map",
-                            tint = Color.White
-                        )
-                    }
-                }
-
-                // Bottom Floating Telemetry Overlay & Route Switcher
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp, start = 16.dp, end = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (allCandidateRoutes.size > 1) {
-                        Row(
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.95f), RoundedCornerShape(20.dp))
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                "ROUTES:",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            allCandidateRoutes.forEach { route ->
-                                val isSelected = route.id == selectedRouteId
-                                FilterChip(
-                                    selected = isSelected,
-                                    onClick = {
-                                        WakeMeTrackingService.selectRoute(route.id)
-                                    },
-                                    label = { Text(route.summary) },
-                                    leadingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                Icons.Default.Check,
-                                                contentDescription = null,
-                                                modifier = Modifier.size(14.dp)
-                                            )
-                                        }
-                                    } else null
-                                )
-                            }
-                        }
-                    }
-
-                    Surface(
-                        modifier = Modifier.shadow(8.dp, RoundedCornerShape(16.dp)),
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        tonalElevation = 6.dp
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
-                                Text(
-                                    text = if (dist != null) {
-                                        if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
-                                    } else "...",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Text("Remaining", style = MaterialTheme.typography.labelSmall)
-                            }
-                            VerticalDivider(modifier = Modifier.height(28.dp))
-                            Column {
-                                Text(
-                                    text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text("Speed", style = MaterialTheme.typography.labelSmall)
-                            }
-                            VerticalDivider(modifier = Modifier.height(28.dp))
-                            Column {
-                                Text(
-                                    text = estimatedEta?.let { "~$it min" } ?: "Near",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text("ETA", style = MaterialTheme.typography.labelSmall)
-                            }
-                        }
-                    }
+                    Icon(Icons.Default.Close, contentDescription = "Close Map")
                 }
             }
         }
