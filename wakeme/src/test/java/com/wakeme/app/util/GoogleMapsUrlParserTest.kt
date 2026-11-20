@@ -4,6 +4,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GoogleMapsUrlParserTest {
@@ -49,8 +50,6 @@ class GoogleMapsUrlParserTest {
         val input = "Dropped pin\nnear Bengaluru, Karnataka\n12°58'12.4\"N 77°35'44.2\"E\nhttps://maps.app.goo.gl/xyz"
         val result = GoogleMapsUrlParser.parseSharedText(input)
         assertNotNull(result)
-        // 12 + 58/60 + 12.4/3600 = 12.97011
-        // 77 + 35/60 + 44.2/3600 = 77.59561
         assertEquals(12.9701, result!!.latitude, 0.001)
         assertEquals(77.5956, result.longitude, 0.001)
     }
@@ -98,6 +97,23 @@ class GoogleMapsUrlParserTest {
         assertNotNull(result)
         assertEquals(12.9176, result!!.latitude, 0.0001)
         assertEquals(77.6238, result.longitude, 0.0001)
+    }
+
+    @Test
+    fun extractCleanPlaceName_formatsCorrectly() {
+        val raw = "Sai Ladies Fashion - Sunitha Tailor since 2014, 6th Cross Rd, opp. to Neni's Nest appartment, Anugraha Layout, Sathya Layout, B Narayanapura, Mahadevapura, Bengaluru, Karnataka 560016"
+        val clean = GoogleMapsUrlParser.extractCleanPlaceName(raw)
+        assertEquals("Sai Ladies Fashion - Sunitha Tailor since 2014", clean)
+    }
+
+    @Test
+    fun generateAddressCandidates_producesProgressiveSubsets() {
+        val raw = "Shop, Street, Layout, Area, City, State Pincode"
+        val candidates = GoogleMapsUrlParser.generateAddressCandidates(raw)
+        assertTrue(candidates.size >= 4)
+        assertEquals("Shop, Street, Layout, Area, City, State Pincode", candidates[0])
+        assertTrue(candidates.contains("Street, Layout, Area, City, State Pincode"))
+        assertTrue(candidates.contains("Area, City, State Pincode"))
     }
 
     @Test
