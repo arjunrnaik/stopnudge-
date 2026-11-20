@@ -1,13 +1,21 @@
 package com.wakeme.app.ui
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
+import android.speech.RecognizerIntent
 import android.view.MotionEvent
 import java.net.URLEncoder
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -17,7 +25,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -36,11 +43,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
+import com.wakeme.app.data.local.favorites.RecentTripEntity
 import com.wakeme.app.util.LocationMarkerUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -57,12 +66,16 @@ import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
 import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 
 /**
- * Screen 1: Uber/Rapido-Style Search Landing Screen.
- * Full-screen map background with modern medium-sized blue GPS dot (no "yellow man"),
- * clean view with NO permanent center pin, tap-anywhere-on-map to drop & adjust pin,
- * prominent "Where are you heading?" search bar, 1-tap favorites carousel, and transit shortcuts.
+ * Screen 1: WakeMe Clean Map & Search Landing Screen.
+ * Implements the user's approved notebook sketch design:
+ * - Top Search bar with Speech Mic icon + Profile/Settings button.
+ * - [★ Saved Places] and [⏱ History] filter pills.
+ * - Clean full-screen map with blue GPS dot, tap anywhere to drop pin.
+ * - Right-side 3-FAB column: GPS Re-center, Metro toggle, BMTC toggle.
+ * - Dimmed backdrop modals for Saved Places (tap star/long-press to remove with confirmation)
+ *   and Commute History (distinct places, latest at top, no stars).
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun WakeMeLandingScreen(
     viewModel: WakeMeViewModel,
@@ -74,8 +87,10 @@ fun WakeMeLandingScreen(
     val focusManager = LocalFocusManager.current
 
     val targetLocation by viewModel.targetLocation.collectAsState()
-    val showTransitOverlay by viewModel.showTransitOverlay.collectAsState()
+    val showMetroOverlay by viewModel.showMetroOverlay.collectAsState()
+    val showBmtcOverlay by viewModel.showBmtcOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
+    val busStops by viewModel.busStops.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentTrips by viewModel.recentTrips.collectAsState()
 
@@ -86,15 +101,33 @@ fun WakeMeLandingScreen(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var locationOverlayRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
     var currentMapCenter by remember { mutableStateOf(targetLocation) }
-    var transitMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
+    var metroMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
+    var busMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
-    // Tap-to-drop pin state (replaces permanent center pin)
+    // Tap-to-drop pin state
     var droppedPinLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var droppedPinMarker by remember { mutableStateOf<Marker?>(null) }
 
+    // Modals & Dialogs state
+    var showSavedPlacesModal by remember { mutableStateOf(false) }
+    var showHistoryModal by remember { mutableStateOf(false) }
+    var showProfileSettingsDialog by remember { mutableStateOf(false) }
     var showAddPlaceDialog by remember { mutableStateOf(false) }
-    var editingPlaceEntity by remember { mutableStateOf<FavoritePlaceEntity?>(null) }
+    var favoriteToRemove by remember { mutableStateOf<FavoritePlaceEntity?>(null) }
+    var showClearHistoryConfirm by remember { mutableStateOf(false) }
+
+    // Speech-to-text recognition launcher for Mic button
+    val speechLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+            if (!spoken.isNullOrBlank()) {
+                viewModel.onSearchQueryChanged(spoken)
+            }
+        }
+    }
 
     // Sync camera animations when target changes from search or favorites
     LaunchedEffect(viewModel) {
@@ -103,19 +136,19 @@ fun WakeMeLandingScreen(
         }
     }
 
-    // Update transit markers when overlay toggled
-    LaunchedEffect(showTransitOverlay, metroStations) {
+    // Update Metro station markers when overlay toggled
+    LaunchedEffect(showMetroOverlay, metroStations) {
         val map = mapViewRef ?: return@LaunchedEffect
-        transitMarkersList.forEach { map.overlays.remove(it) }
-        transitMarkersList = emptyList()
+        metroMarkersList.forEach { map.overlays.remove(it) }
+        metroMarkersList = emptyList()
 
-        if (showTransitOverlay) {
+        if (showMetroOverlay) {
             val newMarkers = mutableListOf<Marker>()
             metroStations.forEach { metro ->
                 val marker = Marker(map).apply {
                     position = GeoPoint(metro.latitude, metro.longitude)
-                    title = metro.name
-                    snippet = "Metro (${metro.metroLines})"
+                    title = "${metro.name} Metro"
+                    snippet = "Lines: ${metro.metroLines}"
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
@@ -128,7 +161,39 @@ fun WakeMeLandingScreen(
                 map.overlays.add(marker)
                 newMarkers.add(marker)
             }
-            transitMarkersList = newMarkers
+            metroMarkersList = newMarkers
+            map.invalidate()
+        } else {
+            map.invalidate()
+        }
+    }
+
+    // Update BMTC bus stop markers when overlay toggled
+    LaunchedEffect(showBmtcOverlay, busStops) {
+        val map = mapViewRef ?: return@LaunchedEffect
+        busMarkersList.forEach { map.overlays.remove(it) }
+        busMarkersList = emptyList()
+
+        if (showBmtcOverlay) {
+            val newMarkers = mutableListOf<Marker>()
+            busStops.take(80).forEach { stop ->
+                val marker = Marker(map).apply {
+                    position = GeoPoint(stop.latitude, stop.longitude)
+                    title = stop.name
+                    snippet = "BMTC Bus Stop (${stop.routeCount} routes)"
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    setOnMarkerClickListener { _, _ ->
+                        viewModel.selectMapPin(
+                            GeoPoint(stop.latitude, stop.longitude),
+                            "${stop.name} Bus Stop"
+                        )
+                        true
+                    }
+                }
+                map.overlays.add(marker)
+                newMarkers.add(marker)
+            }
+            busMarkersList = newMarkers
             map.invalidate()
         } else {
             map.invalidate()
@@ -222,7 +287,7 @@ fun WakeMeLandingScreen(
             }
         }
 
-        // 2. Top Header: Search Bar & 1-Tap Quick Favorites Carousel
+        // 2. Top Section: Search Bar + Voice Mic + Profile/Settings Button + Saved Places & History Pills
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -230,69 +295,121 @@ fun WakeMeLandingScreen(
                 .padding(top = 16.dp, start = 16.dp, end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // "Where are you heading?" Search Bar
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .shadow(8.dp, RoundedCornerShape(16.dp)),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
+            // Row containing Search Bar and Profile/Setting Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Row(
+                // "Where are you heading?" Search Bar with Mic inside
+                Surface(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .weight(1f)
+                        .height(54.dp)
+                        .shadow(8.dp, RoundedCornerShape(18.dp)),
+                    shape = RoundedCornerShape(18.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { viewModel.onSearchQueryChanged(it) },
-                        placeholder = {
-                            Text(
-                                "Where are you heading?",
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        singleLine = true,
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            disabledContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent
-                        ),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (isSearching) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.primary
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
                         )
-                    } else if (searchQuery.isNotEmpty()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { viewModel.onSearchQueryChanged(it) },
+                            placeholder = {
+                                Text(
+                                    "Where are you heading?",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            },
+                            singleLine = true,
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                disabledContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        if (isSearching) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        } else if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    viewModel.clearSearch()
+                                    focusManager.clearFocus()
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Clear Search",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+
+                        // Voice Mic Button
                         IconButton(
                             onClick = {
-                                viewModel.clearSearch()
-                                focusManager.clearFocus()
+                                try {
+                                    val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                                        putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                                        putExtra(RecognizerIntent.EXTRA_PROMPT, "Say your destination...")
+                                    }
+                                    speechLauncher.launch(intent)
+                                } catch (_: Exception) {
+                                    viewModel.showMessage("Voice input not supported on this device")
+                                }
                             },
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(32.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Clear Search",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Search",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
+                    }
+                }
+
+                // Profile / Settings Button (from sketch: Profile/setting future)
+                Surface(
+                    onClick = { showProfileSettingsDialog = true },
+                    modifier = Modifier
+                        .size(54.dp)
+                        .shadow(8.dp, CircleShape),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Profile and Settings",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
                     }
                 }
             }
@@ -339,38 +456,117 @@ fun WakeMeLandingScreen(
                 }
             }
 
+            // Two Filter Pills: [★ Saved Places] and [⏱ History]
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // Saved Places Pill
+                Surface(
+                    onClick = { showSavedPlacesModal = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 6.dp,
+                    tonalElevation = 4.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFFFA000), // Gold Star
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Saved Places",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (favorites.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                modifier = Modifier.padding(1.dp)
+                            ) {
+                                Text(
+                                    text = "${favorites.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
 
+                // History Pill
+                Surface(
+                    onClick = { showHistoryModal = true },
+                    shape = RoundedCornerShape(20.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 6.dp,
+                    tonalElevation = 4.dp,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.History,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "History",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (recentTrips.isNotEmpty()) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                modifier = Modifier.padding(1.dp)
+                            ) {
+                                Text(
+                                    text = "${recentTrips.size}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.secondary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
-        // 3. Right-side Floating Controls (Transit Layer + My Location)
+        // 3. Right-Side 3-FAB Column (from sketch: Current location, Metro, BMTC (future))
         Column(
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(end = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Transit Overlay Toggle
-            FloatingActionButton(
-                onClick = { viewModel.toggleTransitOverlay() },
-                containerColor = if (showTransitOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                contentColor = if (showTransitOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DirectionsTransit,
-                    contentDescription = "Toggle Transit Overlay",
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-
-            // Re-center on GPS Location
+            // FAB 1 (Top): Re-center on GPS Location
             FloatingActionButton(
                 onClick = {
                     val myLoc = locationOverlayRef?.myLocation
                     if (myLoc != null) {
                         mapViewRef?.controller?.animateTo(myLoc)
                         currentMapCenter = myLoc
+                    } else {
+                        viewModel.showMessage("Locating your GPS satellites...")
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -380,339 +576,592 @@ fun WakeMeLandingScreen(
             ) {
                 Icon(
                     imageVector = Icons.Default.MyLocation,
-                    contentDescription = "My Location",
+                    contentDescription = "My GPS Location",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // FAB 2 (Middle): Metro Station Layer Toggle
+            FloatingActionButton(
+                onClick = { viewModel.toggleMetroOverlay() },
+                containerColor = if (showMetroOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                contentColor = if (showMetroOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DirectionsSubway,
+                    contentDescription = "Toggle Metro Stations",
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (sketch: BMTC (future) just add button)
+            FloatingActionButton(
+                onClick = { viewModel.toggleBmtcOverlay() },
+                containerColor = if (showBmtcOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                contentColor = if (showBmtcOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(48.dp),
+                shape = CircleShape
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DirectionsBus,
+                    contentDescription = "Toggle BMTC Bus Stops",
                     modifier = Modifier.size(24.dp)
                 )
             }
         }
 
-        // 4. Bottom Section: Bottom Sheet with Dropped Pin Action, Saved Places & Commute History
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .heightIn(max = 440.dp)
-                .shadow(16.dp, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)),
-            shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp
-        ) {
-            Column(
+        // 4. Bottom Dropped Pin Action Card (if user tapped map)
+        val pin = droppedPinLocation
+        if (pin != null) {
+            Surface(
                 modifier = Modifier
+                    .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(16.dp)
+                    .shadow(12.dp, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
             ) {
-                // Drag Handle
-                Box(
-                    modifier = Modifier
-                        .width(36.dp)
-                        .height(4.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.outlineVariant)
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                // Dropped Pin Action Card (if user tapped map)
-                val pin = droppedPinLocation
-                if (pin != null) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Place,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(24.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column {
-                                        Text(
-                                            text = "Selected Map Location",
-                                            style = MaterialTheme.typography.titleSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = String.format("%.4f° N, %.4f° E", pin.latitude, pin.longitude),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                                IconButton(
-                                    onClick = {
-                                        droppedPinMarker?.let { mapViewRef?.overlays?.remove(it) }
-                                        droppedPinMarker = null
-                                        droppedPinLocation = null
-                                        mapViewRef?.invalidate()
-                                    },
-                                    modifier = Modifier.size(28.dp)
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear Pin")
-                                }
-                            }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        viewModel.selectMapPin(pin)
-                                    },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(44.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Set Destination ➔", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                }
-
-                                FilledTonalButton(
-                                    onClick = {
-                                        showAddPlaceDialog = true
-                                    },
-                                    modifier = Modifier.height(44.dp),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Default.BookmarkAdd, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // SAVED PLACES Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text(
-                        text = "SAVED PLACES",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
-                    TextButton(
-                        onClick = { showAddPlaceDialog = true },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ Add Place", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                    }
-                }
-
-                if (favorites.isEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAddPlaceDialog = true }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(
-                            modifier = Modifier.padding(14.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Text("📍", fontSize = 24.sp)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
+                            Icon(
+                                imageVector = Icons.Default.Place,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
                                 Text(
-                                    text = "No saved places yet",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "Selected Map Location",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "Save Home, Work, or gym for 1-tap alarms.",
+                                    text = String.format("%.4f° N, %.4f° E", pin.latitude, pin.longitude),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            Text(
-                                text = "+ Add",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.Bold
-                            )
                         }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        favorites.forEach { fav ->
-                            val emoji = when (fav.category.uppercase()) {
-                                "HOME" -> "🏠"
-                                "WORK" -> "🏢"
-                                "GYM" -> "🏋️"
-                                "STATION", "TRANSIT" -> "🚉"
-                                "AIRPORT" -> "✈️"
-                                else -> "📍"
-                            }
-                            val radiusLabel = if (fav.radiusMeters >= 1000f) "${(fav.radiusMeters / 1000f).toInt()}km" else "${fav.radiusMeters.toInt()}m"
-
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        focusManager.clearFocus()
-                                        viewModel.selectFavorite(fav)
-                                    }
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(emoji, fontSize = 22.sp)
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = fav.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = "${fav.category.lowercase().replaceFirstChar { it.uppercase() }} • Alarm @ $radiusLabel",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontSize = 11.sp
-                                        )
-                                    }
-
-                                    // Edit & Delete actions
-                                    IconButton(
-                                        onClick = { editingPlaceEntity = fav },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "Edit Place",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { viewModel.deleteFavorite(fav.id) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.DeleteOutline,
-                                            contentDescription = "Delete Place",
-                                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-
-                // COMMUTE HISTORY Section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "COMMUTE HISTORY",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp
-                    )
-                    if (recentTrips.isNotEmpty()) {
-                        TextButton(
-                            onClick = { viewModel.clearRecentTrips() },
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.height(24.dp)
+                        IconButton(
+                            onClick = {
+                                droppedPinMarker?.let { mapViewRef?.overlays?.remove(it) }
+                                droppedPinMarker = null
+                                droppedPinLocation = null
+                                mapViewRef?.invalidate()
+                            },
+                            modifier = Modifier.size(28.dp)
                         ) {
-                            Text("Clear", style = MaterialTheme.typography.labelSmall)
+                            Icon(Icons.Default.Close, contentDescription = "Clear Pin")
                         }
                     }
-                }
 
-                if (recentTrips.isNotEmpty()) {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        recentTrips.forEach { trip ->
-                            val emoji = if (trip.vehicleMode == "BUS") "🚌" else "🚗"
-                            val radiusStr = if (trip.radiusMeters >= 1000f) "${(trip.radiusMeters / 1000f).toInt()}km" else "${trip.radiusMeters.toInt()}m"
-                            SuggestionChip(
-                                onClick = { viewModel.selectRecentTrip(trip) },
-                                label = {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(emoji, fontSize = 14.sp)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Column {
-                                            Text(
-                                                text = trip.destinationName,
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = "Alarm @ $radiusStr",
-                                                fontSize = 10.sp,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                    }
-                                },
-                                colors = SuggestionChipDefaults.suggestionChipColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)
-                                )
-                            )
+                        Button(
+                            onClick = {
+                                viewModel.selectMapPin(pin)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Set Destination ➔", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        FilledTonalButton(
+                            onClick = {
+                                showAddPlaceDialog = true
+                            },
+                            modifier = Modifier.height(46.dp),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFA000), modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                         }
                     }
-                } else {
-                    Text(
-                        text = "Your completed alarms and commute trips will appear here.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                        fontSize = 12.sp
-                    )
                 }
             }
         }
     }
 
-    // Add Saved Place Dialog
+    // 5. SAVED PLACES MODAL DIALOG (with Dimmed Backdrop Scrim)
+    if (showSavedPlacesModal) {
+        Dialog(onDismissRequest = { showSavedPlacesModal = false }) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .shadow(16.dp, RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Header Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFFFA000),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Saved Places",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = { showSavedPlacesModal = false },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    // Add Place Button
+                    OutlinedButton(
+                        onClick = {
+                            showSavedPlacesModal = false
+                            showAddPlaceDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("+ Add New Saved Place", fontWeight = FontWeight.SemiBold)
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // Saved Places List (or empty state)
+                    if (favorites.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("⭐", fontSize = 36.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No saved places yet",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Save Home, Work, or gym for 1-tap alarms.\nTap star or long press to remove anytime.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f, fill = false),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(favorites) { fav ->
+                                val emoji = when (fav.category.uppercase()) {
+                                    "HOME" -> "🏠"
+                                    "WORK" -> "🏢"
+                                    "GYM" -> "🏋️"
+                                    "STATION", "TRANSIT" -> "🚉"
+                                    "AIRPORT" -> "✈️"
+                                    else -> "📍"
+                                }
+                                val radiusLabel = if (fav.radiusMeters >= 1000f) "${(fav.radiusMeters / 1000f).toInt()}km" else "${fav.radiusMeters.toInt()}m"
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .combinedClickable(
+                                            onClick = {
+                                                showSavedPlacesModal = false
+                                                viewModel.selectFavorite(fav)
+                                            },
+                                            onLongClick = {
+                                                favoriteToRemove = fav
+                                            }
+                                        )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(emoji, fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = fav.name,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "Alarm @ $radiusLabel",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+
+                                        // Gold Star button: tapping star also triggers removal confirmation
+                                        IconButton(
+                                            onClick = { favoriteToRemove = fav },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Star,
+                                                contentDescription = "Remove Star",
+                                                tint = Color(0xFFFFA000),
+                                                modifier = Modifier.size(24.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. HISTORY MODAL DIALOG (Distinct places only, latest at top, no stars)
+    if (showHistoryModal) {
+        Dialog(onDismissRequest = { showHistoryModal = false }) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 500.dp)
+                    .shadow(16.dp, RoundedCornerShape(24.dp)),
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Header Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.History,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Commute History",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        IconButton(
+                            onClick = { showHistoryModal = false },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Close")
+                        }
+                    }
+
+                    if (recentTrips.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Distinct places • Latest at top",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(
+                                onClick = { showClearHistoryConfirm = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Clear All", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                    // History items list (no stars, distinct places)
+                    if (recentTrips.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text("⏱️", fontSize = 36.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "No commute history yet",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Places you commute to will be automatically recorded here.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f, fill = false),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(recentTrips) { trip ->
+                                val emoji = when (trip.vehicleMode) {
+                                    "BUS" -> "🚌"
+                                    "METRO" -> "🚇"
+                                    else -> "🚗"
+                                }
+                                val radiusStr = if (trip.radiusMeters >= 1000f) "${(trip.radiusMeters / 1000f).toInt()}km" else "${trip.radiusMeters.toInt()}m"
+
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            showHistoryModal = false
+                                            viewModel.selectRecentTrip(trip)
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(emoji, fontSize = 22.sp)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = trip.destinationName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "Alarm @ $radiusStr",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = Icons.Default.ArrowForward,
+                                            contentDescription = "Select",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 7. REMOVE SAVED PLACE CONFIRMATION DIALOG (from sketch: "tap on star to remove - a confirmation message")
+    favoriteToRemove?.let { fav ->
+        AlertDialog(
+            onDismissRequest = { favoriteToRemove = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Remove Saved Place?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to remove \"${fav.name}\" from your saved places?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteFavorite(fav.id)
+                        viewModel.showMessage("Removed \"${fav.name}\" from saved places")
+                        favoriteToRemove = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Remove")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { favoriteToRemove = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // 8. CLEAR HISTORY CONFIRMATION DIALOG
+    if (showClearHistoryConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearHistoryConfirm = false },
+            title = {
+                Text("Clear Commute History?", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("Are you sure you want to clear your recent commute history?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearRecentTrips()
+                        showClearHistoryConfirm = false
+                        viewModel.showMessage("Commute history cleared")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearHistoryConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // 9. PROFILE & SETTINGS DIALOG (from sketch: "Profile/setting future")
+    if (showProfileSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showProfileSettingsDialog = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text("WakeMe Settings & Profile", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Version: 2.0.0 (Preview)",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = "🛰️ Tracking: Hardware GNSS Satellite (0 Data consumed)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "🚇 Offline Transit: 66 Metro Stations & 8,000+ Bus Stops cached offline.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (_: Exception) {
+                                viewModel.showMessage("Open System Settings > Battery Optimization")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.BatteryChargingFull, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Battery Optimization Settings", fontSize = 12.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showProfileSettingsDialog = false }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
+    // 10. ADD SAVED PLACE DIALOG
     if (showAddPlaceDialog) {
         var placeName by remember { mutableStateOf("") }
         var selectedCategory by remember { mutableStateOf("HOME") }
@@ -800,6 +1249,7 @@ fun WakeMeLandingScreen(
                             longitude = targetPoint.longitude,
                             radiusMeters = selectedRadius
                         )
+                        viewModel.showMessage("Saved \"$nameToSave\"")
                         showAddPlaceDialog = false
                     }
                 ) {
@@ -813,116 +1263,7 @@ fun WakeMeLandingScreen(
             }
         )
     }
-
-    // Edit Saved Place Dialog
-    editingPlaceEntity?.let { place ->
-        var editName by remember(place) { mutableStateOf(place.name) }
-        var editCategory by remember(place) { mutableStateOf(place.category) }
-        var editRadius by remember(place) { mutableStateOf(place.radiusMeters) }
-        var editNote by remember(place) { mutableStateOf(place.reminderNote) }
-
-        AlertDialog(
-            onDismissRequest = { editingPlaceEntity = null },
-            title = {
-                Text(
-                    text = "Edit Saved Place",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    OutlinedTextField(
-                        value = editName,
-                        onValueChange = { editName = it },
-                        label = { Text("Place Name") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Text("Category", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        val categories = listOf("HOME" to "🏠 Home", "WORK" to "🏢 Work", "GYM" to "🏋️ Gym", "CUSTOM" to "📍 Other")
-                        categories.forEach { (cat, label) ->
-                            FilterChip(
-                                selected = editCategory == cat,
-                                onClick = { editCategory = cat },
-                                label = { Text(label, fontSize = 12.sp) }
-                            )
-                        }
-                    }
-
-                    Text("Alarm Distance", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf(200f to "200m", 500f to "500m", 1000f to "1km", 2000f to "2km").forEach { (rad, radLabel) ->
-                            FilterChip(
-                                selected = editRadius == rad,
-                                onClick = { editRadius = rad },
-                                label = { Text(radLabel, fontSize = 12.sp) }
-                            )
-                        }
-                    }
-
-                    OutlinedTextField(
-                        value = editNote,
-                        onValueChange = { editNote = it },
-                        label = { Text("Reminder Note (Optional)") },
-                        placeholder = { Text("e.g. Bring office badge") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val updated = place.copy(
-                            name = editName.ifBlank { place.name },
-                            category = editCategory,
-                            radiusMeters = editRadius,
-                            reminderNote = editNote
-                        )
-                        viewModel.updateFavorite(updated)
-                        editingPlaceEntity = null
-                    }
-                ) {
-                    Text("Update")
-                }
-            },
-            dismissButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(
-                        onClick = {
-                            viewModel.deleteFavorite(place.id)
-                            editingPlaceEntity = null
-                        },
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Text("Delete")
-                    }
-                    TextButton(onClick = { editingPlaceEntity = null }) {
-                        Text("Cancel")
-                    }
-                }
-            }
-        )
-    }
 }
-
-
 
 @Composable
 private fun SearchResultRow(
@@ -993,5 +1334,3 @@ private fun SearchResultRow(
         }
     }
 }
-
-

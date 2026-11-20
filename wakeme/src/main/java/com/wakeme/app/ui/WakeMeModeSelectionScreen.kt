@@ -1,12 +1,15 @@
 package com.wakeme.app.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,22 +20,35 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Marker
+import org.osmdroid.views.overlay.Polygon
 
 /**
- * Screen 2: Uber/Rapido-Style Mode Selection & Trip Setup Screen.
- * Allows commuters to choose between Car/Cab (gentle reminder chime) and City Bus (loud wake-up siren),
- * preview alert sounds, tune geofence radius chips, configure audio routing, enter a deboard note, and start tracking.
+ * Screen 2: Mode Setup & Alarm Configuration Screen.
+ * Implements the user's approved notebook sketch design:
+ * - Top Route Card: Origin (Your location) -> Destination.
+ * - Route Mini-Map Preview with destination pin and dynamic geofence radius circle.
+ * - Mode Selector: [City Bus] [Namma Metro] [Direct Road / Auto].
+ * - Wake-up Radius: [ 200m ] [ 500m ] [ 1 km ] [ 2 km ] + [ Custom... ]
+ * - Audio & Vibration options: Speaker, Speaker + Headphones, Headphones, and Vibrate (+/-).
+ * - Deboard reminder note & big [ START COMMUTE ALARM ] CTA.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,9 +64,11 @@ fun WakeMeModeSelectionScreen(
     val selectedVehicleMode by viewModel.selectedVehicleMode.collectAsState()
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val audioRouting by viewModel.audioRouting.collectAsState()
+    val vibrateEnabled by viewModel.vibrateEnabled.collectAsState()
     val reminderNote by viewModel.reminderNote.collectAsState()
 
     var isPreviewingMode by remember { mutableStateOf<VehicleMode?>(null) }
+    var showCustomRadiusDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -58,7 +76,7 @@ fun WakeMeModeSelectionScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Select Commuter Mode",
+                            text = "Commute & Alarm Setup",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -118,7 +136,7 @@ fun WakeMeModeSelectionScreen(
                         )
                     ) {
                         Text(
-                            text = "${selectedVehicleMode.iconEmoji} Start ${if (selectedVehicleMode == VehicleMode.BUS) "Bus Alarm" else "Car Reminder"} ($radiusLabel)",
+                            text = "${selectedVehicleMode.iconEmoji} Start Alarm ($radiusLabel)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -134,16 +152,130 @@ fun WakeMeModeSelectionScreen(
                 .padding(innerPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Destination Banner Card
-            DestinationSummaryCard(
-                name = targetName,
-                latitude = targetLocation.latitude,
-                longitude = targetLocation.longitude
-            )
+            // 1. Top Route Connection Card (from sketch: • your location | • destination)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Origin row
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF2E7D32)) // Green dot for origin
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = "Your Location",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Current GPS Position",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
 
-            // Vehicle Mode Selection Cards (Uber/Rapido style)
+                    // Route connector line
+                    Box(
+                        modifier = Modifier
+                            .padding(start = 5.dp)
+                            .width(2.dp)
+                            .height(18.dp)
+                            .background(MaterialTheme.colorScheme.outlineVariant)
+                    )
+
+                    // Destination row
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Destination",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = targetName,
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 2. Compact Route Map Preview with dynamic geofence radius circle (from sketch: + Route MAP)
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp)
+                    .clip(RoundedCornerShape(16.dp)),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        MapView(ctx).apply {
+                            setTileSource(TileSourceFactory.MAPNIK)
+                            setMultiTouchControls(true)
+                            controller.setZoom(14.5)
+                            controller.setCenter(targetLocation)
+
+                            val destMarker = Marker(this).apply {
+                                position = targetLocation
+                                title = targetName
+                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            }
+                            overlays.add(destMarker)
+
+                            val geofenceCircle = Polygon(this).apply {
+                                points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                                fillPaint.color = 0x331E88E5.toInt()
+                                outlinePaint.color = 0xFF1E88E5.toInt()
+                                outlinePaint.strokeWidth = 3f
+                            }
+                            overlays.add(geofenceCircle)
+                        }
+                    },
+                    update = { map ->
+                        map.controller.setCenter(targetLocation)
+                        val circle = map.overlays.filterIsInstance<Polygon>().firstOrNull()
+                        if (circle != null) {
+                            circle.points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                            map.invalidate()
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+
+            // 3. Commute Vehicle Mode Selection (from sketch: [Bus] [Metro] [Direction])
             Text(
                 text = "COMMUTE VEHICLE MODE",
                 style = MaterialTheme.typography.labelMedium,
@@ -168,7 +300,8 @@ fun WakeMeModeSelectionScreen(
                                 longitude = 0.0,
                                 vehicleMode = mode,
                                 alertMode = mode.alertMode,
-                                audioRouting = audioRouting
+                                audioRouting = audioRouting,
+                                vibrate = vibrateEnabled
                             )
                             WakeMeAlarmController.triggerAlert(context, previewConfig)
                             coroutineScope.launch {
@@ -184,7 +317,7 @@ fun WakeMeModeSelectionScreen(
                 )
             }
 
-            // Geofence Radius Selector Chips
+            // 4. Wake-Up Radius Distance (from sketch: [200] [500] [1k] [2k] + [custom values])
             Text(
                 text = "WAKE-UP RADIUS DISTANCE",
                 style = MaterialTheme.typography.labelMedium,
@@ -222,16 +355,43 @@ fun WakeMeModeSelectionScreen(
                         } else null
                     )
                 }
+
+                // Custom Radius Chip
+                val isCustom = radiusPresets.none { it == radiusMeters }
+                val customLabel = if (isCustom) {
+                    if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km (Custom)" else "${radiusMeters.toInt()}m (Custom)"
+                } else {
+                    "Custom..."
+                }
+
+                FilterChip(
+                    selected = isCustom,
+                    onClick = { showCustomRadiusDialog = true },
+                    label = {
+                        Text(
+                            text = customLabel,
+                            fontWeight = if (isCustom) FontWeight.Bold else FontWeight.Normal
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Default.Tune,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                )
             }
 
-            // Audio Routing Selector
+            // 5. Audio Output & Vibration Options (from sketch: speaker [Audio option] (option), vibrate (+/-))
             Text(
-                text = "AUDIO OUTPUT ROUTING",
+                text = "AUDIO & ALERT OPTIONS",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
+            // Audio Routing Chips: Speaker Only, Speaker + Headphones, Headphones Only
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -239,9 +399,9 @@ fun WakeMeModeSelectionScreen(
                 AudioRouting.values().forEach { routing ->
                     val isSelected = (audioRouting == routing)
                     val label = when (routing) {
-                        AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones"
                         AudioRouting.SPEAKER_ONLY -> "🔊 Speaker"
                         AudioRouting.BOTH -> "🔔 Both"
+                        AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones"
                     }
                     FilterChip(
                         selected = isSelected,
@@ -258,7 +418,27 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            // Deboard Reminder Note (Optional)
+            // Vibration Toggle (+ / -)
+            FilterChip(
+                selected = vibrateEnabled,
+                onClick = { viewModel.setVibrateEnabled(!vibrateEnabled) },
+                label = {
+                    Text(
+                        text = if (vibrateEnabled) "📳 Vibration: ENABLED (+)" else "📳 Vibration: DISABLED (-)",
+                        fontWeight = if (vibrateEnabled) FontWeight.Bold else FontWeight.Normal
+                    )
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = if (vibrateEnabled) Icons.Default.Vibration else Icons.Default.VolumeMute,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // 6. Deboard Reminder Note (Optional)
             Text(
                 text = "DEBOARD NOTE (OPTIONAL)",
                 style = MaterialTheme.typography.labelMedium,
@@ -271,7 +451,7 @@ fun WakeMeModeSelectionScreen(
                 onValueChange = { viewModel.setReminderNote(it) },
                 placeholder = {
                     Text(
-                        "e.g. Collect bag from rack, change to Green Line",
+                        "e.g. Take backpack, change to Green Line",
                         style = MaterialTheme.typography.bodySmall
                     )
                 },
@@ -290,53 +470,52 @@ fun WakeMeModeSelectionScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
-}
 
-@Composable
-private fun DestinationSummaryCard(
-    name: String,
-    latitude: Double,
-    longitude: Double
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) {
-        Row(
-            modifier = Modifier.padding(14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.LocationOn,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                    modifier = Modifier.size(24.dp)
-                )
+    // Custom Radius Dialog
+    if (showCustomRadiusDialog) {
+        var customInput by remember { mutableStateOf(radiusMeters.toInt().toString()) }
+
+        AlertDialog(
+            onDismissRequest = { showCustomRadiusDialog = false },
+            title = {
+                Text("Set Custom Wake-Up Radius", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Enter distance in meters (50m to 10,000m):",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = customInput,
+                        onValueChange = { customInput = it.filter { ch -> ch.isDigit() } },
+                        label = { Text("Radius (meters)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val parsed = customInput.toFloatOrNull()
+                        if (parsed != null && parsed >= 50f) {
+                            viewModel.setRadius(parsed)
+                        }
+                        showCustomRadiusDialog = false
+                    }
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomRadiusDialog = false }) {
+                    Text("Cancel")
+                }
             }
-            Spacer(modifier = Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = String.format("%.4f° N, %.4f° E", latitude, longitude),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        )
     }
 }
 
@@ -395,10 +574,11 @@ private fun VehicleCard(
                                 )
                             },
                             colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = if (mode == VehicleMode.BUS)
-                                    MaterialTheme.colorScheme.errorContainer
-                                else
-                                    MaterialTheme.colorScheme.secondaryContainer
+                                containerColor = when (mode) {
+                                    VehicleMode.BUS -> MaterialTheme.colorScheme.errorContainer
+                                    VehicleMode.METRO -> MaterialTheme.colorScheme.primaryContainer
+                                    VehicleMode.CAR -> MaterialTheme.colorScheme.secondaryContainer
+                                }
                             ),
                             border = null
                         )

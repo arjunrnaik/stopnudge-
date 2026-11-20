@@ -75,8 +75,17 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _audioRouting = MutableStateFlow(AudioRouting.BOTH)
     val audioRouting: StateFlow<AudioRouting> = _audioRouting.asStateFlow()
 
+    private val _vibrateEnabled = MutableStateFlow(true)
+    val vibrateEnabled: StateFlow<Boolean> = _vibrateEnabled.asStateFlow()
+
     private val _reminderNote = MutableStateFlow("")
     val reminderNote: StateFlow<String> = _reminderNote.asStateFlow()
+
+    private val _showMetroOverlay = MutableStateFlow(false)
+    val showMetroOverlay: StateFlow<Boolean> = _showMetroOverlay.asStateFlow()
+
+    private val _showBmtcOverlay = MutableStateFlow(false)
+    val showBmtcOverlay: StateFlow<Boolean> = _showBmtcOverlay.asStateFlow()
 
     private val _showTransitOverlay = MutableStateFlow(false)
     val showTransitOverlay: StateFlow<Boolean> = _showTransitOverlay.asStateFlow()
@@ -124,10 +133,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // Collect recent trip history
+        // Collect recent trip history (distinct places, latest at top)
         viewModelScope.launch(Dispatchers.IO) {
             recentTripDao.getRecentTrips().collect { list ->
-                _recentTrips.value = list
+                _recentTrips.value = list.distinctBy { it.destinationName.trim().lowercase() }
             }
         }
 
@@ -152,6 +161,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     _selectedVehicleMode.value = config.vehicleMode
                     _alertMode.value = config.alertMode
                     _audioRouting.value = config.audioRouting
+                    _vibrateEnabled.value = config.vibrate
                     _reminderNote.value = config.reminderNote
                 }
             }
@@ -383,8 +393,40 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _audioRouting.value = routing
     }
 
+    fun setVibrateEnabled(enabled: Boolean) {
+        _vibrateEnabled.value = enabled
+    }
+
+    fun showMessage(msg: String) {
+        _userMessage.tryEmit(msg)
+    }
+
     fun setReminderNote(note: String) {
         _reminderNote.value = note
+    }
+
+    fun toggleMetroOverlay() {
+        val next = !_showMetroOverlay.value
+        _showMetroOverlay.value = next
+        if (next) {
+            _userMessage.tryEmit("🚇 Namma Metro overlay enabled")
+        }
+    }
+
+    fun toggleBmtcOverlay() {
+        val next = !_showBmtcOverlay.value
+        _showBmtcOverlay.value = next
+        if (next) {
+            if (_busStops.value.isEmpty()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        val initialBuses = transitDao.getInitialBusStops()
+                        _busStops.value = initialBuses
+                    } catch (_: Exception) {}
+                }
+            }
+            _userMessage.tryEmit("🚌 BMTC Bus overlay enabled")
+        }
     }
 
     fun toggleTransitOverlay() {
@@ -410,7 +452,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             vehicleMode = _selectedVehicleMode.value,
             alertMode = _alertMode.value,
             audioRouting = _audioRouting.value,
-            reminderNote = _reminderNote.value
+            reminderNote = _reminderNote.value,
+            vibrate = _vibrateEnabled.value
         )
     }
 

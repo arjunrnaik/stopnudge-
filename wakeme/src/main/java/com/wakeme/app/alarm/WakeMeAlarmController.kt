@@ -54,38 +54,40 @@ object WakeMeAlarmController {
             }
         } catch (_: Exception) {}
 
-        // Configure Vibrator
-        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
-            vibratorManager?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
-
-        // Start Vibration Pattern
-        try {
-            if (config.alertMode == AlertMode.WAKEUP_ALARM) {
-                val pattern = longArrayOf(0, 1000, 500, 1000, 500)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val effect = VibrationEffect.createWaveform(pattern, 0) // Repeat from index 0
-                    vibrator?.vibrate(effect)
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator?.vibrate(pattern, 0)
-                }
+        // Configure and trigger Vibrator if enabled
+        if (config.vibrate) {
+            vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager
+                vibratorManager?.defaultVibrator
             } else {
-                // Gentle reminder: single short vibration pulse
-                val pattern = longArrayOf(0, 350)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val effect = VibrationEffect.createWaveform(pattern, -1) // No repeat
-                    vibrator?.vibrate(effect)
-                } else {
-                    @Suppress("DEPRECATION")
-                    vibrator?.vibrate(pattern, -1)
-                }
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
-        } catch (_: Exception) {}
+
+            // Start Vibration Pattern
+            try {
+                if (config.alertMode == AlertMode.WAKEUP_ALARM) {
+                    val pattern = longArrayOf(0, 1000, 500, 1000, 500)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val effect = VibrationEffect.createWaveform(pattern, 0) // Repeat from index 0
+                        vibrator?.vibrate(effect)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(pattern, 0)
+                    }
+                } else {
+                    // Gentle reminder: single short vibration pulse
+                    val pattern = longArrayOf(0, 350)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        val effect = VibrationEffect.createWaveform(pattern, -1) // No repeat
+                        vibrator?.vibrate(effect)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(pattern, -1)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
 
         // Select Ringtone URI
         val soundUri: Uri = if (config.alertMode == AlertMode.WAKEUP_ALARM) {

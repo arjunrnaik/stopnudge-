@@ -85,6 +85,7 @@ fun WakeMeActiveTripScreen(
     var isTestingAlert by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(false) }
     var isHeadingUp by remember { mutableStateOf(true) }
+    var showEndCommuteConfirmation by remember { mutableStateOf(false) }
 
     // Pulsing animation for the satellite indicator
     val infiniteTransition = rememberInfiniteTransition(label = "Pulse")
@@ -141,7 +142,7 @@ fun WakeMeActiveTripScreen(
                 ) {
                     Button(
                         onClick = {
-                            viewModel.stopTracking(context)
+                            showEndCommuteConfirmation = true
                         },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -158,7 +159,7 @@ fun WakeMeActiveTripScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Stop Tracking & Cancel Alarm",
+                            text = "END COMMUTE / STOP ALARM",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -757,40 +758,117 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 7. Test Arrival Alarm Action
-            OutlinedButton(
-                onClick = {
-                    if (!isTestingAlert) {
-                        isTestingAlert = true
-                        val config = viewModel.getDestinationConfig()
-                        WakeMeAlarmController.triggerAlert(context, config)
-                        coroutineScope.launch {
-                            delay(5000L) // Sound test for 5 seconds
-                            WakeMeAlarmController.stopAlert(context)
-                            isTestingAlert = false
+            // 7. Sleep Guard Active & Test Ring Card (from sketch: "Not sure" -> Sleep Guard)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Sleep Guard Active 🛡️",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Alarm sounds at full volume even if phone is on Silent or DND.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(
-                    imageVector = if (isTestingAlert) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = if (isTestingAlert) "Sounding Alert Test (5s)..." else "Test Alarm & Volume",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
+
+                    OutlinedButton(
+                        onClick = {
+                            if (!isTestingAlert) {
+                                isTestingAlert = true
+                                val config = viewModel.getDestinationConfig()
+                                WakeMeAlarmController.triggerAlert(context, config)
+                                coroutineScope.launch {
+                                    delay(5000L) // Sound test for 5 seconds
+                                    WakeMeAlarmController.stopAlert(context)
+                                    isTestingAlert = false
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isTestingAlert) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = if (isTestingAlert) "Sounding Alert Test (5s)..." else "Test Ring 🔊",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    // End Commute Confirmation Dialog
+    if (showEndCommuteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showEndCommuteConfirmation = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.WarningAmber,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "End Commute?",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to stop tracking and cancel the destination alarm?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showEndCommuteConfirmation = false
+                        viewModel.stopTracking(context)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("End Commute")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndCommuteConfirmation = false }) {
+                    Text("Resume Trip")
+                }
+            }
+        )
     }
 
     // Full-Screen Interactive Map Modal Dialog

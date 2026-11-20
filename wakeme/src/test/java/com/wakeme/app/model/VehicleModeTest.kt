@@ -9,7 +9,7 @@ class VehicleModeTest {
     @Test
     fun carMode_defaultsToGentleReminderAnd1000m() {
         val car = VehicleMode.CAR
-        assertEquals("Car / Cab", car.title)
+        assertEquals("Direct Road / Auto", car.title)
         assertEquals("🚗", car.iconEmoji)
         assertEquals(1000f, car.defaultRadiusMeters, 0.01f)
         assertEquals(AlertMode.GENTLE_REMINDER, car.alertMode)
@@ -22,6 +22,15 @@ class VehicleModeTest {
         assertEquals("🚌", bus.iconEmoji)
         assertEquals(500f, bus.defaultRadiusMeters, 0.01f)
         assertEquals(AlertMode.WAKEUP_ALARM, bus.alertMode)
+    }
+
+    @Test
+    fun metroMode_defaultsToWakeupAlarmAnd800m() {
+        val metro = VehicleMode.METRO
+        assertEquals("Namma Metro", metro.title)
+        assertEquals("🚇", metro.iconEmoji)
+        assertEquals(800f, metro.defaultRadiusMeters, 0.01f)
+        assertEquals(AlertMode.WAKEUP_ALARM, metro.alertMode)
     }
 
     @Test

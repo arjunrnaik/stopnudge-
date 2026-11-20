@@ -13,5 +13,6 @@ data class DestinationConfig(
     val audioRouting: AudioRouting = AudioRouting.BOTH,
     val reminderNote: String = "",
     val isTransitStop: Boolean = false,
-    val transitType: String? = null
+    val transitType: String? = null,
+    val vibrate: Boolean = true
 )
