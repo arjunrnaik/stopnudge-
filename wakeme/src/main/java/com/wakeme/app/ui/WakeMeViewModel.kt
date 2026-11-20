@@ -104,6 +104,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _cameraMoveTarget = MutableSharedFlow<GeoPoint>(extraBufferCapacity = 1)
     val cameraMoveTarget: SharedFlow<GeoPoint> = _cameraMoveTarget.asSharedFlow()
 
+    // User feedback message event (e.g. Toasts)
+    private val _userMessage = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val userMessage: SharedFlow<String> = _userMessage.asSharedFlow()
+
     init {
         // Preload metro stations in background
         viewModelScope.launch(Dispatchers.IO) {
@@ -315,14 +319,18 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             if (parsed != null) {
                 val geoPoint = GeoPoint(parsed.latitude, parsed.longitude)
                 _targetLocation.value = geoPoint
-                _targetName.value = parsed.name ?: "Shared Google Maps Location"
+                val name = parsed.name ?: "Shared Google Maps Location"
+                _targetName.value = name
                 _cameraMoveTarget.tryEmit(geoPoint)
                 _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                _userMessage.tryEmit("Destination: $name")
             } else {
-                val cleanQuery = sharedText.lines().firstOrNull { it.isNotBlank() && !it.startsWith("http", ignoreCase = true) }
-                if (!cleanQuery.isNullOrBlank()) {
+                // Try searching for place name extracted from text or URL
+                val candidateName = extractSearchableQuery(sharedText)
+                var resolved = false
+                if (!candidateName.isNullOrBlank()) {
                     try {
-                        val results = searchRepository.search(cleanQuery)
+                        val results = searchRepository.search(candidateName)
                         val top = results.firstOrNull { it.type != SearchResultType.GOOGLE_MAPS_SEARCH }
                         if (top != null) {
                             val geoPoint = GeoPoint(top.latitude, top.longitude)
@@ -330,10 +338,27 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                             _targetName.value = top.title
                             _cameraMoveTarget.tryEmit(geoPoint)
                             _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                            _userMessage.tryEmit("Destination: ${top.title}")
+                            resolved = true
                         }
                     } catch (_: Exception) {}
                 }
+
+                if (!resolved) {
+                    _userMessage.tryEmit("Could not find location in link. Tap on map to set pin.")
+                }
             }
+        }
+    }
+
+    private fun extractSearchableQuery(text: String): String? {
+        val placeMatch = Regex("/place/([^/@?]+)").find(text)
+        if (placeMatch != null) {
+            val raw = placeMatch.groupValues[1].replace("+", " ")
+            return try { java.net.URLDecoder.decode(raw, "UTF-8") } catch (_: Exception) { raw }
+        }
+        return text.lines().map { it.trim() }.firstOrNull {
+            it.isNotBlank() && !it.startsWith("http", ignoreCase = true) && !it.startsWith("intent:", ignoreCase = true)
         }
     }
 

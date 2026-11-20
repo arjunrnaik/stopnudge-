@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -29,7 +30,6 @@ import com.wakeme.app.ui.theme.WakeMeTheme
 
 class MainActivity : ComponentActivity() {
 
-    private val sharedTextState = mutableStateOf<String?>(null)
     private val viewModel: WakeMeViewModel by viewModels()
 
     private val permissionLauncher = registerForActivityResult(
@@ -41,18 +41,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        handleIncomingIntent(intent)
         requestRequiredPermissions()
+        handleIncomingIntent(intent)
 
         setContent {
             WakeMeTheme {
                 val currentScreen by viewModel.currentScreen.collectAsState()
-                val sharedText by sharedTextState
 
-                LaunchedEffect(sharedText) {
-                    sharedText?.let { text ->
-                        viewModel.handleSharedText(text)
-                        sharedTextState.value = null
+                // Display user feedback toasts reactively
+                LaunchedEffect(viewModel) {
+                    viewModel.userMessage.collect { msg ->
+                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -97,7 +96,8 @@ class MainActivity : ComponentActivity() {
         if (intent == null) return
         var text: String? = null
         if (intent.action == Intent.ACTION_SEND) {
-            text = intent.getStringExtra(Intent.EXTRA_TEXT)
+            val subject = intent.getStringExtra(Intent.EXTRA_SUBJECT)
+            val mainText = intent.getStringExtra(Intent.EXTRA_TEXT)
                 ?: intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
                 ?: intent.clipData?.let { clip ->
                     if (clip.itemCount > 0) {
@@ -106,13 +106,20 @@ class MainActivity : ComponentActivity() {
                 }
                 ?: intent.dataString
                 ?: intent.data?.toString()
-                ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
+
+            text = when {
+                !subject.isNullOrBlank() && !mainText.isNullOrBlank() -> "$subject\n$mainText"
+                !mainText.isNullOrBlank() -> mainText
+                !subject.isNullOrBlank() -> subject
+                else -> null
+            }
         } else if (intent.action == Intent.ACTION_VIEW) {
             text = intent.dataString ?: intent.data?.toString() ?: intent.getStringExtra(Intent.EXTRA_TEXT)
         }
 
         if (!text.isNullOrBlank()) {
-            sharedTextState.value = text
+            Toast.makeText(this, "📍 Loading shared location...", Toast.LENGTH_SHORT).show()
+            viewModel.handleSharedText(text)
         }
     }
 
