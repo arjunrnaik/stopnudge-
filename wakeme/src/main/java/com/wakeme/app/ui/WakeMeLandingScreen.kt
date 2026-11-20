@@ -180,7 +180,7 @@ fun WakeMeLandingScreen(
                 val marker = Marker(map).apply {
                     position = GeoPoint(stop.latitude, stop.longitude)
                     title = stop.name
-                    snippet = "BMTC Bus Stop (${stop.routeCount} routes)"
+                    snippet = stop.ref?.let { "Ref: $it" } ?: "BMTC Bus Stop"
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
