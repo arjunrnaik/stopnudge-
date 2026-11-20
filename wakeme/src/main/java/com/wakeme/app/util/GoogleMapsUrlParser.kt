@@ -1,6 +1,11 @@
 package com.wakeme.app.util
 
+import android.content.Context
+import android.location.Address
+import android.location.Geocoder
+import android.os.Build
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -12,10 +17,12 @@ import java.net.Socket
 import java.net.URL
 import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.Locale
 import java.util.regex.Pattern
 import javax.net.ssl.SNIHostName
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
+import kotlin.coroutines.resume
 
 data class ParsedLocation(
     val name: String?,
@@ -27,8 +34,7 @@ object GoogleMapsUrlParser {
 
     private val COORD_PATTERN = Pattern.compile("(-?\\d{1,2}\\.\\d{3,10})\\s*,\\s*(-?\\d{1,3}\\.\\d{3,10})")
     private val AT_COORD_PATTERN = Pattern.compile("(?:@|%40)(-?\\d{1,2}\\.\\d{3,10})(?:,|%2[cC])(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
-    private val QUERY_COORD_PATTERN = Pattern.compile("[?&](?:q|query|ll|saddr|daddr|destination)=(-?\\d{1,2}\\.\\d{3,10})(?:,|%2[cC])(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
-    private val CENTER_COORD_PATTERN = Pattern.compile("center=(-?\\d{1,2}\\.\\d{3,10})(?:%2[cC]|,)(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
+    private val QUERY_COORD_PATTERN = Pattern.compile("[?&](?:q|query|ll|saddr|daddr|destination|center)=(-?\\d{1,2}\\.\\d{3,10})(?:,|%2[cC])(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
     private val DATA_COORD_PATTERN = Pattern.compile("!3d(-?\\d{1,2}\\.\\d{3,10})!4d(-?\\d{1,3}\\.\\d{3,10})")
     private val GEO_URI_PATTERN = Pattern.compile("geo:(-?\\d{1,2}\\.\\d{3,10})(?:,|%2[cC])(-?\\d{1,3}\\.\\d{3,10})", Pattern.CASE_INSENSITIVE)
     private val DMS_PATTERN = Pattern.compile("(\\d{1,2})°(\\d{1,2})'([\\d.]+)\"([NS])\\s*,?\\s*(\\d{1,3})°(\\d{1,2})'([\\d.]+)\"([EW])", Pattern.CASE_INSENSITIVE)
@@ -43,15 +49,18 @@ object GoogleMapsUrlParser {
         "142.250.190.46"
     )
 
+    suspend fun parseSharedText(text: String): ParsedLocation? = parseSharedText(null, text)
+
     /**
      * Parses raw text shared from Google Maps, WhatsApp, or browser.
-     * Handles:
-     * 1. Direct lat/lng coordinates and DMS
-     * 2. URLs with embedded coordinates
-     * 3. Google Maps short links (maps.app.goo.gl) with ISP DNS poisoning bypass
-     * 4. Place URLs with address names via progressive geocoding
+     * Architecture:
+     * 1. Direct regex match on plain text coordinates & DMS
+     * 2. Unshorten maps.app.goo.gl links with ISP DNS-poisoning bypass
+     * 3. Regex match on canonical expanded URL coordinates (@lat,lon, ?q=, !3d!4d)
+     * 4. Option A: Android Native Geocoder (Google Play Services) on /place/<address>
+     * 5. Fallback: Progressive OSM Nominatim & Photon Geocoding
      */
-    suspend fun parseSharedText(text: String): ParsedLocation? = withContext(Dispatchers.IO) {
+    suspend fun parseSharedText(context: Context? = null, text: String): ParsedLocation? = withContext(Dispatchers.IO) {
         val trimmed = text.trim()
         val decoded = try {
             URLDecoder.decode(trimmed, "UTF-8")
@@ -85,7 +94,7 @@ object GoogleMapsUrlParser {
             if (resolved != null) {
                 val resolvedDecoded = try { URLDecoder.decode(resolved, "UTF-8") } catch (_: Exception) { resolved }
 
-                // Check for coordinates in the resolved URL or decoded URL
+                // Check for coordinates directly in the expanded URL
                 val coords = extractCoordinatesFromText(resolved) ?: extractCoordinatesFromText(resolvedDecoded)
                 if (coords != null) {
                     val placeName = extractPlaceNameFromUrl(resolved)
@@ -101,6 +110,20 @@ object GoogleMapsUrlParser {
                 val placeString = extractPlaceNameFromUrl(resolved) ?: candidateName
                 if (!placeString.isNullOrBlank()) {
                     val cleanName = candidateName ?: extractCleanPlaceName(placeString)
+
+                    // Option A: Android Native Geocoder (Google Play Services on device)
+                    if (context != null) {
+                        val nativeCoords = geocodeWithAndroid(context, placeString)
+                        if (nativeCoords != null) {
+                            return@withContext ParsedLocation(
+                                name = cleanName,
+                                latitude = nativeCoords.first,
+                                longitude = nativeCoords.second
+                            )
+                        }
+                    }
+
+                    // Fallback: Progressive OSM Nominatim & Photon Geocoding
                     val geocoded = geocodeAddressProgressively(placeString)
                     if (geocoded != null) {
                         return@withContext ParsedLocation(
@@ -113,12 +136,24 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // 4. If no URL or URL lacked coordinates, try geocoding candidate name from text
+        // 4. If no URL or URL lacked coordinates, try candidate place name from text
         if (!candidateName.isNullOrBlank()) {
+            val cleanName = extractCleanPlaceName(candidateName)
+            if (context != null) {
+                val nativeCoords = geocodeWithAndroid(context, candidateName)
+                if (nativeCoords != null) {
+                    return@withContext ParsedLocation(
+                        name = cleanName,
+                        latitude = nativeCoords.first,
+                        longitude = nativeCoords.second
+                    )
+                }
+            }
+
             val geocoded = geocodeAddressProgressively(candidateName)
             if (geocoded != null) {
                 return@withContext ParsedLocation(
-                    name = extractCleanPlaceName(candidateName),
+                    name = cleanName,
                     latitude = geocoded.first,
                     longitude = geocoded.second
                 )
@@ -158,17 +193,7 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // 2. Match center=lat,lng (Google Maps staticmap and og:image metadata)
-        val centerMatcher = CENTER_COORD_PATTERN.matcher(text)
-        if (centerMatcher.find()) {
-            val lat = centerMatcher.group(1)?.toDoubleOrNull()
-            val lon = centerMatcher.group(2)?.toDoubleOrNull()
-            if (lat != null && lon != null && isValidCoordinate(lat, lon)) {
-                return Pair(lat, lon)
-            }
-        }
-
-        // 3. Match !3d{lat}!4d{lng} (Google Maps place data parameter)
+        // 2. Match !3d{lat}!4d{lng} (Google Maps place data parameter)
         val dataMatcher = DATA_COORD_PATTERN.matcher(text)
         if (dataMatcher.find()) {
             val lat = dataMatcher.group(1)?.toDoubleOrNull()
@@ -178,7 +203,7 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // 4. Match ?q=lat,lng or &query= or &ll= or &daddr= or &destination=
+        // 3. Match ?q=lat,lng or &query= or &ll= or &daddr= or &destination=
         val queryMatcher = QUERY_COORD_PATTERN.matcher(text)
         if (queryMatcher.find()) {
             val lat = queryMatcher.group(1)?.toDoubleOrNull()
@@ -188,7 +213,7 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // 5. Match geo:lat,lng URI
+        // 4. Match geo:lat,lng URI
         val geoMatcher = GEO_URI_PATTERN.matcher(text)
         if (geoMatcher.find()) {
             val lat = geoMatcher.group(1)?.toDoubleOrNull()
@@ -198,7 +223,7 @@ object GoogleMapsUrlParser {
             }
         }
 
-        // 6. Match DMS format (e.g., 12°58'12.4"N 77°35'44.2"E)
+        // 5. Match DMS format (e.g., 12°58'12.4"N 77°35'44.2"E)
         val dmsMatcher = DMS_PATTERN.matcher(text)
         if (dmsMatcher.find()) {
             try {
@@ -222,7 +247,7 @@ object GoogleMapsUrlParser {
             } catch (_: Exception) {}
         }
 
-        // 7. Match plain decimal "lat, lon"
+        // 6. Match plain decimal "lat, lon"
         val plainMatcher = COORD_PATTERN.matcher(text)
         if (plainMatcher.find()) {
             val lat = plainMatcher.group(1)?.toDoubleOrNull()
@@ -262,7 +287,7 @@ object GoogleMapsUrlParser {
                 val host = url.host.lowercase()
 
                 // If this is a Google Maps short link domain, attempt direct socket resolution
-                // in case the local ISP poisons DNS (e.g. Jio resolving maps.app.goo.gl to 49.44.79.236)
+                // to bypass ISP-level DNS poisoning (e.g. Jio resolving maps.app.goo.gl to 49.44.79.236)
                 if (host.contains("maps.app.goo.gl") || host.contains("goo.gl")) {
                     val directLocation = resolveGoogleShortlinkDirect(currentUrl)
                     if (!directLocation.isNullOrBlank()) {
@@ -302,20 +327,10 @@ object GoogleMapsUrlParser {
                     }
                     currentUrl = targetLocation
                 } else if (responseCode == 200) {
-                    // Read HTML to check for staticmap, center=, or metadata
-                    val preview = try {
-                        connection.inputStream.bufferedReader().use { reader ->
-                            val buf = CharArray(32768)
-                            val r = reader.read(buf, 0, 32768)
-                            if (r > 0) String(buf, 0, r) else ""
-                        }
-                    } catch (_: Exception) { "" }
+                    // Reached final HTML page. Disconnect cleanly.
+                    // (NOTE: We deliberately do NOT parse staticmap/center= tags here because Google embeds
+                    // a generic city center for India which causes false duplicate location matches).
                     connection.disconnect()
-
-                    val coords = extractCoordinatesFromText(preview)
-                    if (coords != null) {
-                        return "$currentUrl?q=${coords.first},${coords.second}"
-                    }
                     break
                 } else {
                     connection.disconnect()
@@ -434,9 +449,50 @@ object GoogleMapsUrlParser {
     }
 
     /**
+     * Option A: Android Native Geocoder powered by Google Play Services on the device.
+     * Takes place address candidates extracted from Google Maps /place/ URLs and resolves true GPS coordinates.
+     */
+    private suspend fun geocodeWithAndroid(context: Context, rawAddress: String): Pair<Double, Double>? = withContext(Dispatchers.IO) {
+        if (!Geocoder.isPresent()) return@withContext null
+        val candidates = generateAddressCandidates(rawAddress)
+        val geocoder = try { Geocoder(context, Locale.getDefault()) } catch (_: Exception) { return@withContext null }
+
+        for (query in candidates) {
+            try {
+                val results: List<Address>? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    suspendCancellableCoroutine { cont ->
+                        try {
+                            geocoder.getFromLocationName(query, 1, object : Geocoder.GeocodeListener {
+                                override fun onGeocode(addresses: MutableList<Address>) {
+                                    if (cont.isActive) cont.resume(addresses)
+                                }
+                                override fun onError(errorMessage: String?) {
+                                    if (cont.isActive) cont.resume(null)
+                                }
+                            })
+                        } catch (e: Exception) {
+                            if (cont.isActive) cont.resume(null)
+                        }
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    geocoder.getFromLocationName(query, 1)
+                }
+
+                val first = results?.firstOrNull()
+                if (first != null && isValidCoordinate(first.latitude, first.longitude)) {
+                    return@withContext Pair(first.latitude, first.longitude)
+                }
+            } catch (_: Exception) {
+                // Try next candidate
+            }
+        }
+        null
+    }
+
+    /**
      * Resolves an address or place description progressively using Nominatim and Photon.
-     * E.g. "Sai Ladies Fashion..., 6th Cross, Sathya Layout, B Narayanapura, Mahadevapura, Bengaluru"
-     * tries dropping front elements until finding the neighborhood in East Bengaluru.
+     * Tries dropping front elements until finding the neighborhood in East Bengaluru.
      */
     suspend fun geocodeAddressProgressively(rawAddress: String): Pair<Double, Double>? = withContext(Dispatchers.IO) {
         val candidates = generateAddressCandidates(rawAddress)

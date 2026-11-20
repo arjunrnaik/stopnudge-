@@ -315,7 +315,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun handleSharedText(sharedText: String) {
         viewModelScope.launch {
-            val parsed = GoogleMapsUrlParser.parseSharedText(sharedText)
+            val parsed = GoogleMapsUrlParser.parseSharedText(getApplication(), sharedText)
             if (parsed != null) {
                 val geoPoint = GeoPoint(parsed.latitude, parsed.longitude)
                 _targetLocation.value = geoPoint
