@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
@@ -14,7 +15,7 @@ import org.osmdroid.views.overlay.mylocation.MyLocationNewOverlay
 /**
  * Utility to replace OsmDroid's legacy "man in yellow" icon and default "finger pointing"
  * markers with modern, sleek Google Maps / Uber style pins, glowing blue GPS dots,
- * and authentic Namma Metro station badges.
+ * and authentic Namma Metro station markings with station name badges.
  */
 object LocationMarkerUtils {
 
@@ -66,15 +67,12 @@ object LocationMarkerUtils {
         val headCenterY = radius + padding
         val pinPath = Path().apply {
             moveTo(cx, tipY)
-            // Left flank to top circle
             cubicTo(
                 cx - radius * 0.9f, tipY - (tipY - headCenterY) * 0.45f,
                 cx - radius, headCenterY + radius * 0.5f,
                 cx - radius, headCenterY
             )
-            // Arc across top circle
             arcTo(cx - radius, headCenterY - radius, cx + radius, headCenterY + radius, 180f, 180f, false)
-            // Right flank back to bottom tip
             cubicTo(
                 cx + radius, headCenterY + radius * 0.5f,
                 cx + radius * 0.9f, tipY - (tipY - headCenterY) * 0.45f,
@@ -120,69 +118,134 @@ object LocationMarkerUtils {
         sizeDp: Int = 38,
         pinColor: Int = Color.parseColor("#EA4335")
     ): Drawable {
-        return BitmapDrawable(context.resources, createModernPinBitmap(context, sizeDp, pinColor))
+        val bmp = createModernPinBitmap(context, sizeDp, pinColor)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
     }
 
     /**
-     * Generates an authentic circular Namma Metro station badge:
-     * - White outer border and subtle shadow
-     * - Filled circle in the metro line color (Purple, Green, Yellow, Pink, Interchange)
-     * - Bold white "M" symbol centered
+     * Generates a complete Metro Station marking with node badge and station name pill label:
+     * - Line-colored circular station badge with white 'M' or '⇄' interchange symbol
+     * - High-contrast station name tag underneath, matching the metro map in the screenshot
      */
-    fun createMetroStationBadgeBitmap(
+    fun createStationMarkerBitmap(
         context: Context,
+        stationName: String,
         lineColor: Int,
-        sizeDp: Int = 26
+        isInterchange: Boolean = false
     ): Bitmap {
         val density = context.resources.displayMetrics.density
-        val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
-        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(bitmap)
+        val badgeRadius = 13f * density
+        val badgeDiameter = badgeRadius * 2f
 
-        val center = sizePx / 2f
-
-        // 1. Outer white halo / border
-        val whiteHaloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            style = Paint.Style.FILL
-            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(90, 0, 0, 0))
-        }
-        canvas.drawCircle(center, center, center * 0.95f, whiteHaloPaint)
-
-        // 2. Line-colored solid circle
-        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = lineColor
-            style = Paint.Style.FILL
-        }
-        canvas.drawCircle(center, center, center * 0.80f, linePaint)
-
-        // 3. Crisp bold "M" letter
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+            color = Color.parseColor("#1E293B")
+            textSize = 10f * density
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = sizePx * 0.48f
             textAlign = Paint.Align.CENTER
         }
+
+        val textWidth = textPaint.measureText(stationName)
         val fontMetrics = textPaint.fontMetrics
-        val textY = center - (fontMetrics.descent + fontMetrics.ascent) / 2f
-        canvas.drawText("M", center, textY, textPaint)
+        val textHeight = fontMetrics.descent - fontMetrics.ascent
+
+        val pillPaddingH = 7f * density
+        val pillPaddingV = 3f * density
+        val pillWidth = textWidth + pillPaddingH * 2f
+        val pillHeight = textHeight + pillPaddingV * 2f
+
+        val totalWidth = maxOf(badgeDiameter + 8f * density, pillWidth + 8f * density).toInt()
+        val gap = 2f * density
+        val totalHeight = (badgeDiameter + gap + pillHeight + 6f * density).toInt()
+
+        val bitmap = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val centerX = totalWidth / 2f
+        val badgeCenterY = badgeRadius + 2f * density
+
+        // 1. Station Node Halo & Fill
+        val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(3f * density, 0f, 1f * density, Color.argb(120, 0, 0, 0))
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius, haloPaint)
+
+        val nodeColor = if (isInterchange) Color.parseColor("#0D47A1") else lineColor
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = nodeColor
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius * 0.80f, fillPaint)
+
+        // Inner "M" symbol
+        val mPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = badgeRadius * 1.05f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val mMetrics = mPaint.fontMetrics
+        val mY = badgeCenterY - (mMetrics.descent + mMetrics.ascent) / 2f
+        canvas.drawText(if (isInterchange) "⇄" else "M", centerX, mY, mPaint)
+
+        // 2. Station Name Pill
+        val pillTop = badgeDiameter + 2f * density + gap
+        val pillLeft = centerX - pillWidth / 2f
+        val pillRight = centerX + pillWidth / 2f
+        val pillBottom = pillTop + pillHeight
+        val pillRect = RectF(pillLeft, pillTop, pillRight, pillBottom)
+
+        val pillBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(80, 0, 0, 0))
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillBgPaint)
+
+        val pillStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = nodeColor
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f * density
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillStrokePaint)
+
+        // Station text
+        val textY = pillTop + pillPaddingV - fontMetrics.ascent
+        canvas.drawText(stationName, centerX, textY, textPaint)
 
         return bitmap
     }
 
-    fun createMetroStationBadgeDrawable(
+    fun createStationMarkerDrawable(
         context: Context,
+        stationName: String,
         lineColor: Int,
-        sizeDp: Int = 26
+        isInterchange: Boolean = false
     ): Drawable {
-        return BitmapDrawable(context.resources, createMetroStationBadgeBitmap(context, lineColor, sizeDp))
+        val bmp = createStationMarkerBitmap(context, stationName, lineColor, isInterchange)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
     }
 
     /**
-     * Generates a circular BMTC bus stop badge:
-     * - White outer halo
-     * - BMTC Teal circle
-     * - Bold white "B" letter
+     * Calculates anchor Y so that the station node circle aligns exactly with the track line.
+     */
+    fun getStationMarkerAnchorY(context: Context): Float {
+        val density = context.resources.displayMetrics.density
+        val badgeRadius = 13f * density
+        val badgeDiameter = badgeRadius * 2f
+        val textHeight = 10f * density * 1.2f
+        val pillHeight = textHeight + 6f * density
+        val totalHeight = badgeDiameter + 2f * density + pillHeight + 6f * density
+        val badgeCenterY = badgeRadius + 2f * density
+        return (badgeCenterY / totalHeight).coerceIn(0.25f, 0.40f)
+    }
+
+    /**
+     * Generates a circular BMTC bus stop badge.
      */
     fun createBusStopBadgeBitmap(
         context: Context,
@@ -195,7 +258,6 @@ object LocationMarkerUtils {
 
         val center = sizePx / 2f
 
-        // 1. Outer white halo
         val whiteHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.FILL
@@ -203,14 +265,12 @@ object LocationMarkerUtils {
         }
         canvas.drawCircle(center, center, center * 0.95f, whiteHalo)
 
-        // 2. BMTC Blue/Teal fill
         val busPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#00897B")
             style = Paint.Style.FILL
         }
         canvas.drawCircle(center, center, center * 0.80f, busPaint)
 
-        // 3. "B" letter
         val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -225,14 +285,14 @@ object LocationMarkerUtils {
     }
 
     fun createBusStopBadgeDrawable(context: Context, sizeDp: Int = 22): Drawable {
-        return BitmapDrawable(context.resources, createBusStopBadgeBitmap(context, sizeDp))
+        val bmp = createBusStopBadgeBitmap(context, sizeDp)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
     }
 
     /**
-     * Generates a medium-sized Google Maps-style blue location dot:
-     * - Outer soft semi-transparent blue pulse ring
-     * - Crisp white separator circle
-     * - Solid Google-blue (#1A73E8) core
+     * Generates a medium-sized Google Maps-style blue location dot.
      */
     fun createMediumBlueDotBitmap(context: Context, sizeDp: Int = 26): Bitmap {
         val density = context.resources.displayMetrics.density
@@ -242,14 +302,12 @@ object LocationMarkerUtils {
 
         val center = sizePx / 2f
 
-        // 1. Outer subtle blue glow / pulse ring
         val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(55, 26, 115, 232) // Soft blue glow
+            color = Color.argb(55, 26, 115, 232)
             style = Paint.Style.FILL
         }
         canvas.drawCircle(center, center, center * 0.95f, glowPaint)
 
-        // 2. Crisp White ring
         val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.FILL
@@ -257,14 +315,12 @@ object LocationMarkerUtils {
         }
         canvas.drawCircle(center, center, center * 0.65f, whitePaint)
 
-        // 3. Vibrant Royal Blue core dot
         val bluePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#1A73E8")
             style = Paint.Style.FILL
         }
         canvas.drawCircle(center, center, center * 0.48f, bluePaint)
 
-        // 4. Subtle center white core highlight
         val innerGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.argb(90, 255, 255, 255)
             style = Paint.Style.FILL
@@ -275,9 +331,7 @@ object LocationMarkerUtils {
     }
 
     /**
-     * Generates a modern directional chevron navigation arrow (pointing North / 0°):
-     * - Clean chevron arrowhead with white outline
-     * - Vibrant blue fill pointing in the vehicle's bearing direction
+     * Generates a modern directional chevron navigation arrow.
      */
     fun createDirectionalChevronBitmap(context: Context, sizeDp: Int = 30): Bitmap {
         val density = context.resources.displayMetrics.density
@@ -289,14 +343,13 @@ object LocationMarkerUtils {
         val h = sizePx.toFloat()
 
         val path = Path().apply {
-            moveTo(w * 0.5f, h * 0.08f)    // Top apex tip
-            lineTo(w * 0.88f, h * 0.88f)   // Bottom right corner
-            lineTo(w * 0.5f, h * 0.68f)    // Inner tail indent
-            lineTo(w * 0.12f, h * 0.88f)   // Bottom left corner
+            moveTo(w * 0.5f, h * 0.08f)
+            lineTo(w * 0.88f, h * 0.88f)
+            lineTo(w * 0.5f, h * 0.68f)
+            lineTo(w * 0.12f, h * 0.88f)
             close()
         }
 
-        // White shadow & border outline
         val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.WHITE
             style = Paint.Style.STROKE
@@ -306,7 +359,6 @@ object LocationMarkerUtils {
         }
         canvas.drawPath(path, outlinePaint)
 
-        // Solid Royal Blue navigation arrow fill
         val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.parseColor("#1A73E8")
             style = Paint.Style.FILL

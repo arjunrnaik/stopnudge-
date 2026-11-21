@@ -1,6 +1,7 @@
 package com.wakeme.app.data
 
 import android.content.Context
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.data.local.transit.TransitDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -37,21 +38,22 @@ class SearchRepository(context: Context) {
 
         val results = mutableListOf<SearchResultItem>()
 
-        // 1. 0ms Offline SQLite Search across 83 Metro stations
-        try {
-            val metros = transitDao.searchMetroStations(trimmed)
-            metros.take(6).forEach { m ->
+        // 1. 0ms In-Memory Search across Active Namma Metro stations
+        val lowerQuery = trimmed.lowercase()
+        NammaMetroNetwork.ACTIVE_STATIONS
+            .filter { it.name.lowercase().contains(lowerQuery) }
+            .take(6)
+            .forEach { m ->
                 results.add(
                     SearchResultItem(
-                        title = m.name,
-                        subtitle = "Metro • ${m.metroLines}",
+                        title = "${m.name} Metro Station",
+                        subtitle = "Namma Metro • ${m.line} Line",
                         latitude = m.latitude,
                         longitude = m.longitude,
                         type = SearchResultType.METRO
                     )
                 )
             }
-        } catch (_: Exception) {}
 
         // 2. 0ms Offline SQLite Search across 5,062 BMTC bus stops
         try {
