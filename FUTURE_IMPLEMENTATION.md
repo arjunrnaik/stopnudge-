@@ -15,7 +15,8 @@ This document outlines the planned feature additions, technical architecture, an
 | **P2** | **Lock-Screen Live Activity Notification** | UI / System | v2.2 |
 | **P2** | **Anti-Sleep Verification Challenge** | Alarm Reliability | v2.2 |
 | **P3** | **Underground Tunnel Dead-Reckoning** | Offline Transit | v2.3 |
-| **P3** | **Multi-Leg Journey (Hop-Off Alarms)** | Multi-Modal Transit | v2.3 |
+| **P3** | **Multi-Leg Metro ↔ BMTC Feeder Alarms** | Multi-Modal Transit | v2.3 |
+| **P3** | **Ultra-Low Battery Delta Protocol Polling** | Background Sync & Battery | v2.3 |
 | **P3** | **"Almost Home" Auto Safety Ping** | Safety & Social | v2.4 |
 | **P3** | **Wear OS / Smartwatch Silent Wrist Tap** | Wearables | v2.4 |
 
@@ -92,13 +93,14 @@ This document outlines the planned feature additions, technical architecture, an
 
 ---
 
-### 8. Multi-Leg Journey (Hop-Off & Transfer Alarms)
-- **Problem**: Everyday commutes in Bengaluru involve transfers (e.g. Purple Line Metro to KR Pura $\rightarrow$ BMTC Feeder Bus to Marathahalli).
+### 8. Multi-Leg Metro ↔ BMTC Feeder Transfer Alarms (Hop-Off Mode)
+- **Problem**: Everyday commutes across Bengaluru require transfers between rapid rail and last-mile road transport (e.g., Purple Line Metro to Baiyappanahalli / KR Pura $\rightarrow$ BMTC Feeder Bus `MF-*` into ITPL / Outer Ring Road). Setting two separate alarms manually is clunky and prone to forgetting.
 - **Implementation Strategy**:
-  - Multi-stage destination configuration:
-    - **Leg 1**: Metro interchange station (Transfer wake-up: *"Change to BMTC Feeder Bus"*).
-    - **Leg 2**: Final bus stop (Arrival wake-up: *"You have reached your final destination"*).
-  - Automatically transitions to Leg 2 tracking once Leg 1 is dismissed.
+  - Two-stage multimodal destination workflow:
+    - **Leg 1 (Metro Rail)**: Interchange station geofence (Transfer wake-up: *"Prepare to alight at KR Pura Metro Station for your BMTC Feeder Bus"*).
+    - **Leg 2 (BMTC Feeder Bus)**: Automatically activates the connected Metro Feeder (`MF-*`) route tracking upon dismissing Leg 1.
+    - **Leg 2 Arrival**: Geofenced to the final tech park / neighborhood bus stop (Arrival wake-up: *"You have reached your final destination"*).
+  - Leveraging BMTC GTFS `MF-*` route data to suggest the exact feeder route departing from that metro station exit.
 
 ---
 
@@ -118,6 +120,17 @@ This document outlines the planned feature additions, technical architecture, an
   - Wear OS companion app or Android Wearable Notification bridge:
     - Delivers an intense, progressive haptic vibration directly to the user's wrist.
     - Allows discreetly dismissing or snoozing the alarm without taking the phone out of a pocket or bag.
+
+---
+
+### 11. Ultra-Low Battery Background Monitoring via Delta Protocol (`delta.js`)
+- **Problem**: Continuous background network fetching of multi-megabyte city-wide bus fleet feeds while the user sleeps drains mobile battery and wastes cellular data.
+- **Implementation Strategy**:
+  - Implement a client-side differential synchronization engine modeled on the BMTC Explorer `delta.js` architecture:
+    - Initial baseline sync downloads vehicle positions for the active commute corridor once.
+    - Subsequent background poll cycles (every 30–60s) request only binary/JSON coordinate deltas for vehicles that shifted position or changed ETAs.
+    - Operates in tandem with the Adaptive Battery Governor to suspend network polling entirely when the commuter is far away from trigger zones.
+  - **Expected Impact**: Cuts background data transfer by $>85\%$ and extends device battery life over long 60+ minute commutes.
 
 ---
 *Created on 2026-11-21 for WakeMe (v2) Project Development.*

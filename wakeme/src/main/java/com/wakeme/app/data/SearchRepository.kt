@@ -62,7 +62,7 @@ class SearchRepository(context: Context) {
                 results.add(
                     SearchResultItem(
                         title = b.name,
-                        subtitle = "BMTC Bus Stop",
+                        subtitle = b.directionHint?.takeIf { it.isNotBlank() } ?: "BMTC Bus Stop",
                         latitude = b.latitude,
                         longitude = b.longitude,
                         type = SearchResultType.BUS
