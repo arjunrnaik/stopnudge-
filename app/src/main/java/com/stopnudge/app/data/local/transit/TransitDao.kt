@@ -15,6 +15,9 @@ interface TransitDao {
     @Query("SELECT * FROM bus_stops ORDER BY name ASC LIMIT 50")
     suspend fun getInitialBusStops(): List<BusStopEntity>
 
+    @Query("SELECT * FROM bus_stops WHERE latitude BETWEEN :minLat AND :maxLat AND longitude BETWEEN :minLon AND :maxLon LIMIT :limit")
+    suspend fun getBusStopsInBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double, limit: Int = 120): List<BusStopEntity>
+
     @Query("SELECT * FROM metro_stations WHERE name LIKE '%' || :query || '%' OR name_en LIKE '%' || :query || '%' OR (name_kn IS NOT NULL AND name_kn LIKE '%' || :query || '%') ORDER BY name ASC LIMIT 50")
     suspend fun searchMetroStations(query: String): List<MetroStationEntity>
 

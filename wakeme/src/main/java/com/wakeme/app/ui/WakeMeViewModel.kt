@@ -464,17 +464,37 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _nearestMetroStation.value = null
     }
 
+    fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
+        val origin = fromLocation ?: _targetLocation.value
+        val (nearest, distMeters) = BmtcBusNetwork.findNearestStop(origin)
+        _showBmtcOverlay.value = true
+        _cameraMoveTarget.tryEmit(nearest.geoPoint)
+
+        val distFormatted = if (distMeters >= 1000) {
+            String.format("%.1f km", distMeters / 1000.0)
+        } else {
+            "${distMeters.toInt()} m"
+        }
+        _userMessage.tryEmit("🚌 Nearest Stop: ${nearest.name} ($distFormatted away)")
+    }
     fun toggleBmtcOverlay() {
         val next = !_showBmtcOverlay.value
         _showBmtcOverlay.value = next
         if (next) {
-            if (_busStops.value.isEmpty()) {
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        val initialBuses = transitDao.getInitialBusStops()
-                        _busStops.value = initialBuses
-                    } catch (_: Exception) {}
-                }
+            val center = _targetLocation.value
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val latDelta = 0.08
+                    val lonDelta = 0.08
+                    val nearbyBuses = transitDao.getBusStopsInBoundingBox(
+                        minLat = center.latitude - latDelta,
+                        maxLat = center.latitude + latDelta,
+                        minLon = center.longitude - lonDelta,
+                        maxLon = center.longitude + lonDelta,
+                        limit = 150
+                    )
+                    _busStops.value = nearbyBuses
+                } catch (_: Exception) {}
             }
             _userMessage.tryEmit("🚌 BMTC Bus overlay enabled")
         }

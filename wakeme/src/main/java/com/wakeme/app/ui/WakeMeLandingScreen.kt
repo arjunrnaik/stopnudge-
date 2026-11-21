@@ -228,7 +228,7 @@ fun WakeMeLandingScreen(
             // Corridor 1: Outer Ring Road AC Volvo Trunk (Dark Navy Blue + White)
             val (orrWhite, orrBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
                 mapView = map,
-                points = BmtcBusNetwork.CORRIDOR_ORR_AC_VOLVO,
+                points = BmtcBusNetwork.TRACK_ORR_AC_VOLVO,
                 category = BmtcBusCategory.AC_VOLVO,
                 widthDp = 7.5f
             )
@@ -240,7 +240,7 @@ fun WakeMeLandingScreen(
             // Corridor 2: Airport Vayu Vajra Express Corridor (Dark Navy Blue + White)
             val (airportWhite, airportBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
                 mapView = map,
-                points = BmtcBusNetwork.CORRIDOR_AIRPORT_VAYU_VAJRA,
+                points = BmtcBusNetwork.TRACK_AIRPORT_VAYU_VAJRA,
                 category = BmtcBusCategory.AC_VOLVO,
                 widthDp = 7.5f
             )
@@ -252,7 +252,7 @@ fun WakeMeLandingScreen(
             // Corridor 3: Central City Sarige Non-AC Trunk Line (Classic Royal Blue + White)
             val (sarigeWhite, sarigeBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
                 mapView = map,
-                points = BmtcBusNetwork.CORRIDOR_CITY_SARIGE,
+                points = BmtcBusNetwork.TRACK_CITY_SARIGE,
                 category = BmtcBusCategory.NORMAL_SARIGE,
                 widthDp = 7.0f
             )
@@ -264,7 +264,7 @@ fun WakeMeLandingScreen(
             // Corridor 4: East-West Astra Electric EV Trunk Corridor (Light Sky Blue + White)
             val (evWhite, evBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
                 mapView = map,
-                points = BmtcBusNetwork.CORRIDOR_EAST_WEST_EV,
+                points = BmtcBusNetwork.TRACK_EAST_WEST_EV,
                 category = BmtcBusCategory.ELECTRIC_EV,
                 widthDp = 7.0f
             )
@@ -275,47 +275,58 @@ fun WakeMeLandingScreen(
 
             busPolylinesList = newPolylines
 
-            // 2. Add Major BMTC Transit Hub Markers with 50/50 two-tone badges and name pills
-            BmtcBusNetwork.MAJOR_HUBS.forEach { hub ->
-                val hubMarker = Marker(map).apply {
-                    position = hub.geoPoint
-                    title = hub.name
-                    snippet = hub.routesSummary
+            // 2. Add ALL Prominent Bus Stops along the 4 Corridors + Major Hubs
+            // Each stop is rendered with the authentic 50/50 two-tone circular badge AND high-contrast stop name pill!
+            val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
+            val prominentLocations = mutableSetOf<String>()
+
+            BmtcBusNetwork.ALL_PROMINENT_BUS_STOPS.forEach { stop ->
+                prominentLocations.add("${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}")
+                val marker = Marker(map).apply {
+                    position = stop.geoPoint
+                    title = "${stop.name} Bus Stop"
+                    snippet = stop.routesSummary
                     icon = LocationMarkerUtils.createTwoToneBusStopMarkerDrawable(
                         context = context,
-                        stopName = hub.name,
-                        category = hub.category
+                        stopName = stop.name,
+                        category = stop.category
                     )
-                    setAnchor(Marker.ANCHOR_CENTER, 0.35f)
+                    setAnchor(Marker.ANCHOR_CENTER, anchorY)
                     setOnMarkerClickListener { _, _ ->
-                        viewModel.selectMapPin(hub.geoPoint, hub.name)
-                        true
-                    }
-                }
-                map.overlays.add(hubMarker)
-                newMarkers.add(hubMarker)
-            }
-
-            // 3. Add Verified Bus Stops with 50/50 two-tone circular badges
-            busStops.take(60).forEach { stop ->
-                val cat = BmtcBusCategory.fromRouteOrName(stop.directionHint ?: stop.ref)
-                val badge = LocationMarkerUtils.createTwoToneBusBadgeDrawable(context, cat, sizeDp = 22)
-                val marker = Marker(map).apply {
-                    position = GeoPoint(stop.latitude, stop.longitude)
-                    title = stop.name
-                    snippet = stop.directionHint ?: "BMTC Bus Stop"
-                    icon = badge
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    setOnMarkerClickListener { _, _ ->
-                        viewModel.selectMapPin(
-                            GeoPoint(stop.latitude, stop.longitude),
-                            "${stop.name} Bus Stop"
-                        )
+                        viewModel.selectMapPin(stop.geoPoint, "${stop.name} Bus Stop")
                         true
                     }
                 }
                 map.overlays.add(marker)
                 newMarkers.add(marker)
+            }
+
+            // 3. Add Verified Local Bus Stops from SQLite Database in the Viewport
+            busStops.forEach { stop ->
+                val locKey = "${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}"
+                if (locKey !in prominentLocations) {
+                    val cat = BmtcBusCategory.fromRouteOrName(stop.directionHint ?: stop.ref)
+                    val marker = Marker(map).apply {
+                        position = GeoPoint(stop.latitude, stop.longitude)
+                        title = "${stop.name} Bus Stop"
+                        snippet = stop.directionHint ?: "BMTC Bus Stop"
+                        icon = LocationMarkerUtils.createTwoToneBusStopMarkerDrawable(
+                            context = context,
+                            stopName = stop.name,
+                            category = cat
+                        )
+                        setAnchor(Marker.ANCHOR_CENTER, anchorY)
+                        setOnMarkerClickListener { _, _ ->
+                            viewModel.selectMapPin(
+                                GeoPoint(stop.latitude, stop.longitude),
+                                "${stop.name} Bus Stop"
+                            )
+                            true
+                        }
+                    }
+                    map.overlays.add(marker)
+                    newMarkers.add(marker)
+                }
             }
 
             busMarkersList = newMarkers
@@ -741,17 +752,33 @@ fun WakeMeLandingScreen(
                 )
             }
 
-            // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (sketch: BMTC (future) just add button)
-            FloatingActionButton(
-                onClick = { viewModel.toggleBmtcOverlay() },
-                containerColor = if (showBmtcOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                contentColor = if (showBmtcOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape
+            // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (Tap) & Nearest Bus Stop (Long-press)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(6.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(if (showBmtcOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                viewModel.toggleBmtcOverlay()
+                            },
+                            onLongPress = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                val refLocation = droppedPinLocation 
+                                    ?: locationOverlayRef?.myLocation 
+                                    ?: currentMapCenter
+                                viewModel.findAndFocusNearestBusStop(refLocation)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = Icons.Default.DirectionsBus,
-                    contentDescription = "Toggle BMTC Bus Stops",
+                    contentDescription = "Toggle BMTC Bus Stops (Long press for Nearest)",
+                    tint = if (showBmtcOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(24.dp)
                 )
             }
