@@ -46,6 +46,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import android.graphics.Paint
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import org.osmdroid.views.overlay.Polyline
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
@@ -90,6 +93,7 @@ fun WakeMeLandingScreen(
     val showMetroOverlay by viewModel.showMetroOverlay.collectAsState()
     val showBmtcOverlay by viewModel.showBmtcOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
+    val nearestMetroStation by viewModel.nearestMetroStation.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentTrips by viewModel.recentTrips.collectAsState()
@@ -102,6 +106,7 @@ fun WakeMeLandingScreen(
     var locationOverlayRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
     var currentMapCenter by remember { mutableStateOf(targetLocation) }
     var metroMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
+    var metroPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
     var busMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
@@ -136,20 +141,49 @@ fun WakeMeLandingScreen(
         }
     }
 
-    // Update Metro station markers when overlay toggled
+    // Update Metro track lines & station markers when overlay toggled
     LaunchedEffect(showMetroOverlay, metroStations) {
         val map = mapViewRef ?: return@LaunchedEffect
         metroMarkersList.forEach { map.overlays.remove(it) }
         metroMarkersList = emptyList()
+        metroPolylinesList.forEach { map.overlays.remove(it) }
+        metroPolylinesList = emptyList()
 
         if (showMetroOverlay) {
+            // 1. Draw 4 authentic Metro Track Polylines with exact line colors
+            val trackDefs = listOf(
+                Pair(NammaMetroNetwork.TRACK_PURPLE, NammaMetroNetwork.COLOR_PURPLE),
+                Pair(NammaMetroNetwork.TRACK_GREEN, NammaMetroNetwork.COLOR_GREEN),
+                Pair(NammaMetroNetwork.TRACK_YELLOW, NammaMetroNetwork.COLOR_YELLOW),
+                Pair(NammaMetroNetwork.TRACK_PINK, NammaMetroNetwork.COLOR_PINK)
+            )
+
+            val newPolylines = mutableListOf<Polyline>()
+            trackDefs.forEach { (points, color) ->
+                val poly = Polyline(map).apply {
+                    setPoints(points)
+                    outlinePaint.color = color
+                    outlinePaint.strokeWidth = 9.5f
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.strokeJoin = Paint.Join.ROUND
+                    outlinePaint.isAntiAlias = true
+                }
+                map.overlays.add(poly)
+                newPolylines.add(poly)
+            }
+            metroPolylinesList = newPolylines
+
+            // 2. Add Metro Station Badge Markers
             val newMarkers = mutableListOf<Marker>()
             metroStations.forEach { metro ->
+                val lineColor = NammaMetroNetwork.getLineColor(metro.metroLines)
+                val badgeDrawable = LocationMarkerUtils.createMetroStationBadgeDrawable(context, lineColor)
                 val marker = Marker(map).apply {
                     position = GeoPoint(metro.latitude, metro.longitude)
                     title = "${metro.name} Metro"
-                    snippet = "Lines: ${metro.metroLines}"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    snippet = "Line: ${metro.metroLines}"
+                    icon = badgeDrawable
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
                             GeoPoint(metro.latitude, metro.longitude),
@@ -175,13 +209,15 @@ fun WakeMeLandingScreen(
         busMarkersList = emptyList()
 
         if (showBmtcOverlay) {
+            val busBadge = LocationMarkerUtils.createBusStopBadgeDrawable(context)
             val newMarkers = mutableListOf<Marker>()
             busStops.take(80).forEach { stop ->
                 val marker = Marker(map).apply {
                     position = GeoPoint(stop.latitude, stop.longitude)
                     title = stop.name
                     snippet = stop.ref?.let { "Ref: $it" } ?: "BMTC Bus Stop"
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                    icon = busBadge
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
                             GeoPoint(stop.latitude, stop.longitude),
@@ -226,17 +262,20 @@ fun WakeMeLandingScreen(
                             if (geo != null) {
                                 droppedPinLocation = geo
 
+                                val pinIcon = LocationMarkerUtils.createModernPinDrawable(ctx)
                                 if (droppedPinMarker == null) {
                                     val marker = Marker(mapView).apply {
                                         position = geo
                                         title = "Selected Location"
                                         snippet = "Tap anywhere to move pin"
+                                        icon = pinIcon
                                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                                     }
                                     mapView.overlays.add(marker)
                                     droppedPinMarker = marker
                                 } else {
                                     droppedPinMarker?.position = geo
+                                    droppedPinMarker?.icon = pinIcon
                                 }
                                 mapView.invalidate()
                                 return true
@@ -581,19 +620,31 @@ fun WakeMeLandingScreen(
                 )
             }
 
-            // FAB 2 (Middle): Metro Station Layer Toggle
-            FloatingActionButton(
-                onClick = { viewModel.toggleMetroOverlay() },
-                containerColor = if (showMetroOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+            // FAB 2 (Middle): Metro Station Layer Toggle & Long Press for Nearest Metro
+            Surface(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(6.dp, CircleShape)
+                    .clip(CircleShape)
+                    .combinedClickable(
+                        onClick = { viewModel.toggleMetroOverlay() },
+                        onLongClick = {
+                            val loc = locationOverlayRef?.myLocation ?: currentMapCenter
+                            viewModel.findAndFocusNearestMetroStation(loc)
+                        }
+                    ),
+                shape = CircleShape,
+                color = if (showMetroOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                 contentColor = if (showMetroOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.size(48.dp),
-                shape = CircleShape
+                tonalElevation = 6.dp
             ) {
-                Icon(
-                    imageVector = Icons.Default.DirectionsSubway,
-                    contentDescription = "Toggle Metro Stations",
-                    modifier = Modifier.size(24.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsSubway,
+                        contentDescription = "Toggle Metro Stations (Long press for Nearest)",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (sketch: BMTC (future) just add button)
@@ -700,6 +751,117 @@ fun WakeMeLandingScreen(
                             Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFA000), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Save", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4b. Nearest Metro Station Quick Card (activated by Metro FAB long-press)
+        val nearestMetro = nearestMetroStation
+        if (nearestMetro != null && droppedPinLocation == null) {
+            val lineColor = NammaMetroNetwork.getLineColor(nearestMetro.metroLines)
+            val metroColor = Color(lineColor)
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .shadow(12.dp, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                border = BorderStroke(1.5.dp, metroColor.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = metroColor,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.DirectionsSubway,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = nearestMetro.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = metroColor.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = nearestMetro.metroLines,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = metroColor,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "Nearest Metro Station",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { viewModel.clearNearestMetroStation() },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss")
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.selectMapPin(
+                                    GeoPoint(nearestMetro.latitude, nearestMetro.longitude),
+                                    "${nearestMetro.name} Metro Station"
+                                )
+                                viewModel.clearNearestMetroStation()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = metroColor
+                            )
+                        ) {
+                            Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Set as Destination ➔", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
                 }

@@ -29,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.VehicleMode
+import com.wakeme.app.util.LocationMarkerUtils
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
@@ -231,6 +232,7 @@ fun WakeMeModeSelectionScreen(
                             val destMarker = Marker(this).apply {
                                 position = targetLocation
                                 title = targetName
+                                icon = LocationMarkerUtils.createModernPinDrawable(ctx)
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             }
                             overlays.add(destMarker)

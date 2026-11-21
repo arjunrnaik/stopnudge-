@@ -355,6 +355,7 @@ fun WakeMeActiveTripScreen(
                                 val destMarker = Marker(this).apply {
                                     position = targetLocation
                                     title = targetName
+                                    icon = LocationMarkerUtils.createModernPinDrawable(ctx)
                                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                                 }
                                 overlays.add(destMarker)
@@ -594,6 +595,7 @@ fun WakeMeActiveTripScreen(
                             val destMarker = Marker(this).apply {
                                 position = targetLocation
                                 title = targetName
+                                icon = LocationMarkerUtils.createModernPinDrawable(ctx)
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             }
                             overlays.add(destMarker)

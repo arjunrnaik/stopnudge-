@@ -93,6 +93,9 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _metroStations = MutableStateFlow<List<MetroStationEntity>>(emptyList())
     val metroStations: StateFlow<List<MetroStationEntity>> = _metroStations.asStateFlow()
 
+    private val _nearestMetroStation = MutableStateFlow<MetroStationEntity?>(null)
+    val nearestMetroStation: StateFlow<MetroStationEntity?> = _nearestMetroStation.asStateFlow()
+
     private val _busStops = MutableStateFlow<List<BusStopEntity>>(emptyList())
     val busStops: StateFlow<List<BusStopEntity>> = _busStops.asStateFlow()
 
@@ -411,6 +414,58 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         if (next) {
             _userMessage.tryEmit("🚇 Namma Metro overlay enabled")
         }
+    }
+
+    fun findAndFocusNearestMetroStation(fromLocation: GeoPoint?) {
+        viewModelScope.launch(Dispatchers.Default) {
+            val origin = fromLocation ?: _targetLocation.value
+            var stations = _metroStations.value
+            if (stations.isEmpty()) {
+                try {
+                    stations = transitDao.getAllMetroStations()
+                    _metroStations.value = stations
+                } catch (_: Exception) {}
+            }
+            if (stations.isEmpty()) {
+                _userMessage.tryEmit("No metro stations found")
+                return@launch
+            }
+
+            var closestStation: MetroStationEntity? = null
+            var minDistanceMeters = Double.MAX_VALUE
+
+            val results = FloatArray(1)
+            for (station in stations) {
+                android.location.Location.distanceBetween(
+                    origin.latitude, origin.longitude,
+                    station.latitude, station.longitude,
+                    results
+                )
+                val dist = results[0].toDouble()
+                if (dist < minDistanceMeters) {
+                    minDistanceMeters = dist
+                    closestStation = station
+                }
+            }
+
+            closestStation?.let { nearest ->
+                _nearestMetroStation.value = nearest
+                _showMetroOverlay.value = true // Automatically show metro overlay
+                val stationGeo = GeoPoint(nearest.latitude, nearest.longitude)
+                _cameraMoveTarget.tryEmit(stationGeo)
+
+                val distFormatted = if (minDistanceMeters >= 1000) {
+                    String.format("%.1f km", minDistanceMeters / 1000.0)
+                } else {
+                    "${minDistanceMeters.toInt()} m"
+                }
+                _userMessage.tryEmit("🚇 Nearest: ${nearest.name} ($distFormatted away)")
+            }
+        }
+    }
+
+    fun clearNearestMetroStation() {
+        _nearestMetroStation.value = null
     }
 
     fun toggleBmtcOverlay() {
