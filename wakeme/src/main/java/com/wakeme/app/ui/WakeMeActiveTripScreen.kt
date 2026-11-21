@@ -31,6 +31,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.LocationMarkerUtils
+import com.wakeme.app.data.local.transit.BmtcBusCategory
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.model.VehicleMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -352,19 +355,32 @@ fun WakeMeActiveTripScreen(
                                 LocationMarkerUtils.applyModernLocationOverlay(ctx, myLocOverlay)
                                 overlays.add(myLocOverlay)
 
+                                val isBus = selectedVehicleMode == VehicleMode.BUS
+                                val isMetro = selectedVehicleMode == VehicleMode.METRO
+                                val busCat = BmtcBusCategory.fromRouteOrName(targetName)
+                                val themeColorInt = when {
+                                    isBus -> busCat.primaryColorInt
+                                    isMetro -> NammaMetroNetwork.COLOR_PURPLE
+                                    else -> 0xFF1E88E5.toInt()
+                                }
+
                                 val destMarker = Marker(this).apply {
                                     position = targetLocation
                                     title = targetName
-                                    icon = LocationMarkerUtils.createModernPinDrawable(ctx)
-                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                    icon = when {
+                                        isBus -> LocationMarkerUtils.createTwoToneBusBadgeDrawable(ctx, busCat, sizeDp = 30)
+                                        isMetro -> LocationMarkerUtils.createStationMarkerDrawable(ctx, targetName, NammaMetroNetwork.COLOR_PURPLE)
+                                        else -> LocationMarkerUtils.createModernPinDrawable(ctx)
+                                    }
+                                    setAnchor(Marker.ANCHOR_CENTER, if (isBus) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
                                 }
                                 overlays.add(destMarker)
 
                                 val geofenceCircle = Polygon(this).apply {
                                     points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
-                                    fillPaint.color = 0x331E88E5.toInt()
-                                    outlinePaint.color = 0xFF1E88E5.toInt()
-                                    outlinePaint.strokeWidth = 3f
+                                    fillPaint.color = (0x33000000 or (themeColorInt and 0x00FFFFFF))
+                                    outlinePaint.color = themeColorInt
+                                    outlinePaint.strokeWidth = 3.5f
                                 }
                                 overlays.add(geofenceCircle)
                             }
@@ -384,15 +400,28 @@ fun WakeMeActiveTripScreen(
                                 map.overlays.add(altPoly)
                             }
 
-                            // Active route in blue
+                            // Active route with authentic 50/50 two-tone styling for buses
                             if (routePoints.isNotEmpty()) {
-                                val activePoly = Polyline(map).apply {
-                                    setPoints(routePoints)
-                                    outlinePaint.color = 0xFF1976D2.toInt()
-                                    outlinePaint.strokeWidth = 9f
-                                    infoWindow = null
+                                if (selectedVehicleMode == VehicleMode.BUS) {
+                                    val busCat = BmtcBusCategory.fromRouteOrName(targetName)
+                                    val (baseWhite, dashedBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                                        mapView = map,
+                                        points = routePoints,
+                                        category = busCat,
+                                        widthDp = 8.5f
+                                    )
+                                    map.overlays.add(baseWhite)
+                                    map.overlays.add(dashedBlue)
+                                } else {
+                                    val lineColor = if (selectedVehicleMode == VehicleMode.METRO) NammaMetroNetwork.COLOR_PURPLE else 0xFF1976D2.toInt()
+                                    val activePoly = Polyline(map).apply {
+                                        setPoints(routePoints)
+                                        outlinePaint.color = lineColor
+                                        outlinePaint.strokeWidth = 9f
+                                        infoWindow = null
+                                    }
+                                    map.overlays.add(activePoly)
                                 }
-                                map.overlays.add(activePoly)
                             }
 
                             if (isHeadingUp && currentBearing != null) {
@@ -614,13 +643,26 @@ fun WakeMeActiveTripScreen(
                         map.overlays.removeAll(currentPolys)
 
                         if (routePoints.isNotEmpty()) {
-                            val activePoly = Polyline(map).apply {
-                                setPoints(routePoints)
-                                outlinePaint.color = 0xFF1976D2.toInt()
-                                outlinePaint.strokeWidth = 10f
-                                infoWindow = null
+                            if (selectedVehicleMode == VehicleMode.BUS) {
+                                val busCat = BmtcBusCategory.fromRouteOrName(targetName)
+                                val (baseWhite, dashedBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                                    mapView = map,
+                                    points = routePoints,
+                                    category = busCat,
+                                    widthDp = 9.5f
+                                )
+                                map.overlays.add(baseWhite)
+                                map.overlays.add(dashedBlue)
+                            } else {
+                                val lineColor = if (selectedVehicleMode == VehicleMode.METRO) NammaMetroNetwork.COLOR_PURPLE else 0xFF1976D2.toInt()
+                                val activePoly = Polyline(map).apply {
+                                    setPoints(routePoints)
+                                    outlinePaint.color = lineColor
+                                    outlinePaint.strokeWidth = 10f
+                                    infoWindow = null
+                                }
+                                map.overlays.add(activePoly)
                             }
-                            map.overlays.add(activePoly)
                         }
 
                         map.invalidate()

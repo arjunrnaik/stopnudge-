@@ -1,6 +1,11 @@
 package com.wakeme.app.util
 
 import android.content.Context
+import android.graphics.DashPathEffect
+import com.wakeme.app.data.local.transit.BmtcBusCategory
+import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Polyline
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -245,8 +250,271 @@ object LocationMarkerUtils {
     }
 
     /**
+     * Generates an authentic 50/50 two-tone circular BMTC bus badge:
+     * - Top half: Crisp White (#FFFFFF) with category code ("AC", "Sarige", "EV")
+     * - Bottom half: Respective Blue (#0D47A1 Navy / #1976D2 Royal / #03A9F4 Sky)
+     * - Perfectly matches BMTC's real-world livery and avoids confusion with Namma Metro Blue Line.
+     */
+    fun createTwoToneBusBadgeBitmap(
+        context: Context,
+        category: BmtcBusCategory = BmtcBusCategory.NORMAL_SARIGE,
+        sizeDp: Int = 26
+    ): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val center = sizePx / 2f
+        val radius = center * 0.90f
+
+        // 1. Soft ground shadow
+        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(70, 0, 0, 0)
+            style = Paint.Style.FILL
+            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(90, 0, 0, 0))
+        }
+        canvas.drawCircle(center, center, radius, shadowPaint)
+
+        // 2. Base Circle (White)
+        val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(center, center, radius, whitePaint)
+
+        // 3. Bottom Half Semicircle (Category Blue)
+        val bluePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.FILL
+        }
+        val circleRect = RectF(center - radius, center - radius, center + radius, center + radius)
+        canvas.drawArc(circleRect, 0f, 180f, true, bluePaint)
+
+        // 4. Outer border stroke
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.STROKE
+            strokeWidth = 1.6f * density
+        }
+        canvas.drawCircle(center, center, radius, borderPaint)
+
+        // 5. Divider line between top white and bottom blue
+        val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.STROKE
+            strokeWidth = 1f * density
+        }
+        canvas.drawLine(center - radius, center, center + radius, center, dividerPaint)
+
+        // 6. Top text ("Sarige" / "AC" / "EV")
+        val topTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = radius * 0.54f
+            textAlign = Paint.Align.CENTER
+        }
+        val topMetrics = topTextPaint.fontMetrics
+        val topY = (center - radius * 0.45f) - (topMetrics.descent + topMetrics.ascent) / 2f
+        canvas.drawText(category.shortCode, center, topY, topTextPaint)
+
+        // 7. Bottom text ("BUS")
+        val bottomTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = radius * 0.52f
+            textAlign = Paint.Align.CENTER
+        }
+        val botMetrics = bottomTextPaint.fontMetrics
+        val botY = (center + radius * 0.48f) - (botMetrics.descent + botMetrics.ascent) / 2f
+        canvas.drawText("BUS", center, botY, bottomTextPaint)
+
+        return bitmap
+    }
+
+    fun createTwoToneBusBadgeDrawable(
+        context: Context,
+        category: BmtcBusCategory = BmtcBusCategory.NORMAL_SARIGE,
+        sizeDp: Int = 26
+    ): Drawable {
+        val bmp = createTwoToneBusBadgeBitmap(context, category, sizeDp)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
+    }
+
+    /**
+     * Generates a complete BMTC Bus Hub / Stop marking with 50/50 two-tone badge
+     * and high-contrast stop name pill tag underneath.
+     */
+    fun createTwoToneBusStopMarkerBitmap(
+        context: Context,
+        stopName: String,
+        category: BmtcBusCategory = BmtcBusCategory.NORMAL_SARIGE
+    ): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val badgeRadius = 14f * density
+        val badgeDiameter = badgeRadius * 2f
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0F172A")
+            textSize = 10f * density
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val textWidth = textPaint.measureText(stopName)
+        val fontMetrics = textPaint.fontMetrics
+        val textHeight = fontMetrics.descent - fontMetrics.ascent
+
+        val pillPaddingH = 7f * density
+        val pillPaddingV = 3f * density
+        val pillWidth = textWidth + pillPaddingH * 2f
+        val pillHeight = textHeight + pillPaddingV * 2f
+
+        val totalWidth = maxOf(badgeDiameter + 8f * density, pillWidth + 8f * density).toInt()
+        val gap = 2f * density
+        val totalHeight = (badgeDiameter + gap + pillHeight + 6f * density).toInt()
+
+        val bitmap = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val centerX = totalWidth / 2f
+        val badgeCenterY = badgeRadius + 2f * density
+
+        // Draw the 50/50 circular badge
+        val circleRect = RectF(centerX - badgeRadius, badgeCenterY - badgeRadius, centerX + badgeRadius, badgeCenterY + badgeRadius)
+
+        // Top half: Crisp White
+        val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(2.5f * density, 0f, 1f * density, Color.argb(80, 0, 0, 0))
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius, whitePaint)
+
+        // Bottom half: Category Blue
+        val bluePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.FILL
+        }
+        canvas.drawArc(circleRect, 0f, 180f, true, bluePaint)
+
+        // Outer border
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.STROKE
+            strokeWidth = 1.5f * density
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius, borderPaint)
+
+        // Divider
+        canvas.drawLine(centerX - badgeRadius, badgeCenterY, centerX + badgeRadius, badgeCenterY, borderPaint)
+
+        // Top text: Category ShortCode
+        val topPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            textSize = badgeRadius * 0.62f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val topMetrics = topPaint.fontMetrics
+        val topY = (badgeCenterY - badgeRadius * 0.45f) - (topMetrics.descent + topMetrics.ascent) / 2f
+        canvas.drawText(category.shortCode, centerX, topY, topPaint)
+
+        // Bottom text: "BUS"
+        val botPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = badgeRadius * 0.58f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+        val botMetrics = botPaint.fontMetrics
+        val botY = (badgeCenterY + badgeRadius * 0.48f) - (botMetrics.descent + botMetrics.ascent) / 2f
+        canvas.drawText("BUS", centerX, botY, botPaint)
+
+        // Station/Stop Name Pill underneath
+        val pillTop = badgeDiameter + 2f * density + gap
+        val pillLeft = centerX - pillWidth / 2f
+        val pillRight = centerX + pillWidth / 2f
+        val pillBottom = pillTop + pillHeight
+        val pillRect = RectF(pillLeft, pillTop, pillRight, pillBottom)
+
+        val pillBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(70, 0, 0, 0))
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillBgPaint)
+
+        val pillStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = category.primaryColorInt
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f * density
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillStrokePaint)
+
+        val textY = pillTop + pillPaddingV - fontMetrics.ascent
+        canvas.drawText(stopName, centerX, textY, textPaint)
+
+        return bitmap
+    }
+
+    fun createTwoToneBusStopMarkerDrawable(
+        context: Context,
+        stopName: String,
+        category: BmtcBusCategory = BmtcBusCategory.NORMAL_SARIGE
+    ): Drawable {
+        val bmp = createTwoToneBusStopMarkerBitmap(context, stopName, category)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
+    }
+
+    /**
+     * Creates a pair of OsmDroid polylines representing an authentic 50/50 two-tone (Blue + White) bus path:
+     * - Base layer: Solid Pure White line.
+     * - Top layer: Alternating dashed line in the category's blue shade (#0D47A1, #1976D2, #03A9F4).
+     * Where the dash is drawn, it is Blue; where the gap is, the base White shows through.
+     * Result: 50% Blue and 50% White striped road bus line!
+     */
+    fun createTwoToneBusPolylines(
+        mapView: MapView,
+        points: List<GeoPoint>,
+        category: BmtcBusCategory,
+        widthDp: Float = 7f
+    ): Pair<Polyline, Polyline> {
+        val density = mapView.context.resources.displayMetrics.density
+        val strokePx = widthDp * density
+
+        // 1. Base Layer: Solid Pure White line (casing)
+        val baseWhiteLine = Polyline(mapView).apply {
+            setPoints(points)
+            outlinePaint.color = Color.WHITE
+            outlinePaint.strokeWidth = strokePx + (2f * density)
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+            outlinePaint.strokeJoin = Paint.Join.ROUND
+            outlinePaint.isAntiAlias = true
+        }
+
+        // 2. Overlay Layer: 50/50 Alternating Blue Dashes
+        val dashPx = 20f * density
+        val dashedBlueLine = Polyline(mapView).apply {
+            setPoints(points)
+            outlinePaint.color = category.primaryColorInt
+            outlinePaint.strokeWidth = strokePx
+            outlinePaint.strokeCap = Paint.Cap.ROUND
+            outlinePaint.strokeJoin = Paint.Join.ROUND
+            outlinePaint.pathEffect = DashPathEffect(floatArrayOf(dashPx, dashPx), 0f)
+            outlinePaint.isAntiAlias = true
+        }
+
+        return Pair(baseWhiteLine, dashedBlueLine)
+    }
+
+    /**
      * Generates a circular BMTC bus stop badge.
      */
+
     fun createBusStopBadgeBitmap(
         context: Context,
         sizeDp: Int = 22

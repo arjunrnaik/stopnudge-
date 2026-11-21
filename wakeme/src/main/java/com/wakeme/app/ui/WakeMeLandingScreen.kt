@@ -52,6 +52,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import android.graphics.Paint
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.data.local.transit.BmtcBusCategory
+import com.wakeme.app.data.local.transit.BmtcBusNetwork
 import org.osmdroid.views.overlay.Polyline
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
@@ -112,6 +114,7 @@ fun WakeMeLandingScreen(
     var metroMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var metroPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
     var busMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
+    var busPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
     // Tap-to-drop pin state
@@ -209,21 +212,99 @@ fun WakeMeLandingScreen(
         }
     }
 
-    // Update BMTC bus stop markers when overlay toggled
+    // Update BMTC bus stop markers and 50/50 two-tone corridor polylines when overlay toggled
     LaunchedEffect(showBmtcOverlay, busStops) {
         val map = mapViewRef ?: return@LaunchedEffect
         busMarkersList.forEach { map.overlays.remove(it) }
         busMarkersList = emptyList()
+        busPolylinesList.forEach { map.overlays.remove(it) }
+        busPolylinesList = emptyList()
 
         if (showBmtcOverlay) {
-            val busBadge = LocationMarkerUtils.createBusStopBadgeDrawable(context)
+            val newPolylines = mutableListOf<Polyline>()
             val newMarkers = mutableListOf<Marker>()
-            busStops.take(80).forEach { stop ->
+
+            // 1. Draw 4 authentic BMTC Trunk Corridors with 50/50 two-tone (Blue + White) polylines:
+            // Corridor 1: Outer Ring Road AC Volvo Trunk (Dark Navy Blue + White)
+            val (orrWhite, orrBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                mapView = map,
+                points = BmtcBusNetwork.CORRIDOR_ORR_AC_VOLVO,
+                category = BmtcBusCategory.AC_VOLVO,
+                widthDp = 7.5f
+            )
+            map.overlays.add(orrWhite)
+            map.overlays.add(orrBlue)
+            newPolylines.add(orrWhite)
+            newPolylines.add(orrBlue)
+
+            // Corridor 2: Airport Vayu Vajra Express Corridor (Dark Navy Blue + White)
+            val (airportWhite, airportBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                mapView = map,
+                points = BmtcBusNetwork.CORRIDOR_AIRPORT_VAYU_VAJRA,
+                category = BmtcBusCategory.AC_VOLVO,
+                widthDp = 7.5f
+            )
+            map.overlays.add(airportWhite)
+            map.overlays.add(airportBlue)
+            newPolylines.add(airportWhite)
+            newPolylines.add(airportBlue)
+
+            // Corridor 3: Central City Sarige Non-AC Trunk Line (Classic Royal Blue + White)
+            val (sarigeWhite, sarigeBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                mapView = map,
+                points = BmtcBusNetwork.CORRIDOR_CITY_SARIGE,
+                category = BmtcBusCategory.NORMAL_SARIGE,
+                widthDp = 7.0f
+            )
+            map.overlays.add(sarigeWhite)
+            map.overlays.add(sarigeBlue)
+            newPolylines.add(sarigeWhite)
+            newPolylines.add(sarigeBlue)
+
+            // Corridor 4: East-West Astra Electric EV Trunk Corridor (Light Sky Blue + White)
+            val (evWhite, evBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
+                mapView = map,
+                points = BmtcBusNetwork.CORRIDOR_EAST_WEST_EV,
+                category = BmtcBusCategory.ELECTRIC_EV,
+                widthDp = 7.0f
+            )
+            map.overlays.add(evWhite)
+            map.overlays.add(evBlue)
+            newPolylines.add(evWhite)
+            newPolylines.add(evBlue)
+
+            busPolylinesList = newPolylines
+
+            // 2. Add Major BMTC Transit Hub Markers with 50/50 two-tone badges and name pills
+            BmtcBusNetwork.MAJOR_HUBS.forEach { hub ->
+                val hubMarker = Marker(map).apply {
+                    position = hub.geoPoint
+                    title = hub.name
+                    snippet = hub.routesSummary
+                    icon = LocationMarkerUtils.createTwoToneBusStopMarkerDrawable(
+                        context = context,
+                        stopName = hub.name,
+                        category = hub.category
+                    )
+                    setAnchor(Marker.ANCHOR_CENTER, 0.35f)
+                    setOnMarkerClickListener { _, _ ->
+                        viewModel.selectMapPin(hub.geoPoint, hub.name)
+                        true
+                    }
+                }
+                map.overlays.add(hubMarker)
+                newMarkers.add(hubMarker)
+            }
+
+            // 3. Add Verified Bus Stops with 50/50 two-tone circular badges
+            busStops.take(60).forEach { stop ->
+                val cat = BmtcBusCategory.fromRouteOrName(stop.directionHint ?: stop.ref)
+                val badge = LocationMarkerUtils.createTwoToneBusBadgeDrawable(context, cat, sizeDp = 22)
                 val marker = Marker(map).apply {
                     position = GeoPoint(stop.latitude, stop.longitude)
                     title = stop.name
-                    snippet = stop.ref?.let { "Ref: $it" } ?: "BMTC Bus Stop"
-                    icon = busBadge
+                    snippet = stop.directionHint ?: "BMTC Bus Stop"
+                    icon = badge
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
@@ -236,6 +317,7 @@ fun WakeMeLandingScreen(
                 map.overlays.add(marker)
                 newMarkers.add(marker)
             }
+
             busMarkersList = newMarkers
             map.invalidate()
         } else {
@@ -1456,7 +1538,10 @@ private fun SearchResultRow(
     ) {
         val (icon, tint) = when (item.type) {
             SearchResultType.METRO -> Icons.Default.DirectionsSubway to Color(0xFF673AB7)
-            SearchResultType.BUS -> Icons.Default.DirectionsBus to Color(0xFF00897B)
+            SearchResultType.BUS -> {
+                val cat = BmtcBusCategory.fromRouteOrName(item.subtitle)
+                Icons.Default.DirectionsBus to cat.composeColor
+            }
             SearchResultType.ONLINE_PLACE -> Icons.Default.Place to Color(0xFF1E88E5)
             SearchResultType.GOOGLE_MAPS_SEARCH -> Icons.Default.OpenInNew to Color(0xFFEA4335)
         }

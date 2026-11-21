@@ -29,6 +29,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.VehicleMode
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.border
+import com.wakeme.app.data.local.transit.BmtcBusCategory
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.util.LocationMarkerUtils
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.views.MapView
@@ -61,6 +65,7 @@ fun WakeMeModeSelectionScreen(
     val radiusMeters by viewModel.radiusMeters.collectAsState()
     val audioRouting by viewModel.audioRouting.collectAsState()
     val vibrateEnabled by viewModel.vibrateEnabled.collectAsState()
+    val selectedBusCategory by viewModel.selectedBusCategory.collectAsState()
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
 
@@ -229,19 +234,31 @@ fun WakeMeModeSelectionScreen(
                             controller.setZoom(14.5)
                             controller.setCenter(targetLocation)
 
+                            val isBusMode = selectedVehicleMode == VehicleMode.BUS
+                            val isMetroMode = selectedVehicleMode == VehicleMode.METRO
+                            val themeColorInt = when {
+                                isBusMode -> selectedBusCategory.primaryColorInt
+                                isMetroMode -> NammaMetroNetwork.COLOR_PURPLE
+                                else -> 0xFF1E88E5.toInt()
+                            }
+
                             val destMarker = Marker(this).apply {
                                 position = targetLocation
                                 title = targetName
-                                icon = LocationMarkerUtils.createModernPinDrawable(ctx)
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                                icon = when {
+                                    isBusMode -> LocationMarkerUtils.createTwoToneBusBadgeDrawable(ctx, selectedBusCategory, sizeDp = 30)
+                                    isMetroMode -> LocationMarkerUtils.createStationMarkerDrawable(ctx, targetName, NammaMetroNetwork.COLOR_PURPLE)
+                                    else -> LocationMarkerUtils.createModernPinDrawable(ctx)
+                                }
+                                setAnchor(Marker.ANCHOR_CENTER, if (isBusMode) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
                             }
                             overlays.add(destMarker)
 
                             val geofenceCircle = Polygon(this).apply {
                                 points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
-                                fillPaint.color = 0x331E88E5.toInt()
-                                outlinePaint.color = 0xFF1E88E5.toInt()
-                                outlinePaint.strokeWidth = 3f
+                                fillPaint.color = (0x33000000 or (themeColorInt and 0x00FFFFFF))
+                                outlinePaint.color = themeColorInt
+                                outlinePaint.strokeWidth = 3.5f
                             }
                             overlays.add(geofenceCircle)
                         }
@@ -336,6 +353,63 @@ fun WakeMeModeSelectionScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Direct Road", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text("Cab / Auto", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+
+            // 3b. BMTC Bus 50/50 Livery Divisions (Dark Blue AC / Normal Blue Sarige / Light Blue EV)
+            AnimatedVisibility(visible = selectedVehicleMode == VehicleMode.BUS) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    Text(
+                        text = "BMTC BUS DIVISION (50/50 LIVERY)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = selectedBusCategory.composeColor
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BmtcBusCategory.values().forEach { cat ->
+                            val isSelected = selectedBusCategory == cat
+                            Surface(
+                                onClick = { viewModel.setBusCategory(cat) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) cat.composeColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    if (isSelected) 2.dp else 1.dp,
+                                    if (isSelected) cat.composeColor else MaterialTheme.colorScheme.outlineVariant
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    // 50/50 two-tone visual indicator dot
+                                    Box(
+                                        modifier = Modifier
+                                            .size(12.dp)
+                                            .clip(CircleShape)
+                                            .background(cat.composeColor)
+                                            .border(1.dp, Color.White, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = cat.shortCode,
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSelected) cat.composeColor else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

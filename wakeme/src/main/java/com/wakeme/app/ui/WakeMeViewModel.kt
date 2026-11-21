@@ -15,6 +15,7 @@ import com.wakeme.app.data.local.favorites.WakeMeUserDatabase
 import com.wakeme.app.data.local.transit.BusStopEntity
 import com.wakeme.app.data.local.transit.MetroStationEntity
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.data.local.transit.BmtcBusCategory
 import com.wakeme.app.data.local.transit.TransitDatabase
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
@@ -49,6 +50,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     // Vehicle Mode State (Car / Cab vs City Bus)
     private val _selectedVehicleMode = MutableStateFlow(VehicleMode.BUS)
     val selectedVehicleMode: StateFlow<VehicleMode> = _selectedVehicleMode.asStateFlow()
+
+    // BMTC Bus Category State (AC Volvo vs Normal Sarige vs Electric EV)
+    private val _selectedBusCategory = MutableStateFlow(BmtcBusCategory.NORMAL_SARIGE)
+    val selectedBusCategory: StateFlow<BmtcBusCategory> = _selectedBusCategory.asStateFlow()
+
+    fun setBusCategory(category: BmtcBusCategory) {
+        _selectedBusCategory.value = category
+    }
 
     // Saved Favorites State
     private val _favorites = MutableStateFlow<List<FavoritePlaceEntity>>(emptyList())
@@ -310,6 +319,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _targetName.value = item.title
         _searchQuery.value = ""
         _searchResults.value = emptyList()
+
+        if (item.type == SearchResultType.METRO) {
+            _selectedVehicleMode.value = VehicleMode.METRO
+        } else if (item.type == SearchResultType.BUS) {
+            _selectedVehicleMode.value = VehicleMode.BUS
+            _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(item.subtitle + " " + item.title)
+        }
+
         _cameraMoveTarget.tryEmit(geoPoint)
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
@@ -317,6 +334,12 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     fun selectMapPin(geoPoint: GeoPoint, name: String? = null) {
         _targetLocation.value = geoPoint
         _targetName.value = name ?: String.format("%.4f° N, %.4f° E", geoPoint.latitude, geoPoint.longitude)
+        if (name?.contains("Metro", ignoreCase = true) == true) {
+            _selectedVehicleMode.value = VehicleMode.METRO
+        } else if (name?.contains("Bus", ignoreCase = true) == true) {
+            _selectedVehicleMode.value = VehicleMode.BUS
+            _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(name)
+        }
         _cameraMoveTarget.tryEmit(geoPoint)
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
