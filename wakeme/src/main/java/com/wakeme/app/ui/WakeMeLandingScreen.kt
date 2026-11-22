@@ -100,6 +100,7 @@ fun WakeMeLandingScreen(
     val showBmtcOverlay by viewModel.showBmtcOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
     val nearestMetroStation by viewModel.nearestMetroStation.collectAsState()
+    val selectedBusStop by viewModel.selectedBusStop.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentTrips by viewModel.recentTrips.collectAsState()
@@ -212,7 +213,20 @@ fun WakeMeLandingScreen(
         }
     }
 
-    // Update BMTC bus stop markers and 50/50 two-tone corridor polylines when overlay toggled
+    // Continuously query BMTC bus stops in the visible bounding box as user scrolls or zooms
+    LaunchedEffect(currentMapCenter, showBmtcOverlay) {
+        if (showBmtcOverlay) {
+            val delta = 0.06
+            viewModel.updateBmtcBoundingBox(
+                minLat = currentMapCenter.latitude - delta,
+                maxLat = currentMapCenter.latitude + delta,
+                minLon = currentMapCenter.longitude - delta,
+                maxLon = currentMapCenter.longitude + delta
+            )
+        }
+    }
+
+    // Update BMTC bus stop markers with prominent Deep Teal badges and station name pills
     LaunchedEffect(showBmtcOverlay, busStops) {
         val map = mapViewRef ?: return@LaunchedEffect
         busMarkersList.forEach { map.overlays.remove(it) }
@@ -223,25 +237,46 @@ fun WakeMeLandingScreen(
         if (showBmtcOverlay) {
             val newMarkers = mutableListOf<Marker>()
             val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
+            val addedKeys = mutableSetOf<String>()
 
-            // Render prominent Deep Teal BMTC bus stops with station name pills on BOTH sides of boarding stations
-            busStops.forEach { stop ->
+            // 1. Prominent City-Wide Master Stops (Instant in-memory hubs across all Bengaluru)
+            BmtcBusNetwork.ALL_PROMINENT_BUS_STOPS.forEach { hub ->
+                val key = "${hub.name.lowercase().trim()}_${(hub.latitude * 100).toInt()}_${(hub.longitude * 100).toInt()}"
+                addedKeys.add(key)
                 val marker = Marker(map).apply {
-                    position = GeoPoint(stop.latitude, stop.longitude)
-                    title = "${stop.name} Bus Stop"
-                    snippet = stop.directionHint ?: "BMTC Bus Stop"
-                    icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
+                    position = hub.geoPoint
+                    title = "${hub.name} Bus Stop"
+                    snippet = hub.routesSummary
+                    icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, hub.name, "#00838F")
                     setAnchor(Marker.ANCHOR_CENTER, anchorY)
                     setOnMarkerClickListener { _, _ ->
-                        viewModel.selectMapPin(
-                            GeoPoint(stop.latitude, stop.longitude),
-                            "${stop.name} Bus Stop"
-                        )
+                        viewModel.selectBusStop(hub.name, hub.geoPoint, hub.routesSummary)
                         true
                     }
                 }
                 map.overlays.add(marker)
                 newMarkers.add(marker)
+            }
+
+            // 2. Viewport Directional Stops (from 8,384 database stops on BOTH sides of the street)
+            busStops.forEach { stop ->
+                val key = "${stop.name.lowercase().trim()}_${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}"
+                if (key !in addedKeys) {
+                    val stopPoint = GeoPoint(stop.latitude, stop.longitude)
+                    val marker = Marker(map).apply {
+                        position = stopPoint
+                        title = "${stop.name} Bus Stop"
+                        snippet = stop.directionHint ?: "BMTC Bus Stop"
+                        icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
+                        setAnchor(Marker.ANCHOR_CENTER, anchorY)
+                        setOnMarkerClickListener { _, _ ->
+                            viewModel.selectBusStop(stop.name, stopPoint, stop.directionHint ?: stop.ref)
+                            true
+                        }
+                    }
+                    map.overlays.add(marker)
+                    newMarkers.add(marker)
+                }
             }
 
             busMarkersList = newMarkers
@@ -703,7 +738,8 @@ fun WakeMeLandingScreen(
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = {
-                                viewModel.toggleBmtcOverlay()
+                                val center = mapViewRef?.mapCenter as? GeoPoint ?: currentMapCenter ?: targetLocation
+                                viewModel.toggleBmtcOverlay(center)
                             },
                             onLongPress = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -919,6 +955,118 @@ fun WakeMeLandingScreen(
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = metroColor
+                            )
+                        ) {
+                            Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Set as Destination ➔", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4c. Nearest / Selected BMTC Bus Stop Quick Card
+        val selectedBus = selectedBusStop
+        if (selectedBus != null && droppedPinLocation == null) {
+            val tealColor = Color(0xFF00838F)
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .shadow(14.dp, RoundedCornerShape(20.dp)),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
+                border = BorderStroke(1.5.dp, tealColor.copy(alpha = 0.6f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = tealColor,
+                                modifier = Modifier.size(38.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.DirectionsBus,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = selectedBus.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = tealColor.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = "BMTC Bus Stop",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = tealColor,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = selectedBus.routes ?: "BMTC Transit Boarding Point",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { viewModel.clearSelectedBusStop() },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss")
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.selectMapPin(
+                                    GeoPoint(selectedBus.latitude, selectedBus.longitude),
+                                    "${selectedBus.name} Bus Stop"
+                                )
+                                viewModel.clearSelectedBusStop()
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = tealColor
                             )
                         ) {
                             Icon(Icons.Default.Navigation, contentDescription = null, modifier = Modifier.size(18.dp))

@@ -36,6 +36,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 
+data class SelectedBusStop(
+    val name: String,
+    val latitude: Double,
+    val longitude: Double,
+    val routes: String? = null
+)
+
 class WakeMeViewModel(application: Application) : AndroidViewModel(application) {
 
     private val transitDao = TransitDatabase.getInstance(application).transitDao()
@@ -106,6 +113,9 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _nearestMetroStation = MutableStateFlow<NammaMetroNetwork.ActiveStation?>(null)
     val nearestMetroStation: StateFlow<NammaMetroNetwork.ActiveStation?> = _nearestMetroStation.asStateFlow()
+
+    private val _selectedBusStop = MutableStateFlow<SelectedBusStop?>(null)
+    val selectedBusStop: StateFlow<SelectedBusStop?> = _selectedBusStop.asStateFlow()
 
     private val _busStops = MutableStateFlow<List<BusStopEntity>>(emptyList())
     val busStops: StateFlow<List<BusStopEntity>> = _busStops.asStateFlow()
@@ -458,11 +468,22 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun selectActiveMetroStation(station: NammaMetroNetwork.ActiveStation) {
         _nearestMetroStation.value = station
+        _selectedBusStop.value = null
         _cameraMoveTarget.tryEmit(station.geoPoint)
     }
 
     fun clearNearestMetroStation() {
         _nearestMetroStation.value = null
+    }
+
+    fun selectBusStop(name: String, geoPoint: GeoPoint, routes: String? = null) {
+        _selectedBusStop.value = SelectedBusStop(name, geoPoint.latitude, geoPoint.longitude, routes)
+        _nearestMetroStation.value = null
+        _cameraMoveTarget.tryEmit(geoPoint)
+    }
+
+    fun clearSelectedBusStop() {
+        _selectedBusStop.value = null
     }
 
     fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
@@ -476,13 +497,22 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _selectedVehicleMode.value = VehicleMode.BUS
             _showBmtcOverlay.value = true
 
+            // Set selected bus stop so the quick card immediately shows
+            _selectedBusStop.value = SelectedBusStop(
+                name = nearest.name,
+                latitude = nearest.latitude,
+                longitude = nearest.longitude,
+                routes = nearest.directionHint ?: nearest.ref
+            )
+            _nearestMetroStation.value = null
+
             // Fetch surrounding stops on both sides of the street in this vicinity
             val nearbyBuses = transitDao.getBusStopsInBoundingBox(
-                minLat = nearest.latitude - 0.03,
-                maxLat = nearest.latitude + 0.03,
-                minLon = nearest.longitude - 0.03,
-                maxLon = nearest.longitude + 0.03,
-                limit = 150
+                minLat = nearest.latitude - 0.06,
+                maxLat = nearest.latitude + 0.06,
+                minLon = nearest.longitude - 0.06,
+                maxLon = nearest.longitude + 0.06,
+                limit = 200
             )
             _busStops.value = nearbyBuses
             _cameraMoveTarget.tryEmit(stopPoint)
@@ -507,27 +537,29 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         if (!_showBmtcOverlay.value) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 150)
+                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 200)
                 _busStops.value = stops
             } catch (_: Exception) {}
         }
     }
 
-    fun toggleBmtcOverlay() {
+    fun toggleBmtcOverlay(activeCenter: GeoPoint? = null) {
         val next = !_showBmtcOverlay.value
         _showBmtcOverlay.value = next
-        if (next) {
-            val center = _targetLocation.value
+        if (!next) {
+            _selectedBusStop.value = null
+        } else {
+            val center = activeCenter ?: _targetLocation.value
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val latDelta = 0.04
-                    val lonDelta = 0.04
+                    val latDelta = 0.08
+                    val lonDelta = 0.08
                     val nearbyBuses = transitDao.getBusStopsInBoundingBox(
                         minLat = center.latitude - latDelta,
                         maxLat = center.latitude + latDelta,
                         minLon = center.longitude - lonDelta,
                         maxLon = center.longitude + lonDelta,
-                        limit = 150
+                        limit = 200
                     )
                     _busStops.value = nearbyBuses
                 } catch (_: Exception) {}
