@@ -515,9 +515,16 @@ object LocationMarkerUtils {
      * Generates a circular BMTC bus stop badge.
      */
 
-    fun createBusStopBadgeBitmap(
+    private var cachedGmapsBusDrawable: Drawable? = null
+
+    /**
+     * Generates a sleek, minimalist Google Maps-style bus stop marker.
+     * Clean transit slate/dark blue-grey circle with a crisp white bus silhouette,
+     * designed to sit cleanly on either side of the road at true boarding coordinates.
+     */
+    fun createGmapsBusStopMarkerBitmap(
         context: Context,
-        sizeDp: Int = 22
+        sizeDp: Int = 20
     ): Bitmap {
         val density = context.resources.displayMetrics.density
         val sizePx = (sizeDp * density).toInt().coerceAtLeast(1)
@@ -525,38 +532,99 @@ object LocationMarkerUtils {
         val canvas = Canvas(bitmap)
 
         val center = sizePx / 2f
+        val radius = center - 1.5f * density
 
-        val whiteHalo = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
+        // 1. Subtle drop shadow
+        val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(50, 0, 0, 0)
             style = Paint.Style.FILL
-            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(80, 0, 0, 0))
+            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(60, 0, 0, 0))
         }
-        canvas.drawCircle(center, center, center * 0.95f, whiteHalo)
+        canvas.drawCircle(center, center, radius, shadowPaint)
 
+        // 2. Google Maps Transit Blue-Grey / Slate Background (#3C5268)
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#3C5268")
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(center, center, radius, bgPaint)
+
+        // 3. Subtle semi-transparent white border ring
+        val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(90, 255, 255, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = 1f * density
+        }
+        canvas.drawCircle(center, center, radius, ringPaint)
+
+        // 4. White Bus Silhouette
         val busPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#00897B")
+            color = Color.WHITE
             style = Paint.Style.FILL
         }
-        canvas.drawCircle(center, center, center * 0.80f, busPaint)
 
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.WHITE
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = sizePx * 0.48f
-            textAlign = Paint.Align.CENTER
+        val busW = radius * 1.05f
+        val busH = radius * 1.25f
+        val busLeft = center - busW / 2f
+        val busTop = center - busH / 2f - 0.5f * density
+        val busRight = busLeft + busW
+        val busBottom = busTop + busH
+
+        // Main bus body (rounded rect)
+        val bodyRect = RectF(busLeft, busTop, busRight, busBottom)
+        val cornerR = 2.0f * density
+        canvas.drawRoundRect(bodyRect, cornerR, cornerR, busPaint)
+
+        // Windshield cutout (in background slate color)
+        val cutPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#3C5268")
+            style = Paint.Style.FILL
         }
-        val fontMetrics = textPaint.fontMetrics
-        val textY = center - (fontMetrics.descent + fontMetrics.ascent) / 2f
-        canvas.drawText("B", center, textY, textPaint)
+        val winMarginX = 1.5f * density
+        val winTop = busTop + 2.0f * density
+        val winH = busH * 0.32f
+        val winRect = RectF(busLeft + winMarginX, winTop, busRight - winMarginX, winTop + winH)
+        val winR = 1.0f * density
+        canvas.drawRoundRect(winRect, winR, winR, cutPaint)
+
+        // Two front headlights (in cutPaint slate color)
+        val hlRadius = 0.9f * density
+        val hlY = busBottom - 2.8f * density
+        canvas.drawCircle(busLeft + 2.4f * density, hlY, hlRadius, cutPaint)
+        canvas.drawCircle(busRight - 2.4f * density, hlY, hlRadius, cutPaint)
+
+        // Front bumper line (small subtle cutout)
+        val bumperPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#3C5268")
+            style = Paint.Style.STROKE
+            strokeWidth = 0.7f * density
+        }
+        canvas.drawLine(busLeft + 4.2f * density, hlY, busRight - 4.2f * density, hlY, bumperPaint)
+
+        // Wheels / tires below body
+        val wheelW = 1.6f * density
+        val wheelH = 1.2f * density
+        canvas.drawRect(busLeft + 1.2f * density, busBottom, busLeft + 1.2f * density + wheelW, busBottom + wheelH, busPaint)
+        canvas.drawRect(busRight - 1.2f * density - wheelW, busBottom, busRight - 1.2f * density, busBottom + wheelH, busPaint)
 
         return bitmap
     }
 
-    fun createBusStopBadgeDrawable(context: Context, sizeDp: Int = 22): Drawable {
-        val bmp = createBusStopBadgeBitmap(context, sizeDp)
+    fun createGmapsBusStopMarkerDrawable(context: Context, sizeDp: Int = 20): Drawable {
+        cachedGmapsBusDrawable?.let { return it.constantState?.newDrawable()?.mutate() ?: it }
+        val bmp = createGmapsBusStopMarkerBitmap(context, sizeDp)
         val drawable = BitmapDrawable(context.resources, bmp)
         drawable.setBounds(0, 0, bmp.width, bmp.height)
+        cachedGmapsBusDrawable = drawable
         return drawable
+    }
+
+    fun createBusStopBadgeBitmap(context: Context, sizeDp: Int = 20): Bitmap {
+        return createGmapsBusStopMarkerBitmap(context, sizeDp)
+    }
+
+    fun createBusStopBadgeDrawable(context: Context, sizeDp: Int = 20): Drawable {
+        return createGmapsBusStopMarkerDrawable(context, sizeDp)
     }
 
     /**

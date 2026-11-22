@@ -467,17 +467,52 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
         val origin = fromLocation ?: _targetLocation.value
-        val (nearest, distMeters) = BmtcBusNetwork.findNearestStop(origin)
-        _showBmtcOverlay.value = true
-        _cameraMoveTarget.tryEmit(nearest.geoPoint)
+        viewModelScope.launch(Dispatchers.IO) {
+            val nearest = transitDao.findNearestBusStop(origin.latitude, origin.longitude)
+                ?: return@launch
+            val stopPoint = GeoPoint(nearest.latitude, nearest.longitude)
+            _targetLocation.value = stopPoint
+            _targetName.value = "${nearest.name} Bus Stop"
+            _selectedVehicleMode.value = VehicleMode.BUS
+            _showBmtcOverlay.value = true
 
-        val distFormatted = if (distMeters >= 1000) {
-            String.format("%.1f km", distMeters / 1000.0)
-        } else {
-            "${distMeters.toInt()} m"
+            // Fetch surrounding stops on both sides of the street in this vicinity
+            val nearbyBuses = transitDao.getBusStopsInBoundingBox(
+                minLat = nearest.latitude - 0.03,
+                maxLat = nearest.latitude + 0.03,
+                minLon = nearest.longitude - 0.03,
+                maxLon = nearest.longitude + 0.03,
+                limit = 150
+            )
+            _busStops.value = nearbyBuses
+            _cameraMoveTarget.tryEmit(stopPoint)
+
+            val dLat = Math.toRadians(nearest.latitude - origin.latitude)
+            val dLon = Math.toRadians(nearest.longitude - origin.longitude)
+            val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                    Math.cos(Math.toRadians(origin.latitude)) * Math.cos(Math.toRadians(nearest.latitude)) *
+                    Math.sin(dLon / 2) * Math.sin(dLon / 2)
+            val distMeters = 6371000.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+
+            val distFormatted = if (distMeters >= 1000) {
+                String.format("%.1f km", distMeters / 1000.0)
+            } else {
+                "${distMeters.toInt()} m"
+            }
+            _userMessage.tryEmit("🚌 Nearest Stop: ${nearest.name} ($distFormatted away)")
         }
-        _userMessage.tryEmit("🚌 Nearest Stop: ${nearest.name} ($distFormatted away)")
     }
+
+    fun updateBmtcBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double) {
+        if (!_showBmtcOverlay.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 150)
+                _busStops.value = stops
+            } catch (_: Exception) {}
+        }
+    }
+
     fun toggleBmtcOverlay() {
         val next = !_showBmtcOverlay.value
         _showBmtcOverlay.value = next
@@ -485,8 +520,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             val center = _targetLocation.value
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val latDelta = 0.08
-                    val lonDelta = 0.08
+                    val latDelta = 0.04
+                    val lonDelta = 0.04
                     val nearbyBuses = transitDao.getBusStopsInBoundingBox(
                         minLat = center.latitude - latDelta,
                         maxLat = center.latitude + latDelta,
@@ -497,7 +532,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     _busStops.value = nearbyBuses
                 } catch (_: Exception) {}
             }
-            _userMessage.tryEmit("🚌 BMTC Bus overlay enabled")
+            _userMessage.tryEmit("🚌 BMTC Bus stops enabled")
         }
     }
 

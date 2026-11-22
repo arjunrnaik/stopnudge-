@@ -221,112 +221,27 @@ fun WakeMeLandingScreen(
         busPolylinesList = emptyList()
 
         if (showBmtcOverlay) {
-            val newPolylines = mutableListOf<Polyline>()
             val newMarkers = mutableListOf<Marker>()
+            val busIconDrawable = LocationMarkerUtils.createGmapsBusStopMarkerDrawable(context, sizeDp = 20)
 
-            // 1. Draw 4 authentic BMTC Trunk Corridors with 50/50 two-tone (Blue + White) polylines:
-            // Corridor 1: Outer Ring Road AC Volvo Trunk (Dark Navy Blue + White)
-            val (orrWhite, orrBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
-                mapView = map,
-                points = BmtcBusNetwork.TRACK_ORR_AC_VOLVO,
-                category = BmtcBusCategory.AC_VOLVO,
-                widthDp = 7.5f
-            )
-            map.overlays.add(orrWhite)
-            map.overlays.add(orrBlue)
-            newPolylines.add(orrWhite)
-            newPolylines.add(orrBlue)
-
-            // Corridor 2: Airport Vayu Vajra Express Corridor (Dark Navy Blue + White)
-            val (airportWhite, airportBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
-                mapView = map,
-                points = BmtcBusNetwork.TRACK_AIRPORT_VAYU_VAJRA,
-                category = BmtcBusCategory.AC_VOLVO,
-                widthDp = 7.5f
-            )
-            map.overlays.add(airportWhite)
-            map.overlays.add(airportBlue)
-            newPolylines.add(airportWhite)
-            newPolylines.add(airportBlue)
-
-            // Corridor 3: Central City Sarige Non-AC Trunk Line (Classic Royal Blue + White)
-            val (sarigeWhite, sarigeBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
-                mapView = map,
-                points = BmtcBusNetwork.TRACK_CITY_SARIGE,
-                category = BmtcBusCategory.NORMAL_SARIGE,
-                widthDp = 7.0f
-            )
-            map.overlays.add(sarigeWhite)
-            map.overlays.add(sarigeBlue)
-            newPolylines.add(sarigeWhite)
-            newPolylines.add(sarigeBlue)
-
-            // Corridor 4: East-West Astra Electric EV Trunk Corridor (Light Sky Blue + White)
-            val (evWhite, evBlue) = LocationMarkerUtils.createTwoToneBusPolylines(
-                mapView = map,
-                points = BmtcBusNetwork.TRACK_EAST_WEST_EV,
-                category = BmtcBusCategory.ELECTRIC_EV,
-                widthDp = 7.0f
-            )
-            map.overlays.add(evWhite)
-            map.overlays.add(evBlue)
-            newPolylines.add(evWhite)
-            newPolylines.add(evBlue)
-
-            busPolylinesList = newPolylines
-
-            // 2. Add ALL Prominent Bus Stops along the 4 Corridors + Major Hubs
-            // Each stop is rendered with the authentic 50/50 two-tone circular badge AND high-contrast stop name pill!
-            val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
-            val prominentLocations = mutableSetOf<String>()
-
-            BmtcBusNetwork.ALL_PROMINENT_BUS_STOPS.forEach { stop ->
-                prominentLocations.add("${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}")
+            // Render minimalist Google Maps-style bus stops on BOTH sides of boarding stations in the viewport
+            busStops.forEach { stop ->
                 val marker = Marker(map).apply {
-                    position = stop.geoPoint
+                    position = GeoPoint(stop.latitude, stop.longitude)
                     title = "${stop.name} Bus Stop"
-                    snippet = stop.routesSummary
-                    icon = LocationMarkerUtils.createTwoToneBusStopMarkerDrawable(
-                        context = context,
-                        stopName = stop.name,
-                        category = stop.category
-                    )
-                    setAnchor(Marker.ANCHOR_CENTER, anchorY)
+                    snippet = stop.directionHint ?: "BMTC Bus Stop"
+                    icon = busIconDrawable
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setOnMarkerClickListener { _, _ ->
-                        viewModel.selectMapPin(stop.geoPoint, "${stop.name} Bus Stop")
+                        viewModel.selectMapPin(
+                            GeoPoint(stop.latitude, stop.longitude),
+                            "${stop.name} Bus Stop"
+                        )
                         true
                     }
                 }
                 map.overlays.add(marker)
                 newMarkers.add(marker)
-            }
-
-            // 3. Add Verified Local Bus Stops from SQLite Database in the Viewport
-            busStops.forEach { stop ->
-                val locKey = "${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}"
-                if (locKey !in prominentLocations) {
-                    val cat = BmtcBusCategory.fromRouteOrName(stop.directionHint ?: stop.ref)
-                    val marker = Marker(map).apply {
-                        position = GeoPoint(stop.latitude, stop.longitude)
-                        title = "${stop.name} Bus Stop"
-                        snippet = stop.directionHint ?: "BMTC Bus Stop"
-                        icon = LocationMarkerUtils.createTwoToneBusStopMarkerDrawable(
-                            context = context,
-                            stopName = stop.name,
-                            category = cat
-                        )
-                        setAnchor(Marker.ANCHOR_CENTER, anchorY)
-                        setOnMarkerClickListener { _, _ ->
-                            viewModel.selectMapPin(
-                                GeoPoint(stop.latitude, stop.longitude),
-                                "${stop.name} Bus Stop"
-                            )
-                            true
-                        }
-                    }
-                    map.overlays.add(marker)
-                    newMarkers.add(marker)
-                }
             }
 
             busMarkersList = newMarkers
@@ -392,10 +307,36 @@ fun WakeMeLandingScreen(
                                 delay(200)
                                 val center = mapCenter as? GeoPoint ?: return@launch
                                 currentMapCenter = center
+                                if (showBmtcOverlay) {
+                                    val delta = 0.035
+                                    viewModel.updateBmtcBoundingBox(
+                                        minLat = center.latitude - delta,
+                                        maxLat = center.latitude + delta,
+                                        minLon = center.longitude - delta,
+                                        maxLon = center.longitude + delta
+                                    )
+                                }
                             }
                             return true
                         }
-                        override fun onZoom(event: ZoomEvent?): Boolean = true
+                        override fun onZoom(event: ZoomEvent?): Boolean {
+                            debounceJob?.cancel()
+                            debounceJob = coroutineScope.launch {
+                                delay(200)
+                                val center = mapCenter as? GeoPoint ?: return@launch
+                                currentMapCenter = center
+                                if (showBmtcOverlay) {
+                                    val delta = 0.035
+                                    viewModel.updateBmtcBoundingBox(
+                                        minLat = center.latitude - delta,
+                                        maxLat = center.latitude + delta,
+                                        minLon = center.longitude - delta,
+                                        maxLon = center.longitude + delta
+                                    )
+                                }
+                            }
+                            return true
+                        }
                     })
 
                     mapViewRef = this
