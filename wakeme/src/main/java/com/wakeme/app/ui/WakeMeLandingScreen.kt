@@ -222,16 +222,16 @@ fun WakeMeLandingScreen(
 
         if (showBmtcOverlay) {
             val newMarkers = mutableListOf<Marker>()
-            val busIconDrawable = LocationMarkerUtils.createGmapsBusStopMarkerDrawable(context, sizeDp = 20)
+            val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
 
-            // Render minimalist Google Maps-style bus stops on BOTH sides of boarding stations in the viewport
+            // Render prominent Deep Teal BMTC bus stops with station name pills on BOTH sides of boarding stations
             busStops.forEach { stop ->
                 val marker = Marker(map).apply {
                     position = GeoPoint(stop.latitude, stop.longitude)
                     title = "${stop.name} Bus Stop"
                     snippet = stop.directionHint ?: "BMTC Bus Stop"
-                    icon = busIconDrawable
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
+                    setAnchor(Marker.ANCHOR_CENTER, anchorY)
                     setOnMarkerClickListener { _, _ ->
                         viewModel.selectMapPin(
                             GeoPoint(stop.latitude, stop.longitude),

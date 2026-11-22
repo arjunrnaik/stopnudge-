@@ -236,6 +236,144 @@ object LocationMarkerUtils {
     }
 
     /**
+     * Generates a prominent BMTC Bus Stop marking with node badge and station name pill label:
+     * - Official BMTC Deep Teal (#00838F) circular node badge with white bus silhouette
+     * - High-contrast station name tag underneath, matching the Namma Metro style
+     * - Distinct color code with zero clash with Metro Purple, Green, Yellow, Pink, or Blue.
+     */
+    fun createBmtcBusStopMarkerBitmap(
+        context: Context,
+        stopName: String,
+        tealColorHex: String = "#00838F"
+    ): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val badgeRadius = 12f * density
+        val badgeDiameter = badgeRadius * 2f
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#1E293B")
+            textSize = 9.5f * density
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+        }
+
+        val textWidth = textPaint.measureText(stopName)
+        val fontMetrics = textPaint.fontMetrics
+        val textHeight = fontMetrics.descent - fontMetrics.ascent
+
+        val pillPaddingH = 7f * density
+        val pillPaddingV = 3f * density
+        val pillWidth = textWidth + pillPaddingH * 2f
+        val pillHeight = textHeight + pillPaddingV * 2f
+
+        val totalWidth = maxOf(badgeDiameter + 8f * density, pillWidth + 8f * density).toInt()
+        val gap = 2f * density
+        val totalHeight = (badgeDiameter + gap + pillHeight + 6f * density).toInt()
+
+        val bitmap = Bitmap.createBitmap(totalWidth, totalHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val centerX = totalWidth / 2f
+        val badgeCenterY = badgeRadius + 2f * density
+
+        val tealColor = Color.parseColor(tealColorHex)
+
+        // 1. Bus Node Halo & Fill
+        val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(3f * density, 0f, 1f * density, Color.argb(110, 0, 0, 0))
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius, haloPaint)
+
+        val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tealColor
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(centerX, badgeCenterY, badgeRadius * 0.82f, fillPaint)
+
+        // 2. White Bus Silhouette inside node
+        val busPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+        }
+
+        val innerR = badgeRadius * 0.82f
+        val busW = innerR * 1.1f
+        val busH = innerR * 1.3f
+        val busLeft = centerX - busW / 2f
+        val busTop = badgeCenterY - busH / 2f - 0.5f * density
+        val busRight = busLeft + busW
+        val busBottom = busTop + busH
+
+        // Main bus body (rounded rect)
+        val bodyRect = RectF(busLeft, busTop, busRight, busBottom)
+        val cornerR = 1.8f * density
+        canvas.drawRoundRect(bodyRect, cornerR, cornerR, busPaint)
+
+        // Windshield cutout (in teal color)
+        val cutPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tealColor
+            style = Paint.Style.FILL
+        }
+        val winMarginX = 1.2f * density
+        val winTop = busTop + 1.8f * density
+        val winH = busH * 0.32f
+        val winRect = RectF(busLeft + winMarginX, winTop, busRight - winMarginX, winTop + winH)
+        val winR = 0.8f * density
+        canvas.drawRoundRect(winRect, winR, winR, cutPaint)
+
+        // Two front headlights (in teal color)
+        val hlRadius = 0.8f * density
+        val hlY = busBottom - 2.5f * density
+        canvas.drawCircle(busLeft + 2.0f * density, hlY, hlRadius, cutPaint)
+        canvas.drawCircle(busRight - 2.0f * density, hlY, hlRadius, cutPaint)
+
+        // Wheels below body
+        val wheelW = 1.5f * density
+        val wheelH = 1.0f * density
+        canvas.drawRect(busLeft + 1.0f * density, busBottom, busLeft + 1.0f * density + wheelW, busBottom + wheelH, busPaint)
+        canvas.drawRect(busRight - 1.0f * density - wheelW, busBottom, busRight - 1.0f * density, busBottom + wheelH, busPaint)
+
+        // 3. Station Name Pill
+        val pillTop = badgeDiameter + 2f * density + gap
+        val pillLeft = centerX - pillWidth / 2f
+        val pillRight = centerX + pillWidth / 2f
+        val pillBottom = pillTop + pillHeight
+        val pillRect = RectF(pillLeft, pillTop, pillRight, pillBottom)
+
+        val pillBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(2f * density, 0f, 1f * density, Color.argb(80, 0, 0, 0))
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillBgPaint)
+
+        val pillStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = tealColor
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f * density
+        }
+        canvas.drawRoundRect(pillRect, 5f * density, 5f * density, pillStrokePaint)
+
+        // Station name text
+        val textY = pillTop + pillPaddingV - fontMetrics.ascent
+        canvas.drawText(stopName, centerX, textY, textPaint)
+
+        return bitmap
+    }
+
+    fun createBmtcBusStopMarkerDrawable(
+        context: Context,
+        stopName: String,
+        tealColorHex: String = "#00838F"
+    ): Drawable {
+        val bmp = createBmtcBusStopMarkerBitmap(context, stopName, tealColorHex)
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
+    }
+
+    /**
      * Calculates anchor Y so that the station node circle aligns exactly with the track line.
      */
     fun getStationMarkerAnchorY(context: Context): Float {
