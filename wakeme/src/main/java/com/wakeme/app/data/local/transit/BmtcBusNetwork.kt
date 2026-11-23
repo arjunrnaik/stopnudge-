@@ -113,6 +113,8 @@ object BmtcBusNetwork {
         ActiveBusStop("orr_8", "Marathahalli Bridge", BmtcBusCategory.AC_VOLVO, 12.95693, 77.70126, "Routes: 500-D, 335-E, KIA-8, KIA-4", isMajorHub = true),
         ActiveBusStop("orr_9", "Karthik Nagar", BmtcBusCategory.AC_VOLVO, 12.97532, 77.69732, "Routes: 500-D, KIA-8, V-500"),
         ActiveBusStop("orr_10", "Mahadevapura Ring Road", BmtcBusCategory.AC_VOLVO, 12.98846, 77.68927, "Routes: 500-D, 500-F, KIA-8"),
+        ActiveBusStop("orr_10a", "B Narayanapura (North)", BmtcBusCategory.AC_VOLVO, 12.99589, 77.68387, "Towards Tin Factory / Hebbal", isMajorHub = true),
+        ActiveBusStop("orr_10b", "B Narayanapura (South)", BmtcBusCategory.AC_VOLVO, 12.99583, 77.68417, "Towards Marathahalli / Silk Board", isMajorHub = true),
         ActiveBusStop("orr_11", "Tin Factory / KR Puram", BmtcBusCategory.AC_VOLVO, 13.00010, 77.67625, "Routes: 500-D, 314, KIA-8, V-500", isMajorHub = true),
         ActiveBusStop("orr_12", "Ramamurthy Nagar", BmtcBusCategory.AC_VOLVO, 13.01462, 77.66528, "Routes: 500-D, 500-B, KIA-8"),
         ActiveBusStop("orr_13", "Kalyan Nagar", BmtcBusCategory.AC_VOLVO, 13.02384, 77.64329, "Routes: 500-D, KIA-8, V-500"),
@@ -228,7 +230,7 @@ object BmtcBusNetwork {
         val seen = mutableSetOf<String>()
 
         fun addIfNew(stop: ActiveBusStop) {
-            val key = "${stop.name.lowercase().trim()}_${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}"
+            val key = "${stop.name.lowercase().trim()}_${stop.latitude}_${stop.longitude}"
             if (key !in seen) {
                 seen.add(key)
                 list.add(stop)

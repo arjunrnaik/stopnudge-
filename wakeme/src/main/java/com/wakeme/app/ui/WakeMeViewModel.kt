@@ -103,7 +103,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _showMetroOverlay = MutableStateFlow(false)
     val showMetroOverlay: StateFlow<Boolean> = _showMetroOverlay.asStateFlow()
 
-    private val _showBmtcOverlay = MutableStateFlow(false)
+    private val _showBmtcOverlay = MutableStateFlow(true)
     val showBmtcOverlay: StateFlow<Boolean> = _showBmtcOverlay.asStateFlow()
 
     private val _showTransitOverlay = MutableStateFlow(false)
@@ -148,6 +148,21 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             try {
                 val metros = transitDao.getAllMetroStations()
                 _metroStations.value = metros
+            } catch (_: Exception) {}
+        }
+
+        // Preload nearby BMTC bus stops in background
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val center = defaultCenter
+                val initialBuses = transitDao.getBusStopsInBoundingBox(
+                    minLat = center.latitude - 0.08,
+                    maxLat = center.latitude + 0.08,
+                    minLon = center.longitude - 0.08,
+                    maxLon = center.longitude + 0.08,
+                    limit = 400
+                )
+                _busStops.value = initialBuses
             } catch (_: Exception) {}
         }
 

@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [MetroStationEntity::class, BusStopEntity::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class TransitDatabase : RoomDatabase() {
@@ -15,7 +15,7 @@ abstract class TransitDatabase : RoomDatabase() {
     abstract fun transitDao(): TransitDao
 
     companion object {
-        private const val DB_NAME = "wakeme_transit_stops_v4.db"
+        private const val DB_NAME = "wakeme_transit_stops_v5.db"
         private const val ASSET_PATH = "databases/transit_stops.db"
 
         @Volatile
@@ -28,8 +28,8 @@ abstract class TransitDatabase : RoomDatabase() {
                     dbFile.delete()
                 }
 
-                // Clean up legacy v1, v2, and v3 db files if present
-                for (legacyName in listOf("transit_stops.db", "transit_stops_v2.db", "wakeme_transit_stops_v3.db")) {
+                // Clean up legacy v1, v2, v3, and v4 db files if present to force-load the curated 7,343 stops
+                for (legacyName in listOf("transit_stops.db", "transit_stops_v2.db", "wakeme_transit_stops_v3.db", "wakeme_transit_stops_v4.db")) {
                     val oldDb = context.applicationContext.getDatabasePath(legacyName)
                     if (oldDb.exists()) {
                         oldDb.delete()
