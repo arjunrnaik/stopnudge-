@@ -40,7 +40,8 @@ data class SelectedBusStop(
     val name: String,
     val latitude: Double,
     val longitude: Double,
-    val routes: String? = null
+    val routes: String? = null,
+    val direction: String? = null
 )
 
 class WakeMeViewModel(application: Application) : AndroidViewModel(application) {
@@ -476,8 +477,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _nearestMetroStation.value = null
     }
 
-    fun selectBusStop(name: String, geoPoint: GeoPoint, routes: String? = null) {
-        _selectedBusStop.value = SelectedBusStop(name, geoPoint.latitude, geoPoint.longitude, routes)
+    fun selectBusStop(name: String, geoPoint: GeoPoint, routes: String? = null, direction: String? = null) {
+        _selectedBusStop.value = SelectedBusStop(name, geoPoint.latitude, geoPoint.longitude, routes, direction)
         _nearestMetroStation.value = null
         _cameraMoveTarget.tryEmit(geoPoint)
     }
@@ -502,7 +503,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 name = nearest.name,
                 latitude = nearest.latitude,
                 longitude = nearest.longitude,
-                routes = nearest.directionHint ?: nearest.ref
+                routes = nearest.ref,
+                direction = nearest.directionHint
             )
             _nearestMetroStation.value = null
 
@@ -512,7 +514,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 maxLat = nearest.latitude + 0.06,
                 minLon = nearest.longitude - 0.06,
                 maxLon = nearest.longitude + 0.06,
-                limit = 200
+                limit = 400
             )
             _busStops.value = nearbyBuses
             _cameraMoveTarget.tryEmit(stopPoint)
@@ -537,7 +539,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         if (!_showBmtcOverlay.value) return
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 200)
+                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 400)
                 _busStops.value = stops
             } catch (_: Exception) {}
         }
@@ -559,7 +561,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                         maxLat = center.latitude + latDelta,
                         minLon = center.longitude - lonDelta,
                         maxLon = center.longitude + lonDelta,
-                        limit = 200
+                        limit = 400
                     )
                     _busStops.value = nearbyBuses
                 } catch (_: Exception) {}

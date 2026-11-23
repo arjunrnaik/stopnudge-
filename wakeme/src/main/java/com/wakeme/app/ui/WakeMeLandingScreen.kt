@@ -227,7 +227,7 @@ fun WakeMeLandingScreen(
     }
 
     // Update BMTC bus stop markers with prominent Deep Teal badges and station name pills
-    LaunchedEffect(showBmtcOverlay, busStops) {
+    LaunchedEffect(showBmtcOverlay, busStops, selectedBusStop) {
         val map = mapViewRef ?: return@LaunchedEffect
         busMarkersList.forEach { map.overlays.remove(it) }
         busMarkersList = emptyList()
@@ -236,47 +236,34 @@ fun WakeMeLandingScreen(
 
         if (showBmtcOverlay) {
             val newMarkers = mutableListOf<Marker>()
-            val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
-            val addedKeys = mutableSetOf<String>()
+            val selLat = selectedBusStop?.latitude
+            val selLon = selectedBusStop?.longitude
 
-            // 1. Prominent City-Wide Master Stops (Instant in-memory hubs across all Bengaluru)
-            BmtcBusNetwork.ALL_PROMINENT_BUS_STOPS.forEach { hub ->
-                val key = "${hub.name.lowercase().trim()}_${(hub.latitude * 100).toInt()}_${(hub.longitude * 100).toInt()}"
-                addedKeys.add(key)
+            // Render all directional database stops on BOTH sides of the street without suppression
+            busStops.forEach { stop ->
+                val stopPoint = GeoPoint(stop.latitude, stop.longitude)
+                val isSelected = selLat != null && selLon != null &&
+                        Math.abs(selLat - stop.latitude) < 0.00005 &&
+                        Math.abs(selLon - stop.longitude) < 0.00005
+
                 val marker = Marker(map).apply {
-                    position = hub.geoPoint
-                    title = "${hub.name} Bus Stop"
-                    snippet = hub.routesSummary
-                    icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, hub.name, "#00838F")
-                    setAnchor(Marker.ANCHOR_CENTER, anchorY)
+                    position = stopPoint
+                    title = "${stop.name} Bus Stop"
+                    snippet = stop.directionHint ?: "BMTC Bus Stop"
+                    icon = LocationMarkerUtils.createGoogleMapsStyleBusMarkerDrawable(context, isSelected = isSelected)
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setOnMarkerClickListener { _, _ ->
-                        viewModel.selectBusStop(hub.name, hub.geoPoint, hub.routesSummary)
+                        viewModel.selectBusStop(
+                            name = stop.name,
+                            geoPoint = stopPoint,
+                            routes = stop.ref,
+                            direction = stop.directionHint
+                        )
                         true
                     }
                 }
                 map.overlays.add(marker)
                 newMarkers.add(marker)
-            }
-
-            // 2. Viewport Directional Stops (from 8,384 database stops on BOTH sides of the street)
-            busStops.forEach { stop ->
-                val key = "${stop.name.lowercase().trim()}_${(stop.latitude * 100).toInt()}_${(stop.longitude * 100).toInt()}"
-                if (key !in addedKeys) {
-                    val stopPoint = GeoPoint(stop.latitude, stop.longitude)
-                    val marker = Marker(map).apply {
-                        position = stopPoint
-                        title = "${stop.name} Bus Stop"
-                        snippet = stop.directionHint ?: "BMTC Bus Stop"
-                        icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
-                        setAnchor(Marker.ANCHOR_CENTER, anchorY)
-                        setOnMarkerClickListener { _, _ ->
-                            viewModel.selectBusStop(stop.name, stopPoint, stop.directionHint ?: stop.ref)
-                            true
-                        }
-                    }
-                    map.overlays.add(marker)
-                    newMarkers.add(marker)
-                }
             }
 
             busMarkersList = newMarkers
@@ -1032,8 +1019,25 @@ fun WakeMeLandingScreen(
                                         )
                                     }
                                 }
+                                if (!selectedBus.direction.isNullOrBlank()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = tealColor.copy(alpha = 0.12f),
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "➔ ${selectedBus.direction}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = tealColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                                 Text(
-                                    text = selectedBus.routes ?: "BMTC Transit Boarding Point",
+                                    text = selectedBus.routes?.let { "Routes: $it" } ?: "BMTC Transit Boarding Point",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     maxLines = 2,

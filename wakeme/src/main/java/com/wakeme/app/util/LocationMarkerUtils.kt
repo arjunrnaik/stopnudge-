@@ -236,6 +236,76 @@ object LocationMarkerUtils {
     }
 
     /**
+     * Generates a modern minimalist Google Maps-style BMTC bus stop marker badge:
+     * - Compact rounded square badge (22dp standard, 28dp selected)
+     * - Crisp white background with BMTC Deep Teal border and bus silhouette
+     * - Perfectly centered on road curbs / service roads with zero visual collision
+     */
+    fun createGoogleMapsStyleBusMarkerDrawable(
+        context: Context,
+        isSelected: Boolean = false,
+        tealColorHex: String = "#00838F"
+    ): Drawable {
+        val density = context.resources.displayMetrics.density
+        val sizeDp = if (isSelected) 28f else 22f
+        val sizePx = (sizeDp * density).toInt()
+
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        val cornerRadius = 5f * density
+        val margin = 1.5f * density
+        val rect = RectF(margin, margin, sizePx - margin, sizePx - margin)
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isSelected) Color.parseColor(tealColorHex) else Color.WHITE
+            style = Paint.Style.FILL
+            setShadowLayer(2.5f * density, 0f, 1f * density, Color.argb(90, 0, 0, 0))
+        }
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, bgPaint)
+
+        val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isSelected) Color.WHITE else Color.parseColor(tealColorHex)
+            style = Paint.Style.STROKE
+            strokeWidth = 1.4f * density
+        }
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, strokePaint)
+
+        // Bus silhouette
+        val busPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isSelected) Color.WHITE else Color.parseColor(tealColorHex)
+            style = Paint.Style.FILL
+        }
+
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        val bw = 6.2f * density
+        val bh = 7.2f * density
+        val busBody = RectF(cx - bw, cy - bh, cx + bw, cy + bh - 1.5f * density)
+        canvas.drawRoundRect(busBody, 1.8f * density, 1.8f * density, busPaint)
+
+        // Windshield cutout
+        val cutoutPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isSelected) Color.parseColor(tealColorHex) else Color.WHITE
+            style = Paint.Style.FILL
+        }
+        val winRect = RectF(cx - bw * 0.75f, cy - bh * 0.75f, cx + bw * 0.75f, cy - bh * 0.1f)
+        canvas.drawRoundRect(winRect, 1f * density, 1f * density, cutoutPaint)
+
+        // Wheels
+        val wheelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = if (isSelected) Color.WHITE else Color.parseColor(tealColorHex)
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(cx - bw * 0.55f, cy + bh - 0.5f * density, 1.2f * density, wheelPaint)
+        canvas.drawCircle(cx + bw * 0.55f, cy + bh - 0.5f * density, 1.2f * density, wheelPaint)
+
+        val drawable = BitmapDrawable(context.resources, bitmap)
+        drawable.setBounds(0, 0, sizePx, sizePx)
+        return drawable
+    }
+
+    /**
      * Generates a prominent BMTC Bus Stop marking with node badge and station name pill label:
      * - Official BMTC Deep Teal (#00838F) circular node badge with white bus silhouette
      * - High-contrast station name tag underneath, matching the Namma Metro style
