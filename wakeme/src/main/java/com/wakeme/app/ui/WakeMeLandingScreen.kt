@@ -239,49 +239,18 @@ fun WakeMeLandingScreen(
             val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(context)
             val addedKeys = mutableSetOf<String>()
 
-            // 1. Prominent City-Wide Master Stops (Instant in-memory hubs across all Bengaluru)
-            BmtcBusNetwork.ALL_PROMINENT_BUS_STOPS.forEach { hub ->
-                val key = "hub_${hub.id}"
-                addedKeys.add(key)
-                val marker = Marker(map).apply {
-                    position = hub.geoPoint
-                    title = "${hub.name} Bus Stop"
-                    snippet = hub.routesSummary
-                    icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, hub.name, "#00838F")
-                    setAnchor(Marker.ANCHOR_CENTER, anchorY)
-                    setOnMarkerClickListener { _, _ ->
-                        viewModel.selectBusStop(
-                            name = hub.name,
-                            geoPoint = hub.geoPoint,
-                            routes = hub.routesSummary,
-                            direction = hub.routesSummary
-                        )
-                        true
-                    }
-                }
-                map.overlays.add(marker)
-                newMarkers.add(marker)
-            }
-
-            // 2. Viewport Directional Stops from 7,343 Curated Database (Both sides of road)
+            // Viewport Directional Stops from 10,156 BMTC Official Database
             busStops.forEach { stop ->
-                val key = "db_${stop.id}"
+                val key = stop.id
                 if (key !in addedKeys) {
                     addedKeys.add(key)
                     val stopPoint = GeoPoint(stop.latitude, stop.longitude)
-
-                    val displayLabel = if (!stop.directionHint.isNullOrBlank() && stop.directionHint.startsWith("Towards")) {
-                        val shortDir = stop.directionHint.removePrefix("Towards ").trim().split("/")[0].trim()
-                        "${stop.name} (➔ $shortDir)"
-                    } else {
-                        stop.name
-                    }
 
                     val marker = Marker(map).apply {
                         position = stopPoint
                         title = "${stop.name} Bus Stop"
                         snippet = stop.directionHint ?: "BMTC Bus Stop"
-                        icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, displayLabel, "#00838F")
+                        icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
                         setAnchor(Marker.ANCHOR_CENTER, anchorY)
                         setOnMarkerClickListener { _, _ ->
                             viewModel.selectBusStop(

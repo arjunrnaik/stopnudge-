@@ -12,11 +12,11 @@ interface TransitDao {
     @Query("SELECT * FROM bus_stops ORDER BY name ASC")
     suspend fun getAllBusStops(): List<BusStopEntity>
 
-    @Query("SELECT * FROM bus_stops ORDER BY name ASC LIMIT 50")
+    @Query("SELECT * FROM bus_stops ORDER BY name ASC LIMIT 100")
     suspend fun getInitialBusStops(): List<BusStopEntity>
 
     @Query("SELECT * FROM bus_stops WHERE latitude BETWEEN :minLat AND :maxLat AND longitude BETWEEN :minLon AND :maxLon LIMIT :limit")
-    suspend fun getBusStopsInBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double, limit: Int = 120): List<BusStopEntity>
+    suspend fun getBusStopsInBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double, limit: Int = 500): List<BusStopEntity>
 
     @Query("SELECT * FROM bus_stops WHERE latitude BETWEEN (:lat - 0.05) AND (:lat + 0.05) AND longitude BETWEEN (:lon - 0.05) AND (:lon + 0.05) ORDER BY ((latitude - :lat) * (latitude - :lat) + (longitude - :lon) * (longitude - :lon)) ASC LIMIT 1")
     suspend fun findNearestBusStop(lat: Double, lon: Double): BusStopEntity?
