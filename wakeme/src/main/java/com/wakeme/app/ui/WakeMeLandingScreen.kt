@@ -724,37 +724,7 @@ fun WakeMeLandingScreen(
                 )
             }
 
-            // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (Tap) & Nearest Bus Stop (Long-press)
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .shadow(6.dp, CircleShape)
-                    .clip(CircleShape)
-                    .background(if (showBmtcOverlay) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = {
-                                val center = mapViewRef?.mapCenter as? GeoPoint ?: currentMapCenter ?: targetLocation
-                                viewModel.toggleBmtcOverlay(center)
-                            },
-                            onLongPress = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                val refLocation = droppedPinLocation 
-                                    ?: locationOverlayRef?.myLocation 
-                                    ?: currentMapCenter
-                                viewModel.findAndFocusNearestBusStop(refLocation)
-                            }
-                        )
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.DirectionsBus,
-                    contentDescription = "Toggle BMTC Bus Stops (Long press for Nearest)",
-                    tint = if (showBmtcOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
+            // BMTC Bus layer paused - pure Namma Metro focus
         }
 
         // 4. Bottom Dropped Pin Action Card (if user tapped map)

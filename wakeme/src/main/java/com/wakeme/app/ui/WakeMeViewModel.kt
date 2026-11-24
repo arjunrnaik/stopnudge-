@@ -57,7 +57,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     val currentScreen: StateFlow<WakeMeScreen> = _currentScreen.asStateFlow()
 
     // Vehicle Mode State (Car / Cab vs City Bus)
-    private val _selectedVehicleMode = MutableStateFlow(VehicleMode.BUS)
+    private val _selectedVehicleMode = MutableStateFlow(VehicleMode.METRO)
     val selectedVehicleMode: StateFlow<VehicleMode> = _selectedVehicleMode.asStateFlow()
 
     // BMTC Bus Category State (AC Volvo vs Normal Sarige vs Electric EV)
@@ -85,7 +85,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _targetName = MutableStateFlow("Bengaluru City Center")
     val targetName: StateFlow<String> = _targetName.asStateFlow()
 
-    private val _radiusMeters = MutableStateFlow(500f)
+    private val _radiusMeters = MutableStateFlow(800f)
     val radiusMeters: StateFlow<Float> = _radiusMeters.asStateFlow()
 
     private val _alertMode = MutableStateFlow(AlertMode.WAKEUP_ALARM)
@@ -100,10 +100,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _reminderNote = MutableStateFlow("")
     val reminderNote: StateFlow<String> = _reminderNote.asStateFlow()
 
-    private val _showMetroOverlay = MutableStateFlow(false)
+    private val _showMetroOverlay = MutableStateFlow(true)
     val showMetroOverlay: StateFlow<Boolean> = _showMetroOverlay.asStateFlow()
 
-    private val _showBmtcOverlay = MutableStateFlow(true)
+    private val _showBmtcOverlay = MutableStateFlow(false)
     val showBmtcOverlay: StateFlow<Boolean> = _showBmtcOverlay.asStateFlow()
 
     private val _showTransitOverlay = MutableStateFlow(false)
@@ -151,20 +151,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             } catch (_: Exception) {}
         }
 
-        // Preload nearby BMTC bus stops in background
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val center = defaultCenter
-                val initialBuses = transitDao.getBusStopsInBoundingBox(
-                    minLat = center.latitude - 0.08,
-                    maxLat = center.latitude + 0.08,
-                    minLon = center.longitude - 0.08,
-                    maxLon = center.longitude + 0.08,
-                    limit = 400
-                )
-                _busStops.value = initialBuses
-            } catch (_: Exception) {}
-        }
+        // Bus data removed - pure Namma Metro focus
 
         // Collect user saved favorites
         viewModelScope.launch(Dispatchers.IO) {
@@ -503,86 +490,16 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
-        val origin = fromLocation ?: _targetLocation.value
-        viewModelScope.launch(Dispatchers.IO) {
-            val nearest = transitDao.findNearestBusStop(origin.latitude, origin.longitude)
-                ?: return@launch
-            val stopPoint = GeoPoint(nearest.latitude, nearest.longitude)
-            _targetLocation.value = stopPoint
-            _targetName.value = "${nearest.name} Bus Stop"
-            _selectedVehicleMode.value = VehicleMode.BUS
-            _showBmtcOverlay.value = true
-
-            // Set selected bus stop so the quick card immediately shows
-            _selectedBusStop.value = SelectedBusStop(
-                name = nearest.name,
-                latitude = nearest.latitude,
-                longitude = nearest.longitude,
-                routes = nearest.ref,
-                direction = nearest.directionHint
-            )
-            _nearestMetroStation.value = null
-
-            // Fetch surrounding stops on both sides of the street in this vicinity
-            val nearbyBuses = transitDao.getBusStopsInBoundingBox(
-                minLat = nearest.latitude - 0.06,
-                maxLat = nearest.latitude + 0.06,
-                minLon = nearest.longitude - 0.06,
-                maxLon = nearest.longitude + 0.06,
-                limit = 400
-            )
-            _busStops.value = nearbyBuses
-            _cameraMoveTarget.tryEmit(stopPoint)
-
-            val dLat = Math.toRadians(nearest.latitude - origin.latitude)
-            val dLon = Math.toRadians(nearest.longitude - origin.longitude)
-            val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(Math.toRadians(origin.latitude)) * Math.cos(Math.toRadians(nearest.latitude)) *
-                    Math.sin(dLon / 2) * Math.sin(dLon / 2)
-            val distMeters = 6371000.0 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-
-            val distFormatted = if (distMeters >= 1000) {
-                String.format("%.1f km", distMeters / 1000.0)
-            } else {
-                "${distMeters.toInt()} m"
-            }
-            _userMessage.tryEmit("🚌 Nearest Stop: ${nearest.name} ($distFormatted away)")
-        }
+        _userMessage.tryEmit("🚇 Showing nearest Namma Metro station")
+        findAndFocusNearestMetroStation(fromLocation)
     }
 
     fun updateBmtcBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double) {
-        if (!_showBmtcOverlay.value) return
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val stops = transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 400)
-                _busStops.value = stops
-            } catch (_: Exception) {}
-        }
+        // Bus data removed - pure Namma Metro focus
     }
 
     fun toggleBmtcOverlay(activeCenter: GeoPoint? = null) {
-        val next = !_showBmtcOverlay.value
-        _showBmtcOverlay.value = next
-        if (!next) {
-            _selectedBusStop.value = null
-        } else {
-            val center = activeCenter ?: _targetLocation.value
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val latDelta = 0.08
-                    val lonDelta = 0.08
-                    val nearbyBuses = transitDao.getBusStopsInBoundingBox(
-                        minLat = center.latitude - latDelta,
-                        maxLat = center.latitude + latDelta,
-                        minLon = center.longitude - lonDelta,
-                        maxLon = center.longitude + lonDelta,
-                        limit = 400
-                    )
-                    _busStops.value = nearbyBuses
-                } catch (_: Exception) {}
-            }
-            _userMessage.tryEmit("🚌 BMTC Bus stops enabled")
-        }
+        _userMessage.tryEmit("🚌 BMTC bus network is paused. Focusing on Namma Metro.")
     }
 
     fun toggleTransitOverlay() {

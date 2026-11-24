@@ -62,8 +62,8 @@ class WakeMeTrackingService : Service() {
                 val name = intent.getStringExtra(EXTRA_NAME) ?: "Destination"
                 val lat = intent.getDoubleExtra(EXTRA_LATITUDE, 0.0)
                 val lon = intent.getDoubleExtra(EXTRA_LONGITUDE, 0.0)
-                val radius = intent.getFloatExtra(EXTRA_RADIUS, 500f)
-                val vehicleMode = intent.getStringExtra(EXTRA_VEHICLE_MODE)?.let { VehicleMode.valueOf(it) } ?: VehicleMode.BUS
+                val radius = intent.getFloatExtra(EXTRA_RADIUS, 800f)
+                val vehicleMode = intent.getStringExtra(EXTRA_VEHICLE_MODE)?.let { VehicleMode.valueOf(it) } ?: VehicleMode.METRO
                 val mode = intent.getStringExtra(EXTRA_MODE)?.let { AlertMode.valueOf(it) } ?: AlertMode.WAKEUP_ALARM
                 val routing = intent.getStringExtra(EXTRA_ROUTING)?.let { AudioRouting.valueOf(it) } ?: AudioRouting.BOTH
                 val note = intent.getStringExtra(EXTRA_NOTE) ?: ""

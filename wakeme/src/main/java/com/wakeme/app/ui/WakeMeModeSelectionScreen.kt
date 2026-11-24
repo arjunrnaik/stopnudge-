@@ -287,34 +287,11 @@ fun WakeMeModeSelectionScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Bus Button
-                val isBus = selectedVehicleMode == VehicleMode.BUS
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isBus) 2.dp else 1.dp,
-                        if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("🚌", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("BMTC / KSRTC", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-
-                // Metro Button
+                // Metro Button (Primary Mode)
                 val isMetro = selectedVehicleMode == VehicleMode.METRO
                 Surface(
                     onClick = { viewModel.setVehicleMode(VehicleMode.METRO) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1.1f),
                     shape = RoundedCornerShape(14.dp),
                     color = if (isMetro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
                     border = BorderStroke(
@@ -329,11 +306,11 @@ fun WakeMeModeSelectionScreen(
                         Text("🚇", fontSize = 24.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Namma Metro", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Line Transfer", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Active Lines", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
-                // Direct Road Button (sketch: Direction)
+                // Direct Road Button
                 val isCar = selectedVehicleMode == VehicleMode.CAR
                 Surface(
                     onClick = { viewModel.setVehicleMode(VehicleMode.CAR) },
@@ -353,6 +330,29 @@ fun WakeMeModeSelectionScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("Direct Road", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text("Cab / Auto", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                // City Bus Button (Paused / Coming Soon)
+                val isBus = selectedVehicleMode == VehicleMode.BUS
+                Surface(
+                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
+                    modifier = Modifier.weight(0.9f),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(
+                        if (isBus) 2.dp else 1.dp,
+                        if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text("🚌", fontSize = 24.sp)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("BMTC (Soon)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
