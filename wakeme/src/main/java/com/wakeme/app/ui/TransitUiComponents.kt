@@ -333,10 +333,16 @@ fun TransitThreeStageStepperCard(
             trailingAction = {
                 TextButton(
                     onClick = onOpenStartPicker,
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-                    modifier = Modifier.height(26.dp)
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    modifier = Modifier.heightIn(min = 36.dp)
                 ) {
-                    Text("Change Start ▾", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("Change Start", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
             }
         )

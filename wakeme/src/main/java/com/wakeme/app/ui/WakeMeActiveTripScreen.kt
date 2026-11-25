@@ -247,14 +247,14 @@ fun WakeMeActiveTripScreen(
                 }
             }
 
-            // 1. TOP CARD: Destination, Distance & Trip Progress (from sketch: Destination, Distance, Trip Progress)
+            // 1. TOP CARD: Destination, Distance & Trip Progress
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .shadow(4.dp, RoundedCornerShape(20.dp)),
+                    .shadow(2.dp, RoundedCornerShape(20.dp)),
                 shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-                tonalElevation = 6.dp
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
             ) {
                 Column(
                     modifier = Modifier
@@ -277,7 +277,7 @@ fun WakeMeActiveTripScreen(
                                 else -> Icons.Default.DirectionsCar
                             },
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -285,7 +285,7 @@ fun WakeMeActiveTripScreen(
                             text = targetName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -337,7 +337,7 @@ fun WakeMeActiveTripScreen(
                             text = stopsLabel,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
                         val activeLeg = activeMetroPlan?.legs?.getOrNull(currentMetroLegIndex)
@@ -356,7 +356,7 @@ fun WakeMeActiveTripScreen(
                                 text = "NEXT: $nextName • ALERT AT: $alertAt",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.SemiBold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = TextAlign.Center
                             )
                         }
@@ -379,7 +379,7 @@ fun WakeMeActiveTripScreen(
                             text = distanceText,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurface,
                             textAlign = TextAlign.Center
                         )
 
@@ -396,7 +396,7 @@ fun WakeMeActiveTripScreen(
                             },
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium,
-                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -497,13 +497,13 @@ fun WakeMeActiveTripScreen(
                             Text(
                                 text = "Trip Progress",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
                                 text = "${(progress * 100).toInt()}%",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                         Spacer(modifier = Modifier.height(4.dp))
@@ -514,7 +514,7 @@ fun WakeMeActiveTripScreen(
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(4.dp)),
                             color = MaterialTheme.colorScheme.primary,
-                            trackColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
                         )
                     }
 
@@ -522,20 +522,43 @@ fun WakeMeActiveTripScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "⚡ ${(currentSpeed ?: 0f).toInt()} km/h",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                        Text(
-                            text = estimatedEta?.let { "⏱️ ~$it min ETA" } ?: "⏱️ Approaching",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Speed,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = "${(currentSpeed ?: 0f).toInt()} km/h",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Schedule,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Text(
+                                text = estimatedEta?.let { "~$it min ETA" } ?: "Approaching",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
                     }
                 }
             }

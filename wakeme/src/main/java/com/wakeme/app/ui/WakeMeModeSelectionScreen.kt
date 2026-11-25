@@ -274,7 +274,7 @@ fun WakeMeModeSelectionScreen(
                                             }
                                             val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
                                             withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
-                                                append("🛣️ $dText by road • ~$minText min")
+                                                append("$dText by road • ~$minText min")
                                             }
                                         }
                                         else -> {
@@ -360,8 +360,29 @@ fun WakeMeModeSelectionScreen(
                             else -> 0xFF1E88E5.toInt()
                         }
 
-                        map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())
                         val plan = metroJourneyPlan
+                        val renderKey = listOf(
+                            selectedVehicleMode.name,
+                            targetLocation.latitude,
+                            targetLocation.longitude,
+                            radiusMeters.toInt(),
+                            metroStopsBeforeAlert,
+                            selectedBusCategory.name,
+                            previewRoadRoute?.points?.size ?: 0,
+                            boardingRoadRoute?.points?.size ?: 0,
+                            exitRoadRoute?.points?.size ?: 0,
+                            busLegRoadPoints.values.sumOf { it.size },
+                            plan?.boardingStation?.id,
+                            plan?.exitStation?.id,
+                            plan?.totalStops
+                        ).joinToString("|")
+
+                        if (map.tag == renderKey) {
+                            return@AndroidView
+                        }
+                        map.tag = renderKey
+
+                        map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())
 
                         if (isTransitMode && plan != null) {
                             val zoomPts = LocationMarkerUtils.renderMetroJourneyOverlays(
@@ -401,7 +422,7 @@ fun WakeMeModeSelectionScreen(
                                     title = "Change at ${inter.name}"
                                     icon = LocationMarkerUtils.createStationMarkerDrawable(
                                         map.context,
-                                        "🔄 ${inter.name}",
+                                        inter.name,
                                         NammaMetroNetwork.COLOR_INTERCHANGE,
                                         isInterchange = true
                                     )

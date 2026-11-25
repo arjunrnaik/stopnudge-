@@ -796,14 +796,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         val next = !_showMetroOverlay.value
         _showMetroOverlay.value = next
         if (next) {
-            _userMessage.tryEmit("🚇 Namma Metro overlay enabled")
+            _userMessage.tryEmit("Namma Metro overlay enabled")
         }
     }
 
     fun findAndFocusNearestMetroStation(fromLocation: GeoPoint?) {
         val origin = fromLocation ?: _targetLocation.value
         _isCalculatingRoadToMetro.value = true
-        _userMessage.tryEmit("🔍 Finding nearest metro via road network...")
+        _userMessage.tryEmit("Finding nearest metro via road network...")
 
         viewModelScope.launch {
             try {
@@ -821,7 +821,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     "${result.roadDistanceMeters.toInt()} m"
                 }
                 val minFormatted = (result.durationSeconds / 60).toInt().coerceAtLeast(1)
-                _userMessage.tryEmit("🚇 Nearest: ${result.station.name} ($distFormatted by road • ~$minFormatted min)")
+                _userMessage.tryEmit("Nearest Metro: ${result.station.name} ($distFormatted by road • ~$minFormatted min)")
             } catch (_: Exception) {
                 val (nearest, dist) = NammaMetroNetwork.findNearestActiveStation(origin)
                 _nearestMetroStation.value = nearest
@@ -871,7 +871,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
         val origin = fromLocation ?: _currentOriginLocation.value ?: _targetLocation.value
         _isCalculatingRoadToBus.value = true
-        _userMessage.tryEmit("🔍 Finding nearest BMTC stop via road network...")
+        _userMessage.tryEmit("Finding nearest BMTC stop via road network...")
 
         viewModelScope.launch {
             try {
@@ -909,7 +909,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                         "${result.roadDistanceMeters.toInt()} m"
                     }
                     val minFormatted = (result.durationSeconds / 60).toInt().coerceAtLeast(1)
-                    _userMessage.tryEmit("🚌 Nearest Stop: ${stop.name} ($distFormatted by road • ~$minFormatted min)")
+                    _userMessage.tryEmit("Nearest Stop: ${stop.name} ($distFormatted by road • ~$minFormatted min)")
                 } else {
                     _userMessage.tryEmit("No BMTC stops found nearby")
                 }
@@ -954,7 +954,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 maxLon = center.longitude + delta,
                 zoomLevel = zoomLevel
             )
-            _userMessage.tryEmit("🚌 BMTC Bus Stops ON (zoom in for both sides of road)")
+            _userMessage.tryEmit("BMTC Bus Stops ON (zoom in for both sides of road)")
         } else {
             _busStops.value = emptyList()
             _selectedBusStop.value = null
