@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Exclude sensitive user trip and saved location database from backups -->
-    <exclude domain="database" path="user_data.db" />
-    <exclude domain="database" path="transit_stops.db" />
-</full-backup-content>
