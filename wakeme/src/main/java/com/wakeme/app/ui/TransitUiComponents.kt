@@ -12,11 +12,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DirectionsBus
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,45 +51,6 @@ fun formatRoadDistanceAndMin(distMeters: Float, durationSec: Float?): Pair<Strin
     return d to "~$mins min"
 }
 
-@Composable
-fun TransitVerifiedTrustPill(
-    isBus: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val tint = if (isBus) Color(0xFF00838F) else Color(0xFF6A1B9A)
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(8.dp),
-        color = tint.copy(alpha = 0.10f)
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Verified,
-                contentDescription = null,
-                tint = tint,
-                modifier = Modifier.size(13.dp)
-            )
-            Text(
-                text = if (isBus) {
-                    "Offline BMTC Graph • Opposite-side poles matched"
-                } else {
-                    "Verified Namma Metro • 91 stations (4 active lines)"
-                },
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = tint,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TransitRoutePillRow(
@@ -118,8 +79,8 @@ fun TransitRoutePillRow(
             val catColor = BmtcBusCategory.fromRouteOrName(routeNo).composeColor
             Surface(
                 shape = RoundedCornerShape(6.dp),
-                color = catColor.copy(alpha = 0.14f),
-                border = BorderStroke(0.8.dp, catColor.copy(alpha = 0.4f))
+                color = catColor.copy(alpha = 0.12f),
+                border = BorderStroke(0.8.dp, catColor.copy(alpha = 0.35f))
             ) {
                 Text(
                     text = routeNo,
@@ -161,20 +122,31 @@ fun BmtcMapLegendBanner(
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         shadowElevation = 4.dp,
-        border = BorderStroke(1.dp, Color(0xFF1565C0).copy(alpha = 0.35f))
+        border = BorderStroke(1.dp, Color(0xFF1565C0).copy(alpha = 0.30f))
     ) {
-        Text(
-            text = if (isZoomedOut) {
-                "🚌 Showing $stopCount Major BMTC Hubs • Zoom in for opposite-side street stops"
-            } else {
-                "🚌 Street Stops ON (both road sides) • Long-press 🚌 for nearest stop"
-            },
-            style = MaterialTheme.typography.labelSmall,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFF0D47A1),
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.DirectionsBus,
+                contentDescription = null,
+                tint = Color(0xFF0D47A1),
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = if (isZoomedOut) {
+                    "Showing $stopCount major hubs • Zoom in for street stops"
+                } else {
+                    "Showing street stops on both road sides"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color(0xFF0D47A1)
+            )
+        }
     }
 }
 
@@ -192,11 +164,10 @@ fun BmtcRouteOptionCards(
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
-            text = "MATCHING BMTC ROUTES (${options.size} FOUND)",
-            style = MaterialTheme.typography.labelSmall,
+            text = "Suggested BMTC Routes (${options.size})",
+            style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF1565C0),
-            fontSize = 10.sp
+            color = MaterialTheme.colorScheme.primary
         )
         Row(
             modifier = Modifier
@@ -211,7 +182,7 @@ fun BmtcRouteOptionCards(
                     onClick = { onSelect(idx) },
                     modifier = Modifier.width(232.dp),
                     shape = RoundedCornerShape(12.dp),
-                    color = if (isSelected) accentColor.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                    color = if (isSelected) accentColor.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface,
                     border = BorderStroke(
                         width = if (isSelected) 2.dp else 1.dp,
                         color = if (isSelected) accentColor else MaterialTheme.colorScheme.outlineVariant
@@ -235,25 +206,38 @@ fun BmtcRouteOptionCards(
                                     shape = RoundedCornerShape(6.dp),
                                     color = accentColor
                                 ) {
-                                    Text(
-                                        text = if (opt.isTransferRoute) "🔄 ${opt.routeTitle}" else "🚌 ${opt.routeTitle}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = Color.White,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                    ) {
+                                        if (opt.isTransferRoute) {
+                                            Icon(
+                                                imageVector = Icons.Default.SwapHoriz,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                        Text(
+                                            text = opt.routeTitle,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
                                 }
                                 Surface(
                                     shape = RoundedCornerShape(5.dp),
-                                    color = accentColor.copy(alpha = 0.15f)
+                                    color = accentColor.copy(alpha = 0.14f)
                                 ) {
                                     Text(
                                         text = if (opt.isTransferRoute) "1 Transfer" else opt.category.shortCode,
                                         style = MaterialTheme.typography.labelSmall,
                                         fontSize = 9.sp,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.SemiBold,
                                         color = accentColor,
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
@@ -270,7 +254,7 @@ fun BmtcRouteOptionCards(
                         }
 
                         Text(
-                            text = "Board: ${opt.plan.boardingStation.name} ➔ Exit: ${opt.plan.exitStation.name}",
+                            text = "${opt.plan.boardingStation.name} → ${opt.plan.exitStation.name}",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
@@ -279,10 +263,10 @@ fun BmtcRouteOptionCards(
                         )
                         if (opt.frequencyText.isNotBlank()) {
                             Text(
-                                text = "⏱️ ${opt.frequencyText}",
+                                text = opt.frequencyText,
                                 style = MaterialTheme.typography.labelSmall,
                                 fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
+                                fontWeight = FontWeight.SemiBold,
                                 color = accentColor,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -323,17 +307,15 @@ fun TransitThreeStageStepperCard(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        TransitVerifiedTrustPill(isBus = plan.isBusJourney)
-
-        // STAGE 1: To Boarding Stop / Station (Orange)
+        // Stage 1: Reach Boarding Stop / Station (Orange)
         val stage1Title = "Reach ${plan.boardingStation.name} ${if (!isCustomStart) "(Nearest)" else "(Custom)"}"
         val (s1BadgeText, s1BadgeColor, s1BadgeBg) = when {
-            isLoadingRoutes && boardingRoadRoute == null -> Triple("Loading...", OrangeAccent, OrangeBg)
+            isLoadingRoutes && boardingRoadRoute == null -> Triple("Calculating...", OrangeAccent, OrangeBg)
             boardingRoadRoute != null -> {
                 val (d, t) = formatRoadDistanceAndMin(boardingRoadRoute.distanceMeters, boardingRoadRoute.durationSeconds)
-                Triple("🛣️ $d ($t)", OrangeAccent, OrangeBg)
+                Triple("$d ($t)", OrangeAccent, OrangeBg)
             }
-            else -> Triple("≤ 50m • Ready", SuccessGreen, SuccessGreenBg)
+            else -> Triple("Within 50m", SuccessGreen, SuccessGreenBg)
         }
 
         StageStepperRow(
@@ -341,9 +323,9 @@ fun TransitThreeStageStepperCard(
             stepColor = OrangeAccent,
             title = stage1Title,
             subtitle = if (boardingRoadRoute != null) {
-                "Orange road guidance • Auto-boards within 50m"
+                "Road path to boarding ${if (plan.isBusJourney) "stop" else "station"} • Switches at 50m"
             } else {
-                "You are right at the boarding ${if (plan.isBusJourney) "bus stop" else "station"}"
+                "Already at boarding ${if (plan.isBusJourney) "stop" else "station"}"
             },
             badgeText = s1BadgeText,
             badgeTextColor = s1BadgeColor,
@@ -359,23 +341,23 @@ fun TransitThreeStageStepperCard(
             }
         )
 
-        // STAGE 2: Bus / Metro Ride + Transfer & Alert Preview
+        // Stage 2: Transit Ride + Transfer & Alert Preview
         val primaryLeg = plan.legs.firstOrNull()
         val stage2Color = primaryLeg?.let { Color(it.lineColorInt) } ?: MaterialTheme.colorScheme.primary
         val legTitleText = if (plan.isBusJourney) {
-            "🚌 Bus ${plan.legs.joinToString(" ➔ ") { it.lineName }}"
+            "Bus ${plan.legs.joinToString(" → ") { it.lineName }}"
         } else {
-            "🚇 ${plan.legs.joinToString(" ➔ ") { "${it.lineName} Line" }}"
+            plan.legs.joinToString(" → ") { "${it.lineName} Line" }
         }
         val lastLegIdx = (plan.legs.size - 1).coerceAtLeast(0)
         val finalAlertStop = plan.getAlertStopForLeg(lastLegIdx, stopsBeforeAlert)
         val stage2Sub = buildString {
             if (plan.requiresLineChange) {
-                append("🔄 Change at ${plan.interchangeStations.joinToString { it.name }} • ")
+                append("Change at ${plan.interchangeStations.joinToString { it.name }} • ")
             } else if (primaryLeg != null) {
                 append("${primaryLeg.directionLabel} • ")
             }
-            append("🔔 Alert: ${finalAlertStop?.name ?: plan.exitStation.name}")
+            append("Alert at ${finalAlertStop?.name ?: plan.exitStation.name}")
         }
 
         StageStepperRow(
@@ -415,7 +397,7 @@ fun TransitThreeStageStepperCard(
             }
         )
 
-        // Expandable Stop-by-Stop List for Full Data Transparency
+        // Expandable Stop-by-Stop Timeline
         AnimatedVisibility(visible = isStopsExpanded) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -438,9 +420,9 @@ fun TransitThreeStageStepperCard(
                         ) {
                             Text(
                                 text = if (leg.isBusLeg) {
-                                    "🚌 ${leg.lineName} • ${leg.directionLabel}"
+                                    "Route ${leg.lineName} • ${leg.directionLabel}"
                                 } else {
-                                    "🚇 ${leg.lineName} Line • ${leg.directionLabel}"
+                                    "${leg.lineName} Line • ${leg.directionLabel}"
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
@@ -462,18 +444,18 @@ fun TransitThreeStageStepperCard(
                                 showTopLine = stIdx > 0,
                                 showBottomLine = stIdx < leg.stations.size - 1,
                                 tagLabel = when {
-                                    isBoard && isAlert -> "BOARD • 🔔"
+                                    isBoard && isAlert -> "BOARD • ALERT"
                                     isBoard -> "BOARD"
-                                    isTransferOut -> "🔄 TRANSFER"
-                                    isTransferIn -> "BOARD LEG ${legIdx + 1}"
-                                    isFinalExit && isAlert -> "EXIT • 🔔"
+                                    isTransferOut -> "CHANGE"
+                                    isTransferIn -> "NEXT LEG"
+                                    isFinalExit && isAlert -> "EXIT • ALERT"
                                     isFinalExit -> "EXIT"
-                                    isAlert -> "🔔 ALERT STOP"
+                                    isAlert -> "ALERT"
                                     else -> null
                                 },
                                 tagColor = when {
                                     isAlert -> AlertCrimson
-                                    isTransferOut || isTransferIn -> Color(0xFFEF6C00)
+                                    isTransferOut || isTransferIn -> OrangeAccent
                                     isBoard -> SuccessGreen
                                     else -> lColor
                                 },
@@ -485,16 +467,16 @@ fun TransitThreeStageStepperCard(
             }
         }
 
-        // STAGE 3: From Exit Stop / Station to Destination Pin (Orange if > 50m)
+        // Stage 3: Final Road Path to Destination (Orange if > 50m)
         if (plan.exitWalkDistanceMeters > 50f) {
             val ed = exitRoadRoute?.distanceMeters ?: (plan.exitWalkDistanceMeters * 1.28f)
             val (edText, eMinText) = formatRoadDistanceAndMin(ed, exitRoadRoute?.durationSeconds)
             StageStepperRow(
                 stepNumber = "3",
                 stepColor = OrangeAccent,
-                title = "From ${plan.exitStation.name} ➔ Point B",
-                subtitle = "Orange final road guidance (alerts at 150m)",
-                badgeText = "🛣️ $edText ($eMinText)",
+                title = "From ${plan.exitStation.name} → Destination",
+                subtitle = "Road path after exit • Alerts at 150m",
+                badgeText = "$edText ($eMinText)",
                 badgeTextColor = OrangeAccent,
                 badgeBgColor = OrangeBg
             )
@@ -502,8 +484,8 @@ fun TransitThreeStageStepperCard(
             StageStepperRow(
                 stepNumber = "3",
                 stepColor = SuccessGreen,
-                title = "Point B within 50m of ${plan.exitStation.name}",
-                subtitle = "No extra road trip required after alighting",
+                title = "Destination within 50m of ${plan.exitStation.name}",
+                subtitle = "No extra road leg needed after exit",
                 badgeText = "≤ 50m",
                 badgeTextColor = SuccessGreen,
                 badgeBgColor = SuccessGreenBg
@@ -539,7 +521,7 @@ private fun StageStepperRow(
                 Text(
                     text = stepNumber,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
             }
@@ -610,7 +592,7 @@ private fun StopTimelineRow(
         isPassed -> SuccessGreen
         tagLabel?.contains("ALERT") == true -> AlertCrimson
         isHighlighted -> tagColor
-        else -> railColor.copy(alpha = 0.55f)
+        else -> railColor.copy(alpha = 0.50f)
     }
 
     Row(
@@ -649,13 +631,22 @@ private fun StopTimelineRow(
             }
         }
 
+        if (isPassed) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = SuccessGreen,
+                modifier = Modifier.size(12.dp)
+            )
+        }
+
         Text(
-            text = if (isPassed) "✓ $stopName" else stopName,
+            text = stopName,
             style = MaterialTheme.typography.bodySmall,
             fontSize = 11.sp,
             fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
             color = if (isPassed) {
-                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f)
+                MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.60f)
             } else {
                 MaterialTheme.colorScheme.onSurface
             },
@@ -673,7 +664,7 @@ private fun StopTimelineRow(
                     text = tagLabel,
                     style = MaterialTheme.typography.labelSmall,
                     fontSize = 9.sp,
-                    fontWeight = FontWeight.ExtraBold,
+                    fontWeight = FontWeight.Bold,
                     color = tagColor,
                     modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                 )
@@ -707,7 +698,7 @@ fun LiveStageStepperPill(
         StageChip("2", step2Label, isDone = activeIdx > 1, isCurrent = activeIdx == 1, activeColor = Color(0xFF1565C0))
         if (hasStage3) {
             Box(modifier = Modifier.width(12.dp).height(2.dp).background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.25f)))
-            StageChip("3", "Road to B", isDone = false, isCurrent = activeIdx == 2, activeColor = OrangeAccent)
+            StageChip("3", "Final Road", isDone = false, isCurrent = activeIdx == 2, activeColor = OrangeAccent)
         }
     }
 }
@@ -721,9 +712,9 @@ private fun StageChip(
     activeColor: Color
 ) {
     val bg = when {
-        isDone -> SuccessGreen.copy(alpha = 0.2f)
-        isCurrent -> activeColor.copy(alpha = 0.2f)
-        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        isDone -> SuccessGreen.copy(alpha = 0.18f)
+        isCurrent -> activeColor.copy(alpha = 0.18f)
+        else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
     }
     val fg = when {
         isDone -> SuccessGreen
@@ -733,7 +724,7 @@ private fun StageChip(
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = bg,
-        border = if (isCurrent) BorderStroke(1.dp, activeColor.copy(alpha = 0.6f)) else null
+        border = if (isCurrent) BorderStroke(1.dp, activeColor.copy(alpha = 0.55f)) else null
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
@@ -743,7 +734,7 @@ private fun StageChip(
             if (isDone) {
                 Icon(Icons.Default.Check, contentDescription = null, tint = fg, modifier = Modifier.size(11.dp))
             } else {
-                Text(num, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = fg)
+                Text(num, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = fg)
             }
             Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = fg)
         }
@@ -786,7 +777,7 @@ fun LiveUpcomingStopsTimeline(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "● Now: ${currentStationName ?: leg.boardingStation.name}",
+                        text = "Now: ${currentStationName ?: leg.boardingStation.name}",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = lColor,
@@ -878,11 +869,11 @@ fun LiveUpcomingStopsTimeline(
                             showTopLine = idx > 0,
                             showBottomLine = idx < leg.stations.size - 1,
                             tagLabel = when {
-                                isCurrent && isAlert -> "NOW • 🔔"
+                                isCurrent && isAlert -> "NOW • ALERT"
                                 isCurrent -> "CURRENT"
-                                isExit && isAlert -> "EXIT • 🔔"
+                                isExit && isAlert -> "EXIT • ALERT"
                                 isExit -> "EXIT"
-                                isAlert -> "🔔 ALERT"
+                                isAlert -> "ALERT"
                                 else -> null
                             },
                             tagColor = when {

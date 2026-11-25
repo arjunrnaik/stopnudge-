@@ -1025,14 +1025,14 @@ fun WakeMeLandingScreen(
                                     val mins = if (roadDur != null) (roadDur / 60).toInt().coerceAtLeast(1) else null
                                     val durStr = if (mins != null) " • ~$mins min by road" else " by road"
                                     Text(
-                                        text = "🛣️ $formattedDist$durStr",
+                                        text = "$formattedDist$durStr",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFE65100)
                                     )
                                 } else {
                                     Text(
-                                        text = if (nearestMetro.isInterchange) "🔄 Interchange Station • Active Metro" else "✓ Active Namma Metro Station",
+                                        text = if (nearestMetro.isInterchange) "Interchange Station • Namma Metro" else "Namma Metro Station",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1167,7 +1167,7 @@ fun WakeMeLandingScreen(
                                     val mins = if (busRoadDur != null) (busRoadDur / 60).toInt().coerceAtLeast(1) else null
                                     val durStr = if (mins != null) " • ~$mins min by road" else " by road"
                                     Text(
-                                        text = "🛣️ $formattedDist$durStr",
+                                        text = "$formattedDist$durStr",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFE65100)
@@ -1280,7 +1280,7 @@ fun WakeMeLandingScreen(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("+ Add New Saved Place", fontWeight = FontWeight.SemiBold)
+                        Text("Add Saved Place", fontWeight = FontWeight.SemiBold)
                     }
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -1294,7 +1294,12 @@ fun WakeMeLandingScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("⭐", fontSize = 36.sp)
+                                Icon(
+                                    imageVector = Icons.Default.StarOutline,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(38.dp)
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "No saved places yet",
@@ -1303,7 +1308,7 @@ fun WakeMeLandingScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Save Home, Work, or gym for 1-tap alarms.\nTap star or long press to remove anytime.",
+                                    text = "Save Home, Work, or frequent stops for quick alarms.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1316,13 +1321,13 @@ fun WakeMeLandingScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(favorites) { fav ->
-                                val emoji = when (fav.category.uppercase()) {
-                                    "HOME" -> "🏠"
-                                    "WORK" -> "🏢"
-                                    "GYM" -> "🏋️"
-                                    "STATION", "TRANSIT" -> "🚉"
-                                    "AIRPORT" -> "✈️"
-                                    else -> "📍"
+                                val catIcon = when (fav.category.uppercase()) {
+                                    "HOME" -> Icons.Default.Home
+                                    "WORK" -> Icons.Default.Work
+                                    "GYM" -> Icons.Default.FitnessCenter
+                                    "STATION", "TRANSIT" -> Icons.Default.DirectionsTransit
+                                    "AIRPORT" -> Icons.Default.Flight
+                                    else -> Icons.Default.Place
                                 }
                                 val radiusLabel = if (fav.radiusMeters >= 1000f) "${(fav.radiusMeters / 1000f).toInt()}km" else "${fav.radiusMeters.toInt()}m"
 
@@ -1347,7 +1352,20 @@ fun WakeMeLandingScreen(
                                             .padding(horizontal = 14.dp, vertical = 10.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(emoji, fontSize = 22.sp)
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = catIcon,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
@@ -1464,7 +1482,12 @@ fun WakeMeLandingScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("⏱️", fontSize = 36.sp)
+                                Icon(
+                                    imageVector = Icons.Default.History,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(38.dp)
+                                )
                                 Spacer(modifier = Modifier.height(8.dp))
                                 Text(
                                     text = "No commute history yet",
@@ -1473,7 +1496,7 @@ fun WakeMeLandingScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Places you commute to will be automatically recorded here.",
+                                    text = "Your recent trips will appear here.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1486,10 +1509,10 @@ fun WakeMeLandingScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             items(recentTrips) { trip ->
-                                val emoji = when (trip.vehicleMode) {
-                                    "BUS" -> "🚌"
-                                    "METRO" -> "🚇"
-                                    else -> "🚗"
+                                val modeIcon = when (trip.vehicleMode) {
+                                    "BUS" -> Icons.Default.DirectionsBus
+                                    "METRO" -> Icons.Default.DirectionsSubway
+                                    else -> Icons.Default.DirectionsCar
                                 }
                                 val radiusStr = if (trip.radiusMeters >= 1000f) "${(trip.radiusMeters / 1000f).toInt()}km" else "${trip.radiusMeters.toInt()}m"
 
@@ -1509,7 +1532,20 @@ fun WakeMeLandingScreen(
                                             .padding(horizontal = 14.dp, vertical = 12.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text(emoji, fontSize = 22.sp)
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(34.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = modeIcon,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(
@@ -1616,7 +1652,7 @@ fun WakeMeLandingScreen(
         )
     }
 
-    // 9. PROFILE & SETTINGS DIALOG (from sketch: "Profile/setting future")
+    // 9. App Info & Battery Settings Dialog
     if (showProfileSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showProfileSettingsDialog = false },
@@ -1625,11 +1661,11 @@ fun WakeMeLandingScreen(
                     imageVector = Icons.Default.Settings,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(30.dp)
                 )
             },
             title = {
-                Text("WakeMe Settings & Profile", fontWeight = FontWeight.Bold)
+                Text("Settings & Offline Data", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(
@@ -1637,20 +1673,26 @@ fun WakeMeLandingScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text(
-                        text = "Version: 2.0.0 (Preview)",
+                        text = "WakeMe v2.0",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.SemiBold
                     )
-                    Text(
-                        text = "🛰️ Tracking: Hardware GNSS Satellite (0 Data consumed)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "🚇 Offline Transit: 66 Metro Stations & 8,000+ Bus Stops cached offline.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.GpsFixed, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Hardware GNSS tracking works offline.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.DirectionsTransit, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "91 Metro stations & 10,156 BMTC stops (10,096 routes) cached offline.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     OutlinedButton(
                         onClick = {
                             try {
@@ -1714,7 +1756,7 @@ fun WakeMeLandingScreen(
                             .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val categories = listOf("HOME" to "🏠 Home", "WORK" to "🏢 Work", "GYM" to "🏋️ Gym", "CUSTOM" to "📍 Other")
+                        val categories = listOf("HOME" to "Home", "WORK" to "Work", "GYM" to "Gym", "CUSTOM" to "Other")
                         categories.forEach { (cat, label) ->
                             FilterChip(
                                 selected = selectedCategory == cat,

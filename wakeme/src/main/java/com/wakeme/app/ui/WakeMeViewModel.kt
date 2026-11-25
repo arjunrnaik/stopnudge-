@@ -121,9 +121,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _showBmtcOverlay = MutableStateFlow(false)
     val showBmtcOverlay: StateFlow<Boolean> = _showBmtcOverlay.asStateFlow()
 
-    private val _showTransitOverlay = MutableStateFlow(false)
-    val showTransitOverlay: StateFlow<Boolean> = _showTransitOverlay.asStateFlow()
-
     private val _metroStations = MutableStateFlow<List<MetroStationEntity>>(emptyList())
     val metroStations: StateFlow<List<MetroStationEntity>> = _metroStations.asStateFlow()
 
@@ -964,19 +961,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _nearestBusRoutePoints.value = emptyList()
             _nearestBusRoadDistance.value = null
             _nearestBusRoadDuration.value = null
-        }
-    }
-
-    fun toggleTransitOverlay() {
-        val next = !_showTransitOverlay.value
-        _showTransitOverlay.value = next
-        if (next && _busStops.value.isEmpty()) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val initialBuses = transitDao.getInitialBusStops()
-                    _busStops.value = initialBuses
-                } catch (_: Exception) {}
-            }
         }
     }
 

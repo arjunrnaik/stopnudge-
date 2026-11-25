@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -163,20 +164,26 @@ fun WakeMeModeSelectionScreen(
                         },
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(16.dp),
+                            .height(54.dp),
+                        shape = RoundedCornerShape(14.dp),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        val actionLabel = when {
-                            isMetroMode -> "START METRO JOURNEY"
-                            isBusMode -> "START BUS JOURNEY"
-                            isRoadMode -> "START ROAD ALARM"
-                            else -> "START COMMUTE ALARM"
+                        val (ctaIcon, actionLabel) = when {
+                            isMetroMode -> Icons.Default.DirectionsSubway to "Start Metro Journey"
+                            isBusMode -> Icons.Default.DirectionsBus to "Start Bus Journey"
+                            isRoadMode -> Icons.Default.DirectionsCar to "Start Road Alarm"
+                            else -> Icons.Default.NotificationsActive to "Start Commute Alarm"
                         }
+                        Icon(
+                            imageVector = ctaIcon,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "${selectedVehicleMode.iconEmoji} $actionLabel ($triggerLabel)",
+                            text = "$actionLabel ($triggerLabel)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -489,10 +496,10 @@ fun WakeMeModeSelectionScreen(
                 )
             }
 
-            // 3. Travel Mode Selector: 3-Button Row Side-by-Side (from sketch: [Bus] [Metro] [Direction])
+            // Travel Mode Selector
             Text(
-                text = "TRAVEL MODE",
-                style = MaterialTheme.typography.labelMedium,
+                text = "Travel Mode",
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -501,85 +508,46 @@ fun WakeMeModeSelectionScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Metro Button (Primary Mode)
                 val isMetro = selectedVehicleMode == VehicleMode.METRO
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.METRO) },
-                    modifier = Modifier.weight(1.1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isMetro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isMetro) 2.dp else 1.dp,
-                        if (isMetro) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("🚇", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Namma Metro", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Active Lines", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                ModeSelectorCard(
+                    title = "Namma Metro",
+                    subtitle = "Active Lines",
+                    icon = Icons.Default.DirectionsSubway,
+                    selected = isMetro,
+                    modifier = Modifier.weight(1.05f),
+                    onClick = { viewModel.setVehicleMode(VehicleMode.METRO) }
+                )
 
-                // Direct Road Button
                 val isCar = selectedVehicleMode == VehicleMode.CAR
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.CAR) },
+                ModeSelectorCard(
+                    title = "Direct Road",
+                    subtitle = "Cab / Auto",
+                    icon = Icons.Default.DirectionsCar,
+                    selected = isCar,
                     modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isCar) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isCar) 2.dp else 1.dp,
-                        if (isCar) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("🚗", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Direct Road", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Cab / Auto", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                    onClick = { viewModel.setVehicleMode(VehicleMode.CAR) }
+                )
 
-                // City Bus Button (Active BMTC Network)
                 val isBus = selectedVehicleMode == VehicleMode.BUS
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
-                    modifier = Modifier.weight(0.9f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isBus) 2.dp else 1.dp,
-                        if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text("🚌", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("BMTC Routes", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
+                ModeSelectorCard(
+                    title = "City Bus",
+                    subtitle = "BMTC Routes",
+                    icon = Icons.Default.DirectionsBus,
+                    selected = isBus,
+                    modifier = Modifier.weight(0.95f),
+                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) }
+                )
             }
 
-            // 4. Alert Threshold: Stops Before (Metro & BMTC Bus), Road Distance (Cab/Auto)
+            // Alert Threshold: Stops Before (Metro & BMTC Bus), Road Distance (Cab/Auto)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = when {
-                        isTransitMode -> "WAKE-UP ALERT (STOPS BEFORE)"
-                        isRoadMode -> "ALERT DISTANCE BY ROAD"
-                        else -> "WAKE-UP RADIUS"
+                        isTransitMode -> "Wake-Up Alert (Stops Before)"
+                        isRoadMode -> "Alert Distance by Road"
+                        else -> "Wake-Up Radius"
                     },
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
@@ -675,10 +643,10 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            // 5. Audio Output & Vibration Options (from sketch: speaker [Audio option] (option), vibrate (+/-))
+            // Audio Output & Vibration Options
             Text(
-                text = "AUDIO & ALERT OPTIONS",
-                style = MaterialTheme.typography.labelMedium,
+                text = "Audio & Alert Options",
+                style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -689,35 +657,37 @@ fun WakeMeModeSelectionScreen(
             ) {
                 AudioRouting.values().forEach { routing ->
                     val isSelected = (audioRouting == routing)
-                    val label = when (routing) {
-                        AudioRouting.SPEAKER_ONLY -> "🔊 Speaker"
-                        AudioRouting.BOTH -> "🔔 Both"
-                        AudioRouting.HEADPHONES_ONLY -> "🎧 Headphones"
+                    val (label, icon) = when (routing) {
+                        AudioRouting.SPEAKER_ONLY -> "Speaker" to Icons.Default.VolumeUp
+                        AudioRouting.BOTH -> "Both" to Icons.Default.NotificationsActive
+                        AudioRouting.HEADPHONES_ONLY -> "Headphones" to Icons.Default.Headphones
                     }
                     FilterChip(
                         selected = isSelected,
                         onClick = { viewModel.setAudioRouting(routing) },
+                        leadingIcon = {
+                            Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                        },
                         label = {
-                            Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
+                            Text(label, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal, maxLines = 1)
                         },
                         modifier = Modifier.weight(1f)
                     )
                 }
             }
 
-            // Vibration (+ / -) Toggle Chip
             FilterChip(
                 selected = vibrateEnabled,
                 onClick = { viewModel.setVibrateEnabled(!vibrateEnabled) },
                 label = {
                     Text(
-                        text = if (vibrateEnabled) "📳 Vibration: ENABLED (+)" else "📳 Vibration: DISABLED (-)",
+                        text = if (vibrateEnabled) "Vibration On" else "Vibration Off",
                         fontWeight = if (vibrateEnabled) FontWeight.Bold else FontWeight.Normal
                     )
                 },
                 leadingIcon = {
                     Icon(
-                        imageVector = if (vibrateEnabled) Icons.Default.Vibration else Icons.Default.VolumeMute,
+                        imageVector = if (vibrateEnabled) Icons.Default.Vibration else Icons.AutoMirrored.Filled.VolumeMute,
                         contentDescription = null,
                         modifier = Modifier.size(16.dp)
                     )
@@ -725,55 +695,42 @@ fun WakeMeModeSelectionScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // 6. Details About Trip (from sketch: Details about trip)
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+            // Direct Road Trip Summary (Transit modes already show the 3-Stage breakdown at the top)
+            if (!isTransitMode) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
                 ) {
-                    val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km" else "${radiusMeters.toInt()}m"
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "Trip Summary",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        val summaryText = when {
-                            isTransitMode && metroJourneyPlan != null -> {
-                                val p = metroJourneyPlan!!
-                                val lastLegIdx = (p.legs.size - 1).coerceAtLeast(0)
-                                val alertStop = p.getAlertStopForLeg(lastLegIdx, metroStopsBeforeAlert)
-                                val finalDesc = if (metroStopsBeforeAlert == 0) {
-                                    "Wake-up siren fires at ${p.exitStation.name} (50m)"
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km" else "${radiusMeters.toInt()}m"
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Trip Summary",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = if (isRoadMode) {
+                                    "Reminder fires when $radiusLabel of road route remains to $targetName"
                                 } else {
-                                    "Wake-up siren fires at ${alertStop?.name ?: p.exitStation.name} ($metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""} before ${p.exitStation.name})"
-                                }
-                                val stage3Desc = if (p.exitWalkDistanceMeters > 50f) {
-                                    " • Then Orange road path to $targetName"
-                                } else ""
-                                if (p.requiresLineChange) {
-                                    val interNames = p.interchangeStations.joinToString { it.name }
-                                    "Transfer alert before $interNames • $finalDesc$stage3Desc"
-                                } else {
-                                    "$finalDesc$stage3Desc"
-                                }
-                            }
-                            isRoadMode -> "Reminder fires when $radiusLabel of road route remains to $targetName"
-                            else -> "Alarm activates at $radiusLabel radius before $targetName"
+                                    "Alarm activates at $radiusLabel radius before $targetName"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Text(
-                            text = summaryText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Icon(
+                            imageVector = Icons.Default.DirectionsCar,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
                         )
                     }
-                    Text(selectedVehicleMode.iconEmoji, fontSize = 20.sp)
                 }
             }
 
@@ -896,7 +853,7 @@ fun WakeMeModeSelectionScreen(
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                     ) {
                         Text(
-                            text = if (isBusMode) "📍 Auto (Best Matching Nearby Stop)" else "📍 Auto (Nearest Metro by Road)",
+                            text = if (isBusMode) "Auto — Nearest BMTC Stop" else "Auto — Nearest Metro by Road",
                             modifier = Modifier.padding(10.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
@@ -988,5 +945,49 @@ fun WakeMeModeSelectionScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun ModeSelectorCard(
+    title: String,
+    subtitle: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier,
+        shape = RoundedCornerShape(14.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(
+            if (selected) 2.dp else 1.dp,
+            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.size(34.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(19.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(title, fontWeight = FontWeight.Bold, fontSize = 12.sp, maxLines = 1)
+            Text(subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+        }
     }
 }

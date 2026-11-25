@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeMute
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -136,13 +137,13 @@ fun WakeMeActiveTripScreen(
                     }
                 },
                 actions = {
-                    val badgeText = if (selectedVehicleMode == VehicleMode.METRO) {
+                    val badgeText = if (selectedVehicleMode == VehicleMode.METRO || selectedVehicleMode == VehicleMode.BUS) {
                         if (metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
-                            "Stage 3: 150m Road"
+                            "Stage 3 • 150m Road"
                         } else if (metroStopsBeforeAlert == 0) {
-                            "Alert: 50m"
+                            "Alert • 50m"
                         } else {
-                            "Alert: $metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""}"
+                            "Alert • $metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""}"
                         }
                     } else {
                         val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()}km" else "${radiusMeters.toInt()}m"
@@ -201,7 +202,7 @@ fun WakeMeActiveTripScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "END COMMUTE / STOP ALARM",
+                            text = "End Commute",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -261,14 +262,23 @@ fun WakeMeActiveTripScreen(
                         .padding(vertical = 20.dp, horizontal = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // Destination Name
+                    val isBusJourney = selectedVehicleMode == VehicleMode.BUS || activeMetroPlan?.isBusJourney == true
+                    val isMetroJourney = (selectedVehicleMode == VehicleMode.METRO || selectedVehicleMode == VehicleMode.BUS) && activeMetroPlan != null
+
+                    // Destination Header
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
-                        Text(
-                            text = selectedVehicleMode.iconEmoji,
-                            fontSize = 24.sp
+                        Icon(
+                            imageVector = when (selectedVehicleMode) {
+                                VehicleMode.BUS -> Icons.Default.DirectionsBus
+                                VehicleMode.METRO -> Icons.Default.DirectionsSubway
+                                else -> Icons.Default.DirectionsCar
+                            },
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(22.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
@@ -283,10 +293,6 @@ fun WakeMeActiveTripScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    val isBusJourney = selectedVehicleMode == VehicleMode.BUS || activeMetroPlan?.isBusJourney == true
-                    val isMetroJourney = (selectedVehicleMode == VehicleMode.METRO || selectedVehicleMode == VehicleMode.BUS) && activeMetroPlan != null
-                    val stopNoun = if (isBusJourney) "BUS STOP" else "METRO"
-
                     if (isMetroJourney) {
                         LiveStageStepperPill(
                             stage = metroStage,
@@ -296,33 +302,18 @@ fun WakeMeActiveTripScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                     }
 
-                    if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
-                        val boardStationName = activeMetroPlan?.boardingStation?.name ?: "Nearest $stopNoun"
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFF6D00).copy(alpha = 0.16f)
-                        ) {
-                            Text(
-                                text = "STAGE 1: REACH $boardStationName $stopNoun",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE65100),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                    } else if (isMetroJourney && (metroStage == MetroJourneyStage.ON_METRO_LEG || metroStage == MetroJourneyStage.INTERCHANGE_WAIT)) {
+                    if (isMetroJourney && (metroStage == MetroJourneyStage.ON_METRO_LEG || metroStage == MetroJourneyStage.INTERCHANGE_WAIT)) {
                         val activeLeg = activeMetroPlan!!.legs.getOrNull(currentMetroLegIndex)
                         if (activeLeg != null) {
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
-                                color = Color(activeLeg.lineColorInt).copy(alpha = 0.18f)
+                                color = Color(activeLeg.lineColorInt).copy(alpha = 0.16f)
                             ) {
                                 Text(
                                     text = if (activeLeg.isBusLeg) {
-                                        "🚌 ROUTE ${activeLeg.lineName.uppercase()} • ${activeLeg.directionLabel}"
+                                        "Bus ${activeLeg.lineName} • ${activeLeg.directionLabel}"
                                     } else {
-                                        "${activeLeg.lineName.uppercase()} LINE • ${activeLeg.directionLabel}"
+                                        "${activeLeg.lineName} Line • ${activeLeg.directionLabel}"
                                     },
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
@@ -332,20 +323,6 @@ fun WakeMeActiveTripScreen(
                             }
                             Spacer(modifier = Modifier.height(6.dp))
                         }
-                    } else if (isMetroJourney && metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFFF6D00).copy(alpha = 0.16f)
-                        ) {
-                            Text(
-                                text = "STAGE 3: ROAD TO ${targetName.uppercase()}",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFFE65100),
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
                     }
 
                     // Live Distance / Stops Countdown
@@ -406,59 +383,43 @@ fun WakeMeActiveTripScreen(
                             textAlign = TextAlign.Center
                         )
 
+                        val boardStopTitle = activeMetroPlan?.boardingStation?.name ?: if (isBusJourney) "Bus Stop" else "Metro Station"
                         Text(
                             text = if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
-                                "ROAD DISTANCE TO BOARDING $stopNoun (AUTO AT 50M)"
+                                "To $boardStopTitle • Switches to ride at 50m"
                             } else if (isMetroJourney && metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
-                                "FINAL ROAD DISTANCE TO DESTINATION"
+                                "Final road leg to destination • Alerts at 150m"
                             } else if (isRoadRoute) {
-                                "ROAD DISTANCE REMAINING"
+                                "Road distance remaining"
                             } else {
-                                "ESTIMATED DISTANCE REMAINING"
+                                "Estimated distance remaining"
                             },
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center
                         )
                     }
 
-                    // Road Travel Times Summary in Orange for Stage 1 & Stage 3 during Transit Journey
-                    if (isMetroJourney) {
-                        val bDist = preloadedBoardingRoadDist
-                        val bDur = preloadedBoardingRoadDur
+                    // Road Travel Time Preview in Orange for upcoming Stage 3 exit leg
+                    if (isMetroJourney && metroStage != MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
                         val eDist = preloadedExitRoadDist
                         val eDur = preloadedExitRoadDur
-                        if (bDist != null || eDist != null) {
+                        if (eDist != null && (activeMetroPlan?.exitWalkDistanceMeters ?: 0f) > 50f) {
+                            val ed = if (eDist >= 1000f) String.format("%.1f km", eDist / 1000f) else "${eDist.toInt()}m"
+                            val em = ((eDur ?: (eDist / 8.33f)) / 60).toInt().coerceAtLeast(1)
                             Spacer(modifier = Modifier.height(6.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                val parts = mutableListOf<String>()
-                                if (bDist != null && (metroStage == MetroJourneyStage.TO_BOARDING_ROAD || metroStage == MetroJourneyStage.NONE)) {
-                                    val bd = if (bDist >= 1000f) String.format("%.1f km", bDist / 1000f) else "${bDist.toInt()}m"
-                                    val bm = ((bDur ?: (bDist / 8.33f)) / 60).toInt().coerceAtLeast(1)
-                                    parts.add("${if (isBusJourney) "To Stop" else "To Metro"}: $bd (~$bm min)")
-                                }
-                                if (eDist != null && activeMetroPlan?.exitWalkDistanceMeters ?: 0f > 50f) {
-                                    val ed = if (eDist >= 1000f) String.format("%.1f km", eDist / 1000f) else "${eDist.toInt()}m"
-                                    val em = ((eDur ?: (eDist / 8.33f)) / 60).toInt().coerceAtLeast(1)
-                                    parts.add("Exit Road: $ed (~$em min)")
-                                }
-                                if (parts.isNotEmpty()) {
-                                    Text(
-                                        text = "🛣️ " + parts.joinToString("  •  "),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color(0xFFE65100),
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                            }
+                            Text(
+                                text = "After exit (${activeMetroPlan?.exitStation?.name}): $ed (~$em min) by road",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE65100),
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
 
-                    // Stage 1 Quick Advance, Transfer Banner, or Stage 3 Exited Transit Button
+                    // Stage Quick Controls & Interchange Prompts
                     if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
                         Spacer(modifier = Modifier.height(10.dp))
                         FilledTonalButton(
@@ -466,7 +427,7 @@ fun WakeMeActiveTripScreen(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                if (isBusJourney) "🚌 I'm at / on the Bus ➔" else "🚇 I'm at / on the Metro ➔",
+                                if (isBusJourney) "Boarded Bus →" else "Boarded Metro →",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -485,7 +446,7 @@ fun WakeMeActiveTripScreen(
                                 verticalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Text(
-                                    text = "🔄 ${metroInterchangePrompt ?: "Transfer Ahead"}",
+                                    text = metroInterchangePrompt ?: "Transfer Ahead",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -498,7 +459,7 @@ fun WakeMeActiveTripScreen(
                                         colors = ButtonDefaults.buttonColors(containerColor = Color(nextLeg.lineColorInt))
                                     ) {
                                         Text(
-                                            if (nextLeg.isBusLeg) "Boarded Bus ${nextLeg.lineName} ➔" else "Boarded ${nextLeg.lineName} Line ➔",
+                                            if (nextLeg.isBusLeg) "Boarded Bus ${nextLeg.lineName} →" else "Boarded ${nextLeg.lineName} Line →",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 12.sp,
                                             color = Color.White
@@ -518,7 +479,7 @@ fun WakeMeActiveTripScreen(
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                "🚶 Exited ${activeMetroPlan?.exitStation?.name ?: if (isBusJourney) "Bus" else "Metro"} • Route to Dest ➔",
+                                "Exited ${activeMetroPlan?.exitStation?.name ?: if (isBusJourney) "Bus" else "Metro"} • Route to Dest →",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
                             )
@@ -693,15 +654,26 @@ fun WakeMeActiveTripScreen(
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Text(if (isHeadingUp) "🧭 Heading" else "⬆️ North", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = if (isHeadingUp) Icons.Default.Explore else Icons.Default.North,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (isHeadingUp) "Heading" else "North",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }
             }
 
-            // 3. BOTTOM CARD: Sleep Guard Active & Test Ring (from sketch: "Not sure" -> Sleep Guard)
+            // Sleep Guard Status & Test Ring
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -722,12 +694,12 @@ fun WakeMeActiveTripScreen(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Sleep Guard Active 🛡️",
+                                text = "Sleep Guard Active",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Alarm sounds at full volume even on Silent/DND mode.",
+                                text = "Alarm sounds at full volume even on Silent or DND.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -741,7 +713,7 @@ fun WakeMeActiveTripScreen(
                                 val config = viewModel.getDestinationConfig()
                                 WakeMeAlarmController.triggerAlert(context, config)
                                 coroutineScope.launch {
-                                    delay(5000L) // 5 seconds test ring
+                                    delay(5000L)
                                     WakeMeAlarmController.stopAlert(context)
                                     isTestingAlert = false
                                 }
@@ -753,13 +725,13 @@ fun WakeMeActiveTripScreen(
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Icon(
-                            imageVector = if (isTestingAlert) Icons.Default.VolumeUp else Icons.Default.VolumeMute,
+                            imageVector = if (isTestingAlert) Icons.Default.VolumeUp else Icons.AutoMirrored.Filled.VolumeMute,
                             contentDescription = null,
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = if (isTestingAlert) "Sounding Alert Test (5s)..." else "Test Ring 🔊",
+                            text = if (isTestingAlert) "Sounding Alert Test (5s)..." else "Test Alarm Sound",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.SemiBold
                         )
