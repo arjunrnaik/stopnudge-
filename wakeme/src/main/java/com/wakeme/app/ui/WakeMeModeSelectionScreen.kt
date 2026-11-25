@@ -517,7 +517,7 @@ fun WakeMeModeSelectionScreen(
                                         shape = CircleShape,
                                         color = when (leg.type) {
                                             MultimodalLegType.WALK -> Color(0xFF4CAF50)
-                                            MultimodalLegType.METRO -> NammaMetroNetwork.COLOR_PURPLE
+                                            MultimodalLegType.METRO -> Color(NammaMetroNetwork.COLOR_PURPLE)
                                             MultimodalLegType.CAB -> Color(0xFF1976D2)
                                             MultimodalLegType.BUS -> Color(0xFF00838F)
                                         },
