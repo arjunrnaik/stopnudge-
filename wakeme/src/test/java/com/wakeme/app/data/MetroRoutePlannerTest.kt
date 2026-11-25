@@ -10,7 +10,9 @@ import org.junit.Test
 class MetroRoutePlannerTest {
 
     private fun station(nameContains: String): NammaMetroNetwork.ActiveStation {
-        return NammaMetroNetwork.ACTIVE_STATIONS.first {
+        return NammaMetroNetwork.ACTIVE_STATIONS.firstOrNull {
+            it.name.equals(nameContains, ignoreCase = true)
+        } ?: NammaMetroNetwork.ACTIVE_STATIONS.first {
             it.name.contains(nameContains, ignoreCase = true)
         }
     }
