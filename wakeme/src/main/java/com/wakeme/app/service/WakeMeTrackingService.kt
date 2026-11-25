@@ -114,14 +114,32 @@ class WakeMeTrackingService : Service() {
                 lastRouteFetchTime = 0L
                 matchedPolylineSegmentIndex = 0
                 matchedMetroStationIndex = 0
-                metroStage.value = MetroJourneyStage.NONE
-                activeMetroPlan.value = null
                 currentMetroLegIndex.value = 0
                 metroStopsRemaining.value = null
                 metroCurrentStationName.value = null
                 metroNextStationName.value = null
                 metroAlertStationName.value = null
                 metroInterchangePrompt.value = null
+
+                if (vehicleMode == VehicleMode.METRO && activeMetroPlan.value != null) {
+                    val bPts = preloadedBoardingRoadPoints.value
+                    if (bPts.size >= 2) {
+                        metroStage.value = MetroJourneyStage.TO_BOARDING_ROAD
+                        routePolyline.value = bPts
+                        isRoadRouteActive.value = true
+                    } else {
+                        metroStage.value = MetroJourneyStage.NONE
+                        routePolyline.value = emptyList()
+                    }
+                } else if (vehicleMode.usesRoadDistanceTrigger && preloadedRoadRoutePoints.value.size >= 2) {
+                    metroStage.value = MetroJourneyStage.NONE
+                    routePolyline.value = preloadedRoadRoutePoints.value
+                    isRoadRouteActive.value = true
+                } else {
+                    metroStage.value = MetroJourneyStage.NONE
+                    activeMetroPlan.value = null
+                    routePolyline.value = emptyList()
+                }
 
                 startForegroundNotification(name, "Initiating hardware GPS tracking...")
                 startLocationUpdates()
@@ -393,6 +411,28 @@ class WakeMeTrackingService : Service() {
                 destinationPinPoint = GeoPoint(config.latitude, config.longitude)
             )
             activeMetroPlan.value = plan
+        }
+
+        // Ensure solid Stage 3 exit road path is always loaded for Active Trip map even on Stage 1/2
+        if (plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS &&
+            preloadedExitRoadPoints.value.isEmpty() && !isFetchingExitPreview
+        ) {
+            isFetchingExitPreview = true
+            val exitSt = plan.exitStation
+            serviceScope.launch {
+                try {
+                    val exitRoute = RoadRoutingRepository.getRoute(
+                        exitSt.latitude, exitSt.longitude,
+                        config.latitude, config.longitude
+                    )
+                    preloadedExitRoadPoints.value = exitRoute.points
+                    preloadedExitRoadDistanceMeters.value = exitRoute.distanceMeters
+                    preloadedExitRoadDurationSeconds.value = exitRoute.durationSeconds
+                } catch (_: Exception) {
+                } finally {
+                    isFetchingExitPreview = false
+                }
+            }
         }
 
         val distToBoarding = haversineDistanceMeters(
@@ -685,6 +725,14 @@ class WakeMeTrackingService : Service() {
         metroNextStationName.value = null
         metroAlertStationName.value = null
         metroInterchangePrompt.value = null
+        preloadedBoardingRoadPoints.value = emptyList()
+        preloadedExitRoadPoints.value = emptyList()
+        preloadedRoadRoutePoints.value = emptyList()
+        preloadedBoardingRoadDistanceMeters.value = null
+        preloadedBoardingRoadDurationSeconds.value = null
+        preloadedExitRoadDistanceMeters.value = null
+        preloadedExitRoadDurationSeconds.value = null
+        isFetchingExitPreview = false
     }
 
     override fun onDestroy() {
@@ -740,6 +788,13 @@ class WakeMeTrackingService : Service() {
         val metroNextStationName = MutableStateFlow<String?>(null)
         val metroAlertStationName = MutableStateFlow<String?>(null)
         val metroInterchangePrompt = MutableStateFlow<String?>(null)
+        val preloadedBoardingRoadPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val preloadedExitRoadPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val preloadedRoadRoutePoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+        val preloadedBoardingRoadDistanceMeters = MutableStateFlow<Float?>(null)
+        val preloadedBoardingRoadDurationSeconds = MutableStateFlow<Float?>(null)
+        val preloadedExitRoadDistanceMeters = MutableStateFlow<Float?>(null)
+        val preloadedExitRoadDurationSeconds = MutableStateFlow<Float?>(null)
 
         @Volatile
         private var matchedPolylineSegmentIndex = 0
@@ -751,6 +806,34 @@ class WakeMeTrackingService : Service() {
         private var hasInterchangeAlertFiredForLeg = -1
         @Volatile
         private var lastRouteFetchTime = 0L
+        @Volatile
+        private var isFetchingExitPreview = false
+
+        fun seedPreloadedMetroRoutes(
+            plan: MetroJourneyPlan?,
+            boardingPoints: List<GeoPoint>,
+            boardingDistMeters: Float?,
+            boardingDurSeconds: Float?,
+            exitPoints: List<GeoPoint>,
+            exitDistMeters: Float?,
+            exitDurSeconds: Float?
+        ) {
+            activeMetroPlan.value = plan
+            preloadedBoardingRoadPoints.value = boardingPoints
+            preloadedBoardingRoadDistanceMeters.value = boardingDistMeters
+            preloadedBoardingRoadDurationSeconds.value = boardingDurSeconds
+            preloadedExitRoadPoints.value = exitPoints
+            preloadedExitRoadDistanceMeters.value = exitDistMeters
+            preloadedExitRoadDurationSeconds.value = exitDurSeconds
+            preloadedRoadRoutePoints.value = emptyList()
+        }
+
+        fun seedPreloadedRoadRoute(points: List<GeoPoint>) {
+            preloadedRoadRoutePoints.value = points
+            activeMetroPlan.value = null
+            preloadedBoardingRoadPoints.value = emptyList()
+            preloadedExitRoadPoints.value = emptyList()
+        }
 
         fun enterMetroRideStage(plan: MetroJourneyPlan, legIndex: Int) {
             val leg = plan.legs.getOrNull(legIndex) ?: return

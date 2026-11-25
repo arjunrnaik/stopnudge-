@@ -32,12 +32,16 @@ import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.service.MetroJourneyStage
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.LocationMarkerUtils
+import com.wakeme.app.data.MetroJourneyPlan
+import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.data.local.transit.BmtcBusCategory
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.model.VehicleMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
+import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.mylocation.GpsMyLocationProvider
@@ -85,6 +89,14 @@ fun WakeMeActiveTripScreen(
     val metroAlertStationName by WakeMeTrackingService.metroAlertStationName.collectAsState()
     val metroInterchangePrompt by WakeMeTrackingService.metroInterchangePrompt.collectAsState()
     val metroStopsBeforeAlert by viewModel.metroStopsBeforeAlert.collectAsState()
+    val preloadedBoardingRoadPoints by WakeMeTrackingService.preloadedBoardingRoadPoints.collectAsState()
+    val preloadedExitRoadPoints by WakeMeTrackingService.preloadedExitRoadPoints.collectAsState()
+    val preloadedBoardingRoadDist by WakeMeTrackingService.preloadedBoardingRoadDistanceMeters.collectAsState()
+    val preloadedBoardingRoadDur by WakeMeTrackingService.preloadedBoardingRoadDurationSeconds.collectAsState()
+    val preloadedExitRoadDist by WakeMeTrackingService.preloadedExitRoadDistanceMeters.collectAsState()
+    val preloadedExitRoadDur by WakeMeTrackingService.preloadedExitRoadDurationSeconds.collectAsState()
+    val currentLiveLoc by WakeMeTrackingService.currentLocationPoint.collectAsState()
+    val currentOriginLoc by viewModel.currentOriginLocation.collectAsState()
 
     var isTestingAlert by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(false) }
@@ -275,13 +287,13 @@ fun WakeMeActiveTripScreen(
                         val boardStationName = activeMetroPlan?.boardingStation?.name ?: "Nearest Metro"
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF1976D2).copy(alpha = 0.15f)
+                            color = Color(0xFFFF6D00).copy(alpha = 0.16f)
                         ) {
                             Text(
                                 text = "STAGE 1: REACH $boardStationName METRO",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0D47A1),
+                                color = Color(0xFFE65100),
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -306,13 +318,13 @@ fun WakeMeActiveTripScreen(
                     } else if (isMetroJourney && metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFF00897B).copy(alpha = 0.16f)
+                            color = Color(0xFFFF6D00).copy(alpha = 0.16f)
                         ) {
                             Text(
                                 text = "STAGE 3: ROAD TO ${targetName.uppercase()}",
                                 style = MaterialTheme.typography.labelSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00695C),
+                                color = Color(0xFFE65100),
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -344,7 +356,10 @@ fun WakeMeActiveTripScreen(
                             textAlign = TextAlign.Center
                         )
                     } else {
-                        val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
+                        val isOrangeRoadStage = isMetroJourney &&
+                            (metroStage == MetroJourneyStage.TO_BOARDING_ROAD || metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD)
+                        val fallbackDist = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) preloadedBoardingRoadDist else if (metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) preloadedExitRoadDist else null
+                        val dist = liveDistance ?: fallbackDist ?: (straightDist?.let { it * 1.28f })
                         val distanceText = if (dist != null) {
                             if (dist >= 1000f) {
                                 String.format("%.1f km", dist / 1000f)
@@ -359,7 +374,7 @@ fun WakeMeActiveTripScreen(
                             text = distanceText,
                             fontSize = 42.sp,
                             fontWeight = FontWeight.ExtraBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer,
                             textAlign = TextAlign.Center
                         )
 
@@ -375,8 +390,44 @@ fun WakeMeActiveTripScreen(
                             },
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            color = if (isOrangeRoadStage) Color(0xFFE65100) else MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
                         )
+                    }
+
+                    // Road Travel Times Summary in Orange for Stage 1 & Stage 3 during Metro Journey
+                    if (isMetroJourney) {
+                        val bDist = preloadedBoardingRoadDist
+                        val bDur = preloadedBoardingRoadDur
+                        val eDist = preloadedExitRoadDist
+                        val eDur = preloadedExitRoadDur
+                        if (bDist != null || eDist != null) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                val parts = mutableListOf<String>()
+                                if (bDist != null && (metroStage == MetroJourneyStage.TO_BOARDING_ROAD || metroStage == MetroJourneyStage.NONE)) {
+                                    val bd = if (bDist >= 1000f) String.format("%.1f km", bDist / 1000f) else "${bDist.toInt()}m"
+                                    val bm = ((bDur ?: (bDist / 8.33f)) / 60).toInt().coerceAtLeast(1)
+                                    parts.add("To Metro: $bd (~$bm min)")
+                                }
+                                if (eDist != null && activeMetroPlan?.exitWalkDistanceMeters ?: 0f > 50f) {
+                                    val ed = if (eDist >= 1000f) String.format("%.1f km", eDist / 1000f) else "${eDist.toInt()}m"
+                                    val em = ((eDur ?: (eDist / 8.33f)) / 60).toInt().coerceAtLeast(1)
+                                    parts.add("Exit Road: $ed (~$em min)")
+                                }
+                                if (parts.isNotEmpty()) {
+                                    Text(
+                                        text = "🛣️ " + parts.joinToString("  •  "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Stage 1 Quick Advance, Line Change Banner, or Stage 3 Exited Metro Button
@@ -513,6 +564,11 @@ fun WakeMeActiveTripScreen(
                                 setTileSource(TileSourceFactory.MAPNIK)
                                 setMultiTouchControls(true)
                                 controller.setZoom(16.0)
+                                val startCenter = currentLiveLoc
+                                    ?: currentOriginLoc
+                                    ?: activeMetroPlan?.boardingStation?.geoPoint
+                                    ?: targetLocation
+                                controller.setCenter(startCenter)
 
                                 val myLocOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
                                     enableMyLocation()
@@ -539,58 +595,23 @@ fun WakeMeActiveTripScreen(
                             }
                         },
                         update = { map ->
-                            val isBus = selectedVehicleMode == VehicleMode.BUS
-                            val isMetro = selectedVehicleMode == VehicleMode.METRO
-                            val busCat = BmtcBusCategory.fromRouteOrName(targetName)
-                            val themeColorInt = when {
-                                isBus -> busCat.primaryColorInt
-                                isMetro -> NammaMetroNetwork.COLOR_PURPLE
-                                else -> 0xFF1E88E5.toInt()
-                            }
-
-                            val plan = activeMetroPlan
-                            if (selectedVehicleMode == VehicleMode.METRO && plan != null) {
-                                if (metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
-                                    LocationMarkerUtils.updateRoadAndAlertOverlays(
-                                        map = map,
-                                        vehicleMode = VehicleMode.CAR,
-                                        targetLocation = targetLocation,
-                                        alertDistanceMeters = 150f,
-                                        primaryRoutePoints = routePoints,
-                                        alternativeRoutes = alternativeRoutes,
-                                        themeColorInt = 0xFF00897B.toInt(),
-                                        targetName = targetName
-                                    )
-                                } else {
-                                    LocationMarkerUtils.renderMetroJourneyOverlays(
-                                        map = map,
-                                        context = map.context,
-                                        plan = plan,
-                                        boardingRoadPoints = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) routePoints else emptyList(),
-                                        stopsBeforeAlert = metroStopsBeforeAlert,
-                                        activeLegIndex = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) 0 else currentMetroLegIndex
-                                    )
-                                }
-                            } else {
-                                LocationMarkerUtils.updateRoadAndAlertOverlays(
-                                    map = map,
-                                    vehicleMode = selectedVehicleMode,
-                                    targetLocation = targetLocation,
-                                    alertDistanceMeters = radiusMeters,
-                                    primaryRoutePoints = routePoints,
-                                    alternativeRoutes = alternativeRoutes,
-                                    themeColorInt = themeColorInt,
-                                    targetName = targetName
-                                )
-                            }
-
-                            if (isHeadingUp && currentBearing != null) {
-                                map.mapOrientation = -currentBearing!!
-                            } else {
-                                map.mapOrientation = 0f
-                            }
-
-                            map.invalidate()
+                            applyActiveTripMapOverlays(
+                                map = map,
+                                selectedVehicleMode = selectedVehicleMode,
+                                targetLocation = targetLocation,
+                                targetName = targetName,
+                                radiusMeters = radiusMeters,
+                                routePoints = routePoints,
+                                alternativeRoutes = alternativeRoutes,
+                                activeMetroPlan = activeMetroPlan,
+                                metroStage = metroStage,
+                                currentMetroLegIndex = currentMetroLegIndex,
+                                metroStopsBeforeAlert = metroStopsBeforeAlert,
+                                preloadedBoardingRoadPoints = preloadedBoardingRoadPoints,
+                                preloadedExitRoadPoints = preloadedExitRoadPoints,
+                                isHeadingUp = isHeadingUp,
+                                currentBearing = currentBearing
+                            )
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -772,7 +793,12 @@ fun WakeMeActiveTripScreen(
                         MapView(ctx).apply {
                             setTileSource(TileSourceFactory.MAPNIK)
                             setMultiTouchControls(true)
-                            controller.setZoom(16.5)
+                            controller.setZoom(16.0)
+                            val startCenter = currentLiveLoc
+                                ?: currentOriginLoc
+                                ?: activeMetroPlan?.boardingStation?.geoPoint
+                                ?: targetLocation
+                            controller.setCenter(startCenter)
 
                             val myLocOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
                                 enableMyLocation()
@@ -791,52 +817,23 @@ fun WakeMeActiveTripScreen(
                         }
                     },
                     update = { map ->
-                        val isBus = selectedVehicleMode == VehicleMode.BUS
-                        val isMetro = selectedVehicleMode == VehicleMode.METRO
-                        val busCat = BmtcBusCategory.fromRouteOrName(targetName)
-                        val themeColorInt = when {
-                            isBus -> busCat.primaryColorInt
-                            isMetro -> NammaMetroNetwork.COLOR_PURPLE
-                            else -> 0xFF1E88E5.toInt()
-                        }
-
-                        val plan = activeMetroPlan
-                        if (selectedVehicleMode == VehicleMode.METRO && plan != null) {
-                            if (metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
-                                LocationMarkerUtils.updateRoadAndAlertOverlays(
-                                    map = map,
-                                    vehicleMode = VehicleMode.CAR,
-                                    targetLocation = targetLocation,
-                                    alertDistanceMeters = 150f,
-                                    primaryRoutePoints = routePoints,
-                                    alternativeRoutes = alternativeRoutes,
-                                    themeColorInt = 0xFF00897B.toInt(),
-                                    targetName = targetName
-                                )
-                            } else {
-                                LocationMarkerUtils.renderMetroJourneyOverlays(
-                                    map = map,
-                                    context = map.context,
-                                    plan = plan,
-                                    boardingRoadPoints = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) routePoints else emptyList(),
-                                    stopsBeforeAlert = metroStopsBeforeAlert,
-                                    activeLegIndex = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) 0 else currentMetroLegIndex
-                                )
-                            }
-                        } else {
-                            LocationMarkerUtils.updateRoadAndAlertOverlays(
-                                map = map,
-                                vehicleMode = selectedVehicleMode,
-                                targetLocation = targetLocation,
-                                alertDistanceMeters = radiusMeters,
-                                primaryRoutePoints = routePoints,
-                                alternativeRoutes = alternativeRoutes,
-                                themeColorInt = themeColorInt,
-                                targetName = targetName
-                            )
-                        }
-
-                        map.invalidate()
+                        applyActiveTripMapOverlays(
+                            map = map,
+                            selectedVehicleMode = selectedVehicleMode,
+                            targetLocation = targetLocation,
+                            targetName = targetName,
+                            radiusMeters = radiusMeters,
+                            routePoints = routePoints,
+                            alternativeRoutes = alternativeRoutes,
+                            activeMetroPlan = activeMetroPlan,
+                            metroStage = metroStage,
+                            currentMetroLegIndex = currentMetroLegIndex,
+                            metroStopsBeforeAlert = metroStopsBeforeAlert,
+                            preloadedBoardingRoadPoints = preloadedBoardingRoadPoints,
+                            preloadedExitRoadPoints = preloadedExitRoadPoints,
+                            isHeadingUp = false,
+                            currentBearing = null
+                        )
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -856,4 +853,108 @@ fun WakeMeActiveTripScreen(
             }
         }
     }
+}
+
+private fun applyActiveTripMapOverlays(
+    map: MapView,
+    selectedVehicleMode: VehicleMode,
+    targetLocation: GeoPoint,
+    targetName: String,
+    radiusMeters: Float,
+    routePoints: List<GeoPoint>,
+    alternativeRoutes: List<RouteCandidate>,
+    activeMetroPlan: MetroJourneyPlan?,
+    metroStage: MetroJourneyStage,
+    currentMetroLegIndex: Int,
+    metroStopsBeforeAlert: Int,
+    preloadedBoardingRoadPoints: List<GeoPoint>,
+    preloadedExitRoadPoints: List<GeoPoint>,
+    isHeadingUp: Boolean,
+    currentBearing: Float?
+) {
+    val desiredOrientation = if (isHeadingUp && currentBearing != null) -currentBearing else 0f
+    val orientationChanged = kotlin.math.abs(map.mapOrientation - desiredOrientation) > 1f
+    if (orientationChanged) {
+        map.mapOrientation = desiredOrientation
+    }
+
+    val renderKey = listOf(
+        selectedVehicleMode.name,
+        metroStage.name,
+        currentMetroLegIndex,
+        metroStopsBeforeAlert,
+        routePoints.size,
+        routePoints.firstOrNull()?.latitude,
+        alternativeRoutes.size,
+        activeMetroPlan?.totalStops,
+        preloadedBoardingRoadPoints.size,
+        preloadedExitRoadPoints.size,
+        radiusMeters.toInt()
+    ).joinToString("|")
+
+    if (map.tag == renderKey) {
+        if (orientationChanged) map.invalidate()
+        return
+    }
+    map.tag = renderKey
+
+    val isBus = selectedVehicleMode == VehicleMode.BUS
+    val isMetro = selectedVehicleMode == VehicleMode.METRO
+    val busCat = BmtcBusCategory.fromRouteOrName(targetName)
+    val themeColorInt = when {
+        isBus -> busCat.primaryColorInt
+        isMetro -> NammaMetroNetwork.COLOR_PURPLE
+        else -> 0xFF1E88E5.toInt()
+    }
+
+    if (isMetro && activeMetroPlan != null) {
+        if (metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD) {
+            LocationMarkerUtils.updateRoadAndAlertOverlays(
+                map = map,
+                vehicleMode = VehicleMode.CAR,
+                targetLocation = targetLocation,
+                alertDistanceMeters = 150f,
+                primaryRoutePoints = if (routePoints.size >= 2) routePoints else preloadedExitRoadPoints,
+                alternativeRoutes = alternativeRoutes,
+                themeColorInt = LocationMarkerUtils.COLOR_METRO_ROAD_ORANGE,
+                targetName = targetName,
+                primaryColorOverride = LocationMarkerUtils.COLOR_METRO_ROAD_ORANGE
+            )
+        } else {
+            val boardPts = when (metroStage) {
+                MetroJourneyStage.TO_BOARDING_ROAD, MetroJourneyStage.NONE ->
+                    if (routePoints.size >= 2) routePoints else preloadedBoardingRoadPoints
+                else -> emptyList()
+            }
+            val zoomPts = LocationMarkerUtils.renderMetroJourneyOverlays(
+                map = map,
+                context = map.context,
+                plan = activeMetroPlan,
+                boardingRoadPoints = boardPts,
+                stopsBeforeAlert = metroStopsBeforeAlert,
+                activeLegIndex = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) 0 else currentMetroLegIndex,
+                exitRoadPoints = preloadedExitRoadPoints
+            )
+            if (zoomPts.size >= 2) {
+                map.post {
+                    try {
+                        map.zoomToBoundingBox(BoundingBox.fromGeoPoints(zoomPts), true, 48)
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    } else {
+        LocationMarkerUtils.updateRoadAndAlertOverlays(
+            map = map,
+            vehicleMode = selectedVehicleMode,
+            targetLocation = targetLocation,
+            alertDistanceMeters = radiusMeters,
+            primaryRoutePoints = routePoints,
+            alternativeRoutes = alternativeRoutes,
+            themeColorInt = themeColorInt,
+            targetName = targetName
+        )
+    }
+
+    map.invalidate()
 }

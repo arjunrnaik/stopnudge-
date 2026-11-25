@@ -229,13 +229,18 @@ object LocationMarkerUtils {
         return bitmap
     }
 
+    private val stationBitmapCache = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
+
     fun createStationMarkerDrawable(
         context: Context,
         stationName: String,
         lineColor: Int,
         isInterchange: Boolean = false
     ): Drawable {
-        val bmp = createStationMarkerBitmap(context, stationName, lineColor, isInterchange)
+        val key = "$stationName|$lineColor|$isInterchange"
+        val bmp = stationBitmapCache.getOrPut(key) {
+            createStationMarkerBitmap(context, stationName, lineColor, isInterchange)
+        }
         val drawable = BitmapDrawable(context.resources, bmp)
         drawable.setBounds(0, 0, bmp.width, bmp.height)
         return drawable
@@ -923,6 +928,8 @@ object LocationMarkerUtils {
      * - Road transport (Cab / Auto): Draws active road polyline + highlighted final alert road stretch (NO radius circle).
      * - Station/rail transport (Metro / Bus): Draws station radius geofence circle + optional route polylines.
      */
+    const val COLOR_METRO_ROAD_ORANGE = 0xFFFF6D00.toInt()
+
     fun updateRoadAndAlertOverlays(
         map: MapView,
         vehicleMode: VehicleMode,
@@ -931,7 +938,8 @@ object LocationMarkerUtils {
         primaryRoutePoints: List<GeoPoint>,
         alternativeRoutes: List<RouteCandidate> = emptyList(),
         themeColorInt: Int,
-        targetName: String = ""
+        targetName: String = "",
+        primaryColorOverride: Int? = null
     ) {
         map.overlays.removeAll(map.overlays.filterIsInstance<Polygon>())
         map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
@@ -959,7 +967,8 @@ object LocationMarkerUtils {
                 map.overlays.add(baseWhite)
                 map.overlays.add(dashedBlue)
             } else {
-                val lineColor = if (vehicleMode == VehicleMode.METRO) NammaMetroNetwork.COLOR_PURPLE else 0xFF1976D2.toInt()
+                val lineColor = primaryColorOverride
+                    ?: if (vehicleMode == VehicleMode.METRO) NammaMetroNetwork.COLOR_PURPLE else 0xFF1976D2.toInt()
                 map.overlays.add(Polyline(map).apply {
                     setPoints(primaryRoutePoints)
                     outlinePaint.color = lineColor
@@ -972,9 +981,10 @@ object LocationMarkerUtils {
                 if (vehicleMode.usesRoadDistanceTrigger) {
                     val alertStretch = RoadRoutingRepository.extractFinalAlertSegment(primaryRoutePoints, alertDistanceMeters)
                     if (alertStretch.size >= 2) {
+                        val stretchColor = if (primaryColorOverride != null) 0xFFD32F2F.toInt() else 0xFFFF6D00.toInt()
                         map.overlays.add(Polyline(map).apply {
                             setPoints(alertStretch)
-                            outlinePaint.color = 0xFFFF6D00.toInt() // Highlighted final road alert segment
+                            outlinePaint.color = stretchColor
                             outlinePaint.strokeWidth = 12.5f
                             outlinePaint.strokeCap = Paint.Cap.ROUND
                             outlinePaint.strokeJoin = Paint.Join.ROUND
@@ -996,10 +1006,10 @@ object LocationMarkerUtils {
     }
 
     /**
-     * Renders the complete 2-stage Namma Metro journey on an OsmDroid MapView:
-     * - Stage 1 (if far > 50m): Blue road route from current GPS to boarding station + 50m boarding ring
+     * Renders the complete 3-stage Namma Metro journey on an OsmDroid MapView:
+     * - Stage 1 (if far > 50m): Vibrant Orange road path to boarding station + 50m boarding ring
      * - Stage 2: Each Metro leg polyline in its authentic line color (Purple, Green, Yellow, Pink)
-     * - Station markers for boarding, interchanges, and exit
+     * - Stage 3 (if exit > 50m from Point B): Vibrant Orange road path from exit station to Point B
      */
     fun renderMetroJourneyOverlays(
         map: MapView,
@@ -1014,12 +1024,12 @@ object LocationMarkerUtils {
         map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
         val allPoints = mutableListOf<GeoPoint>()
 
-        // 1. Stage 1 Road Path to Boarding Station (when > 50m away)
+        // 1. Stage 1 Road Path to Boarding Station (Orange)
         if (boardingRoadPoints.size >= 2) {
             map.overlays.add(Polyline(map).apply {
                 setPoints(boardingRoadPoints)
-                outlinePaint.color = 0xFF1976D2.toInt() // Road blue
-                outlinePaint.strokeWidth = 8.5f
+                outlinePaint.color = COLOR_METRO_ROAD_ORANGE
+                outlinePaint.strokeWidth = 9f
                 outlinePaint.strokeCap = Paint.Cap.ROUND
                 outlinePaint.strokeJoin = Paint.Join.ROUND
                 infoWindow = null
@@ -1030,8 +1040,8 @@ object LocationMarkerUtils {
         // 2. 50m Boarding Station Ring
         map.overlays.add(Polygon(map).apply {
             points = Polygon.pointsAsCircle(plan.boardingStation.geoPoint, 50.0)
-            fillPaint.color = 0x261976D2
-            outlinePaint.color = 0xFF1976D2.toInt()
+            fillPaint.color = 0x26FF6D00
+            outlinePaint.color = COLOR_METRO_ROAD_ORANGE
             outlinePaint.strokeWidth = 2.5f
         })
 
@@ -1050,25 +1060,25 @@ object LocationMarkerUtils {
                 allPoints.addAll(leg.trackPoints)
             }
 
-            // Highlight alert stop for this leg
+            // Highlight alert stop for this leg in Crimson Red so it stands out cleanly from Orange roads
             val alertStop = plan.getAlertStopForLeg(idx, stopsBeforeAlert)
             if (alertStop != null) {
                 val alertRadius = if (idx == plan.legs.size - 1 && stopsBeforeAlert == 0) 50.0 else 250.0
                 map.overlays.add(Polygon(map).apply {
                     points = Polygon.pointsAsCircle(alertStop.geoPoint, alertRadius)
-                    fillPaint.color = 0x33FF6D00
-                    outlinePaint.color = 0xFFFF6D00.toInt()
+                    fillPaint.color = 0x33D32F2F
+                    outlinePaint.color = 0xFFD32F2F.toInt()
                     outlinePaint.strokeWidth = 3f
                 })
             }
         }
 
-        // 4. Stage 3 Real Road Path from Exit Metro Station to Final Destination (Point B)
+        // 4. Stage 3 Real Road Path from Exit Metro Station to Final Destination (Point B, Orange)
         if (exitRoadPoints.size >= 2) {
             map.overlays.add(Polyline(map).apply {
                 setPoints(exitRoadPoints)
-                outlinePaint.color = 0xFF00897B.toInt() // Real last-mile road teal-blue
-                outlinePaint.strokeWidth = 8.5f
+                outlinePaint.color = COLOR_METRO_ROAD_ORANGE
+                outlinePaint.strokeWidth = 9f
                 outlinePaint.strokeCap = Paint.Cap.ROUND
                 outlinePaint.strokeJoin = Paint.Join.ROUND
                 infoWindow = null
@@ -1078,7 +1088,7 @@ object LocationMarkerUtils {
             val walkPts = listOf(plan.exitStation.geoPoint, plan.destinationPinPoint)
             map.overlays.add(Polyline(map).apply {
                 setPoints(walkPts)
-                outlinePaint.color = 0xFF00897B.toInt()
+                outlinePaint.color = COLOR_METRO_ROAD_ORANGE
                 outlinePaint.strokeWidth = 6f
                 outlinePaint.pathEffect = DashPathEffect(floatArrayOf(12f, 10f), 0f)
                 infoWindow = null

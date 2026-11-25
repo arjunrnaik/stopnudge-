@@ -105,6 +105,7 @@ fun WakeMeLandingScreen(
     val nearestMetroRoadDuration by viewModel.nearestMetroRoadDuration.collectAsState()
     val nearestMetroRoutePoints by viewModel.nearestMetroRoutePoints.collectAsState()
     val isCalculatingRoadToMetro by viewModel.isCalculatingRoadToMetro.collectAsState()
+    val currentOriginLocation by viewModel.currentOriginLocation.collectAsState()
     val selectedBusStop by viewModel.selectedBusStop.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
@@ -127,6 +128,7 @@ fun WakeMeLandingScreen(
     // Tap-to-drop pin state
     var droppedPinLocation by remember { mutableStateOf<GeoPoint?>(null) }
     var droppedPinMarker by remember { mutableStateOf<Marker?>(null) }
+    var hasCenteredOnInitialUserLocation by remember { mutableStateOf(false) }
 
     // Modals & Dialogs state
     var showSavedPlacesModal by remember { mutableStateOf(false) }
@@ -155,6 +157,17 @@ fun WakeMeLandingScreen(
         }
     }
 
+    // Center immediately on FusedLocation cached user position (<50ms) so map doesn't double-load City Center first
+    LaunchedEffect(mapViewRef, currentOriginLocation) {
+        val map = mapViewRef ?: return@LaunchedEffect
+        val origin = currentOriginLocation ?: return@LaunchedEffect
+        if (!hasCenteredOnInitialUserLocation && droppedPinLocation == null) {
+            hasCenteredOnInitialUserLocation = true
+            map.controller.setCenter(origin)
+            currentMapCenter = origin
+        }
+    }
+
     // Render road network polyline to nearest metro station
     LaunchedEffect(mapViewRef, nearestMetroRoutePoints) {
         val map = mapViewRef ?: return@LaunchedEffect
@@ -164,7 +177,7 @@ fun WakeMeLandingScreen(
         if (nearestMetroRoutePoints.isNotEmpty()) {
             val poly = Polyline(map).apply {
                 setPoints(nearestMetroRoutePoints)
-                outlinePaint.color = 0xFF0091EA.toInt() // Vibrant Cyan Road Line
+                outlinePaint.color = LocationMarkerUtils.COLOR_METRO_ROAD_ORANGE // Consistent Vibrant Orange Road Path
                 outlinePaint.strokeWidth = 11.5f
                 outlinePaint.strokeCap = Paint.Cap.ROUND
                 outlinePaint.strokeJoin = Paint.Join.ROUND
@@ -311,7 +324,11 @@ fun WakeMeLandingScreen(
                     setTileSource(TileSourceFactory.MAPNIK)
                     setMultiTouchControls(true)
                     controller.setZoom(15.0)
-                    controller.setCenter(targetLocation)
+                    val startCenter = currentOriginLocation ?: targetLocation
+                    controller.setCenter(startCenter)
+                    if (currentOriginLocation != null) {
+                        hasCenteredOnInitialUserLocation = true
+                    }
 
                     // Modern medium blue GPS dot & navigation arrow (replaces the yellow person icon)
                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
@@ -701,15 +718,18 @@ fun WakeMeLandingScreen(
                 .padding(end = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // FAB 1 (Top): Re-center on GPS Location
+            // FAB 1 (Top): Re-center on GPS Location (instant FusedLocation fallback)
             FloatingActionButton(
                 onClick = {
-                    val myLoc = locationOverlayRef?.myLocation
+                    val myLoc = locationOverlayRef?.myLocation ?: currentOriginLocation
                     if (myLoc != null) {
                         mapViewRef?.controller?.animateTo(myLoc)
                         currentMapCenter = myLoc
                     } else {
-                        viewModel.showMessage("Locating your GPS satellites...")
+                        viewModel.requestImmediateLocationCenter { pt ->
+                            mapViewRef?.controller?.animateTo(pt)
+                            currentMapCenter = pt
+                        }
                     }
                 },
                 containerColor = MaterialTheme.colorScheme.surface,

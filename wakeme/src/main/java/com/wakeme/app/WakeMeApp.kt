@@ -9,6 +9,7 @@ import android.media.RingtoneManager
 import android.os.Build
 import android.util.Log
 import org.osmdroid.config.Configuration
+import java.io.File
 
 class WakeMeApp : Application() {
 
@@ -22,12 +23,23 @@ class WakeMeApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // 1. Configure OsmDroid User Agent & Cache directory
+        // 1. Configure OsmDroid User Agent, fast internal Cache directory, & parallel tile threads
         // OpenStreetMap tile servers require an identifiable User-Agent to avoid 403 blocks
         try {
             val sharedPrefs = getSharedPreferences("wakeme_osmdroid", Context.MODE_PRIVATE)
-            Configuration.getInstance().load(this, sharedPrefs)
-            Configuration.getInstance().userAgentValue = packageName
+            val config = Configuration.getInstance()
+            config.load(this, sharedPrefs)
+            config.userAgentValue = packageName
+
+            val osmBase = File(cacheDir, "osmdroid").apply { mkdirs() }
+            val osmTiles = File(osmBase, "tiles").apply { mkdirs() }
+            config.osmdroidBasePath = osmBase
+            config.osmdroidTileCache = osmTiles
+            config.tileFileSystemCacheMaxBytes = 150L * 1024L * 1024L
+            config.tileFileSystemCacheTrimBytes = 120L * 1024L * 1024L
+            config.tileDownloadThreads = 6
+            config.tileFileSystemThreads = 4
+            config.cacheMapTileCount = 48
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize OsmDroid configuration", e)
         }

@@ -23,9 +23,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -233,45 +236,74 @@ fun WakeMeModeSelectionScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            val routeSummaryText = when {
-                                isLoadingPreviewRoute -> "Calculating route..."
-                                isMetroMode && metroJourneyPlan != null -> {
-                                    val p = metroJourneyPlan!!
-                                    val boardRoad = boardingRoadRoute
-                                    val stage1 = if (boardRoad != null) {
-                                        val rd = if (boardRoad.distanceMeters >= 1000f) String.format(Locale.US, "%.1f km", boardRoad.distanceMeters / 1000f) else "${boardRoad.distanceMeters.toInt()}m"
-                                        "🛣️ $rd to ${p.boardingStation.name} • "
-                                    } else {
-                                        "📍 At ${p.boardingStation.name} (≤50m) • "
+                            val orangeColor = Color(0xFFE65100)
+                            val primaryColor = MaterialTheme.colorScheme.primary
+                            val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
+
+                            val annotatedSummary = buildAnnotatedString {
+                                when {
+                                    isLoadingPreviewRoute -> {
+                                        withStyle(SpanStyle(color = mutedColor)) {
+                                            append("Calculating route...")
+                                        }
                                     }
-                                    val transferText = if (p.requiresLineChange) {
-                                        " • 🔄 Change at ${p.interchangeStations.joinToString { it.name }}"
-                                    } else ""
-                                    val exitRoad = exitRoadRoute
-                                    val stage3 = if (p.exitWalkDistanceMeters > 50f) {
-                                        val ed = exitRoad?.distanceMeters ?: (p.exitWalkDistanceMeters * 1.28f)
-                                        val edText = if (ed >= 1000f) String.format(Locale.US, "%.1f km", ed / 1000f) else "${ed.toInt()}m"
-                                        " • 🛣️ $edText road to Point B"
-                                    } else ""
-                                    "$stage1${p.totalStops} metro stops$transferText$stage3"
-                                }
-                                previewRoadRoute != null -> {
-                                    val r = previewRoadRoute!!
-                                    val dText = if (r.distanceMeters >= 1000f) {
-                                        String.format(Locale.US, "%.1f km", r.distanceMeters / 1000f)
-                                    } else {
-                                        "${r.distanceMeters.toInt()} m"
+                                    isMetroMode && metroJourneyPlan != null -> {
+                                        val p = metroJourneyPlan!!
+                                        val boardRoad = boardingRoadRoute
+                                        if (boardRoad != null) {
+                                            val rd = if (boardRoad.distanceMeters >= 1000f) String.format(Locale.US, "%.1f km", boardRoad.distanceMeters / 1000f) else "${boardRoad.distanceMeters.toInt()}m"
+                                            val bMin = (boardRoad.durationSeconds / 60).toInt().coerceAtLeast(1)
+                                            withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
+                                                append("🛣️ $rd (~$bMin min) to ${p.boardingStation.name}")
+                                            }
+                                            append(" • ")
+                                        } else {
+                                            withStyle(SpanStyle(color = primaryColor, fontWeight = FontWeight.SemiBold)) {
+                                                append("📍 At ${p.boardingStation.name} (≤50m)")
+                                            }
+                                            append(" • ")
+                                        }
+
+                                        withStyle(SpanStyle(color = primaryColor, fontWeight = FontWeight.SemiBold)) {
+                                            append("${p.totalStops} metro stops")
+                                            if (p.requiresLineChange) {
+                                                append(" • 🔄 Change at ${p.interchangeStations.joinToString { it.name }}")
+                                            }
+                                        }
+
+                                        if (p.exitWalkDistanceMeters > 50f) {
+                                            val exitRoad = exitRoadRoute
+                                            val ed = exitRoad?.distanceMeters ?: (p.exitWalkDistanceMeters * 1.28f)
+                                            val eMin = ((exitRoad?.durationSeconds ?: (ed / 8.33f)) / 60).toInt().coerceAtLeast(1)
+                                            val edText = if (ed >= 1000f) String.format(Locale.US, "%.1f km", ed / 1000f) else "${ed.toInt()}m"
+                                            append(" • ")
+                                            withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
+                                                append("🛣️ $edText (~$eMin min) to Point B")
+                                            }
+                                        }
                                     }
-                                    val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
-                                    "🛣️ $dText by road • ~$minText min"
+                                    previewRoadRoute != null -> {
+                                        val r = previewRoadRoute!!
+                                        val dText = if (r.distanceMeters >= 1000f) {
+                                            String.format(Locale.US, "%.1f km", r.distanceMeters / 1000f)
+                                        } else {
+                                            "${r.distanceMeters.toInt()} m"
+                                        }
+                                        val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
+                                        withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
+                                            append("🛣️ $dText by road • ~$minText min")
+                                        }
+                                    }
+                                    else -> {
+                                        withStyle(SpanStyle(color = mutedColor)) {
+                                            append(String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude))
+                                        }
+                                    }
                                 }
-                                else -> String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude)
                             }
                             Text(
-                                text = routeSummaryText,
+                                text = annotatedSummary,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = if (previewRoadRoute != null || (isMetroMode && metroJourneyPlan != null)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = if (previewRoadRoute != null || (isMetroMode && metroJourneyPlan != null)) FontWeight.SemiBold else FontWeight.Normal,
                                 fontSize = 11.sp
                             )
                         }

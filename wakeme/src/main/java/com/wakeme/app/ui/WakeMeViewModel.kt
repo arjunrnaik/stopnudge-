@@ -191,6 +191,16 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     val userMessage: SharedFlow<String> = _userMessage.asSharedFlow()
 
     init {
+        // Immediately acquire FusedLocation cached GPS (<50ms) so map opens at user's location without waiting
+        viewModelScope.launch {
+            fetchLastKnownOrigin()?.let { pt ->
+                _currentOriginLocation.value = pt
+                if (_currentScreen.value == WakeMeScreen.SEARCH_LANDING && _targetName.value == "Bengaluru City Center") {
+                    _targetLocation.value = pt
+                }
+            }
+        }
+
         // Preload metro stations in background
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -270,6 +280,23 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     fun updateCurrentOrigin(point: GeoPoint?) {
         if (point != null) {
             _currentOriginLocation.value = point
+        }
+    }
+
+    fun requestImmediateLocationCenter(onLocationReady: (GeoPoint) -> Unit) {
+        val cached = _currentOriginLocation.value
+        if (cached != null) {
+            onLocationReady(cached)
+            return
+        }
+        viewModelScope.launch {
+            val pt = fetchLastKnownOrigin()
+            if (pt != null) {
+                _currentOriginLocation.value = pt
+                onLocationReady(pt)
+            } else {
+                _userMessage.tryEmit("Locating your GPS satellites...")
+            }
         }
     }
 
@@ -754,6 +781,22 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 )
                 recentTripDao.trimOldTrips()
             } catch (_: Exception) {}
+        }
+
+        if (config.vehicleMode == VehicleMode.METRO) {
+            val bRoute = _boardingRoadRoute.value
+            val eRoute = _exitRoadRoute.value
+            WakeMeTrackingService.seedPreloadedMetroRoutes(
+                plan = _metroJourneyPlan.value,
+                boardingPoints = bRoute?.points.orEmpty(),
+                boardingDistMeters = bRoute?.distanceMeters,
+                boardingDurSeconds = bRoute?.durationSeconds,
+                exitPoints = eRoute?.points.orEmpty(),
+                exitDistMeters = eRoute?.distanceMeters,
+                exitDurSeconds = eRoute?.durationSeconds
+            )
+        } else if (config.vehicleMode.usesRoadDistanceTrigger) {
+            WakeMeTrackingService.seedPreloadedRoadRoute(_previewRoadRoute.value?.points.orEmpty())
         }
 
         WakeMeTrackingService.start(context, config)
