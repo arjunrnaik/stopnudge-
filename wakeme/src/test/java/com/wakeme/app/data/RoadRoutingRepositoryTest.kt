@@ -43,4 +43,25 @@ class RoadRoutingRepositoryTest {
         assertNotNull(result)
         assertTrue("Zero-length trip should have ~0 distance", result.distanceMeters < 100f)
     }
+
+    @Test
+    fun findNearestMetroStationByRoad_returnsValidRoadResult() = runBlocking {
+        // Indiranagar 100ft Road
+        val origin = org.osmdroid.util.GeoPoint(12.9719, 77.6412)
+
+        val result = RoadRoutingRepository.findNearestMetroStationByRoad(origin)
+
+        assertNotNull(result)
+        assertNotNull(result.station)
+        assertTrue("Road distance should be positive, was ${result.roadDistanceMeters}", result.roadDistanceMeters > 0f)
+        assertTrue("Duration should be positive, was ${result.durationSeconds}", result.durationSeconds > 0f)
+        assertTrue("Should return route points", result.routePoints.isNotEmpty())
+    }
+
+    @Test
+    fun haversineDistanceMeters_calculatesCorrectDistance() {
+        // Majestic to Vidhana Soudha (~2.15 km)
+        val d = RoadRoutingRepository.haversineDistanceMeters(12.9757, 77.5728, 12.9798, 77.5925)
+        assertTrue("Expected ~2150m, got $d", d in 2000.0..2300.0)
+    }
 }

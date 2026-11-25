@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.SearchRepository
@@ -24,6 +25,7 @@ import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.GoogleMapsUrlParser
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -114,6 +116,18 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _nearestMetroStation = MutableStateFlow<NammaMetroNetwork.ActiveStation?>(null)
     val nearestMetroStation: StateFlow<NammaMetroNetwork.ActiveStation?> = _nearestMetroStation.asStateFlow()
+
+    private val _nearestMetroRoadDistance = MutableStateFlow<Float?>(null)
+    val nearestMetroRoadDistance: StateFlow<Float?> = _nearestMetroRoadDistance.asStateFlow()
+
+    private val _nearestMetroRoadDuration = MutableStateFlow<Float?>(null)
+    val nearestMetroRoadDuration: StateFlow<Float?> = _nearestMetroRoadDuration.asStateFlow()
+
+    private val _nearestMetroRoutePoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+    val nearestMetroRoutePoints: StateFlow<List<GeoPoint>> = _nearestMetroRoutePoints.asStateFlow()
+
+    private val _isCalculatingRoadToMetro = MutableStateFlow(false)
+    val isCalculatingRoadToMetro: StateFlow<Boolean> = _isCalculatingRoadToMetro.asStateFlow()
 
     private val _selectedBusStop = MutableStateFlow<SelectedBusStop?>(null)
     val selectedBusStop: StateFlow<SelectedBusStop?> = _selectedBusStop.asStateFlow()
@@ -456,27 +470,54 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun findAndFocusNearestMetroStation(fromLocation: GeoPoint?) {
         val origin = fromLocation ?: _targetLocation.value
-        val (nearest, distMeters) = NammaMetroNetwork.findNearestActiveStation(origin)
-        _nearestMetroStation.value = nearest
-        _showMetroOverlay.value = true // Automatically show metro overlay & markings
-        _cameraMoveTarget.tryEmit(nearest.geoPoint)
+        _isCalculatingRoadToMetro.value = true
+        _userMessage.tryEmit("🔍 Finding nearest metro via road network...")
 
-        val distFormatted = if (distMeters >= 1000) {
-            String.format("%.1f km", distMeters / 1000.0)
-        } else {
-            "${distMeters.toInt()} m"
+        viewModelScope.launch {
+            try {
+                val result = RoadRoutingRepository.findNearestMetroStationByRoad(origin)
+                _nearestMetroStation.value = result.station
+                _nearestMetroRoadDistance.value = result.roadDistanceMeters
+                _nearestMetroRoadDuration.value = result.durationSeconds
+                _nearestMetroRoutePoints.value = result.routePoints
+                _showMetroOverlay.value = true
+                _cameraMoveTarget.tryEmit(result.station.geoPoint)
+
+                val distFormatted = if (result.roadDistanceMeters >= 1000) {
+                    String.format(Locale.US, "%.1f km", result.roadDistanceMeters / 1000f)
+                } else {
+                    "${result.roadDistanceMeters.toInt()} m"
+                }
+                val minFormatted = (result.durationSeconds / 60).toInt().coerceAtLeast(1)
+                _userMessage.tryEmit("🚇 Nearest: ${result.station.name} ($distFormatted by road • ~$minFormatted min)")
+            } catch (_: Exception) {
+                val (nearest, dist) = NammaMetroNetwork.findNearestActiveStation(origin)
+                _nearestMetroStation.value = nearest
+                _nearestMetroRoadDistance.value = dist.toFloat()
+                _nearestMetroRoadDuration.value = (dist / 8.33).toFloat()
+                _nearestMetroRoutePoints.value = emptyList()
+                _showMetroOverlay.value = true
+                _cameraMoveTarget.tryEmit(nearest.geoPoint)
+            } finally {
+                _isCalculatingRoadToMetro.value = false
+            }
         }
-        _userMessage.tryEmit("🚇 Nearest: ${nearest.name} ($distFormatted away)")
     }
 
     fun selectActiveMetroStation(station: NammaMetroNetwork.ActiveStation) {
         _nearestMetroStation.value = station
         _selectedBusStop.value = null
+        _nearestMetroRoadDistance.value = null
+        _nearestMetroRoadDuration.value = null
+        _nearestMetroRoutePoints.value = emptyList()
         _cameraMoveTarget.tryEmit(station.geoPoint)
     }
 
     fun clearNearestMetroStation() {
         _nearestMetroStation.value = null
+        _nearestMetroRoadDistance.value = null
+        _nearestMetroRoadDuration.value = null
+        _nearestMetroRoutePoints.value = emptyList()
     }
 
     fun selectBusStop(name: String, geoPoint: GeoPoint, routes: String? = null, direction: String? = null) {

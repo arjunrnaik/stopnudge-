@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.view.MotionEvent
 import java.net.URLEncoder
+import java.util.Locale
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -100,6 +101,10 @@ fun WakeMeLandingScreen(
     val showBmtcOverlay by viewModel.showBmtcOverlay.collectAsState()
     val metroStations by viewModel.metroStations.collectAsState()
     val nearestMetroStation by viewModel.nearestMetroStation.collectAsState()
+    val nearestMetroRoadDistance by viewModel.nearestMetroRoadDistance.collectAsState()
+    val nearestMetroRoadDuration by viewModel.nearestMetroRoadDuration.collectAsState()
+    val nearestMetroRoutePoints by viewModel.nearestMetroRoutePoints.collectAsState()
+    val isCalculatingRoadToMetro by viewModel.isCalculatingRoadToMetro.collectAsState()
     val selectedBusStop by viewModel.selectedBusStop.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
@@ -116,6 +121,7 @@ fun WakeMeLandingScreen(
     var metroPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
     var busMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var busPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
+    var roadRoutePolyline by remember { mutableStateOf<Polyline?>(null) }
     var debounceJob by remember { mutableStateOf<Job?>(null) }
 
     // Tap-to-drop pin state
@@ -146,6 +152,29 @@ fun WakeMeLandingScreen(
     LaunchedEffect(viewModel) {
         viewModel.cameraMoveTarget.collect { target ->
             mapViewRef?.controller?.animateTo(target)
+        }
+    }
+
+    // Render road network polyline to nearest metro station
+    LaunchedEffect(mapViewRef, nearestMetroRoutePoints) {
+        val map = mapViewRef ?: return@LaunchedEffect
+        roadRoutePolyline?.let { map.overlays.remove(it) }
+        roadRoutePolyline = null
+
+        if (nearestMetroRoutePoints.isNotEmpty()) {
+            val poly = Polyline(map).apply {
+                setPoints(nearestMetroRoutePoints)
+                outlinePaint.color = 0xFF0091EA.toInt() // Vibrant Cyan Road Line
+                outlinePaint.strokeWidth = 11.5f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                outlinePaint.isAntiAlias = true
+            }
+            map.overlays.add(poly)
+            roadRoutePolyline = poly
+            map.invalidate()
+        } else {
+            map.invalidate()
         }
     }
 
@@ -716,12 +745,20 @@ fun WakeMeLandingScreen(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.DirectionsSubway,
-                    contentDescription = "Toggle Metro Stations (Long press for Nearest)",
-                    tint = if (showMetroOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(24.dp)
-                )
+                if (isCalculatingRoadToMetro) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsSubway,
+                        contentDescription = "Toggle Metro Stations (Long press for Nearest by Road)",
+                        tint = if (showMetroOverlay) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
 
             // BMTC Bus layer paused - pure Namma Metro focus
@@ -888,11 +925,25 @@ fun WakeMeLandingScreen(
                                         )
                                     }
                                 }
-                                Text(
-                                    text = "Active Namma Metro Station",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                val roadDist = nearestMetroRoadDistance
+                                val roadDur = nearestMetroRoadDuration
+                                if (roadDist != null) {
+                                    val formattedDist = if (roadDist >= 1000) String.format(Locale.US, "%.1f km", roadDist / 1000f) else "${roadDist.toInt()} m"
+                                    val mins = if (roadDur != null) (roadDur / 60).toInt().coerceAtLeast(1) else null
+                                    val durStr = if (mins != null) " • ~$mins min by road" else " by road"
+                                    Text(
+                                        text = "🛣️ $formattedDist$durStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                } else {
+                                    Text(
+                                        text = "Active Namma Metro Station",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                         IconButton(

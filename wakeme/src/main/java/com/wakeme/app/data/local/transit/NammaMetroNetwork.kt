@@ -255,24 +255,29 @@ object NammaMetroNetwork {
 
     /**
      * Finds the nearest active metro station from any coordinate in sub-millisecond time.
-     * Uses Android's high-precision WGS84 distance algorithm.
+     * Uses pure mathematical Haversine distance.
      */
     fun findNearestActiveStation(from: GeoPoint): Pair<ActiveStation, Double> {
         var closest = ACTIVE_STATIONS[0]
         var minDistance = Double.MAX_VALUE
-        val results = FloatArray(1)
         for (station in ACTIVE_STATIONS) {
-            android.location.Location.distanceBetween(
-                from.latitude, from.longitude,
-                station.latitude, station.longitude,
-                results
-            )
-            val dist = results[0].toDouble()
+            val dist = haversineDistance(from.latitude, from.longitude, station.latitude, station.longitude)
             if (dist < minDistance) {
                 minDistance = dist
                 closest = station
             }
         }
         return Pair(closest, minDistance)
+    }
+
+    fun haversineDistance(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
+        val r = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+                Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return r * c
     }
 }
