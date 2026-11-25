@@ -29,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.wakeme.app.alarm.WakeMeAlarmController
+import com.wakeme.app.service.MetroJourneyStage
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.LocationMarkerUtils
 import com.wakeme.app.data.local.transit.BmtcBusCategory
@@ -75,6 +76,16 @@ fun WakeMeActiveTripScreen(
     val isRoadRoute by WakeMeTrackingService.isRoadRouteActive.collectAsState()
     val currentBearing by WakeMeTrackingService.currentBearing.collectAsState()
 
+    val metroStage by WakeMeTrackingService.metroStage.collectAsState()
+    val activeMetroPlan by WakeMeTrackingService.activeMetroPlan.collectAsState()
+    val currentMetroLegIndex by WakeMeTrackingService.currentMetroLegIndex.collectAsState()
+    val metroStopsRemaining by WakeMeTrackingService.metroStopsRemaining.collectAsState()
+    val metroCurrentStationName by WakeMeTrackingService.metroCurrentStationName.collectAsState()
+    val metroNextStationName by WakeMeTrackingService.metroNextStationName.collectAsState()
+    val metroAlertStationName by WakeMeTrackingService.metroAlertStationName.collectAsState()
+    val metroInterchangePrompt by WakeMeTrackingService.metroInterchangePrompt.collectAsState()
+    val metroStopsBeforeAlert by viewModel.metroStopsBeforeAlert.collectAsState()
+
     var isTestingAlert by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(false) }
     var isHeadingUp by remember { mutableStateOf(true) }
@@ -112,15 +123,20 @@ fun WakeMeActiveTripScreen(
                     }
                 },
                 actions = {
-                    val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()}km" else "${radiusMeters.toInt()}m"
-                    val prefix = if (selectedVehicleMode.usesRoadDistanceTrigger) "Road Alert" else "Radius"
+                    val badgeText = if (selectedVehicleMode == VehicleMode.METRO) {
+                        if (metroStopsBeforeAlert == 0) "Alert: 50m" else "Alert: $metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""}"
+                    } else {
+                        val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()}km" else "${radiusMeters.toInt()}m"
+                        val prefix = if (selectedVehicleMode.usesRoadDistanceTrigger) "Road Alert" else "Radius"
+                        "$prefix: $radiusLabel"
+                    }
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.padding(end = 12.dp)
                     ) {
                         Text(
-                            text = "$prefix: $radiusLabel",
+                            text = badgeText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -248,32 +264,145 @@ fun WakeMeActiveTripScreen(
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Live Distance Countdown (Real road or approximate)
-                    val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
-                    val distanceText = if (dist != null) {
-                        if (dist >= 1000f) {
-                            String.format("%.1f km", dist / 1000f)
-                        } else {
-                            "${dist.toInt()} m"
+                    val isMetroJourney = selectedVehicleMode == VehicleMode.METRO && activeMetroPlan != null
+                    if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
+                        val boardStationName = activeMetroPlan?.boardingStation?.name ?: "Nearest Metro"
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1976D2).copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "STAGE 1: REACH $boardStationName METRO",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0D47A1),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
                         }
-                    } else {
-                        "Calculating..."
+                        Spacer(modifier = Modifier.height(6.dp))
+                    } else if (isMetroJourney && (metroStage == MetroJourneyStage.ON_METRO_LEG || metroStage == MetroJourneyStage.INTERCHANGE_WAIT)) {
+                        val activeLeg = activeMetroPlan!!.legs.getOrNull(currentMetroLegIndex)
+                        if (activeLeg != null) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(activeLeg.lineColorInt).copy(alpha = 0.18f)
+                            ) {
+                                Text(
+                                    text = "${activeLeg.lineName.uppercase()} LINE • ${activeLeg.directionLabel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(activeLeg.lineColorInt),
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                        }
                     }
 
-                    Text(
-                        text = distanceText,
-                        fontSize = 42.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        textAlign = TextAlign.Center
-                    )
+                    // Live Distance / Stops Countdown
+                    if (isMetroJourney && (metroStage == MetroJourneyStage.ON_METRO_LEG || metroStage == MetroJourneyStage.INTERCHANGE_WAIT)) {
+                        val stopsLeft = metroStopsRemaining ?: 0
+                        val stopsLabel = when (stopsLeft) {
+                            0 -> "Arriving!"
+                            1 -> "1 stop"
+                            else -> "$stopsLeft stops"
+                        }
+                        Text(
+                            text = stopsLabel,
+                            fontSize = 42.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            textAlign = TextAlign.Center
+                        )
+                        val nextName = metroNextStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
+                        val alertAt = metroAlertStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
+                        Text(
+                            text = "NEXT: $nextName • ALERT AT: $alertAt",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        val dist = liveDistance ?: (straightDist?.let { it * 1.28f })
+                        val distanceText = if (dist != null) {
+                            if (dist >= 1000f) {
+                                String.format("%.1f km", dist / 1000f)
+                            } else {
+                                "${dist.toInt()} m"
+                            }
+                        } else {
+                            "Calculating..."
+                        }
 
-                    Text(
-                        text = if (isRoadRoute) "ROAD DISTANCE REMAINING" else "ESTIMATED DISTANCE REMAINING",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
+                        Text(
+                            text = distanceText,
+                            fontSize = 42.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            textAlign = TextAlign.Center
+                        )
+
+                        Text(
+                            text = if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
+                                "ROAD DISTANCE TO BOARDING METRO (AUTO AT 50M)"
+                            } else if (isRoadRoute) {
+                                "ROAD DISTANCE REMAINING"
+                            } else {
+                                "ESTIMATED DISTANCE REMAINING"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    // Stage 1 Quick Advance OR Line Change Banner
+                    if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        FilledTonalButton(
+                            onClick = { WakeMeTrackingService.confirmBoardedMetro() },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("🚇 I'm at / on the Metro ➔", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    } else if (isMetroJourney && (metroStage == MetroJourneyStage.INTERCHANGE_WAIT || metroInterchangePrompt != null)) {
+                        val nextLeg = activeMetroPlan?.legs?.getOrNull(currentMetroLegIndex + 1)
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text(
+                                    text = "🔄 ${metroInterchangePrompt ?: "Line Transfer Ahead"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    textAlign = TextAlign.Center
+                                )
+                                if (nextLeg != null) {
+                                    Button(
+                                        onClick = { WakeMeTrackingService.confirmLineSwitched(context) },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(nextLeg.lineColorInt))
+                                    ) {
+                                        Text(
+                                            "Boarded ${nextLeg.lineName} Line ➔",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
@@ -381,16 +510,28 @@ fun WakeMeActiveTripScreen(
                                 else -> 0xFF1E88E5.toInt()
                             }
 
-                            LocationMarkerUtils.updateRoadAndAlertOverlays(
-                                map = map,
-                                vehicleMode = selectedVehicleMode,
-                                targetLocation = targetLocation,
-                                alertDistanceMeters = radiusMeters,
-                                primaryRoutePoints = routePoints,
-                                alternativeRoutes = alternativeRoutes,
-                                themeColorInt = themeColorInt,
-                                targetName = targetName
-                            )
+                            val plan = activeMetroPlan
+                            if (selectedVehicleMode == VehicleMode.METRO && plan != null) {
+                                LocationMarkerUtils.renderMetroJourneyOverlays(
+                                    map = map,
+                                    context = map.context,
+                                    plan = plan,
+                                    boardingRoadPoints = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) routePoints else emptyList(),
+                                    stopsBeforeAlert = metroStopsBeforeAlert,
+                                    activeLegIndex = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) 0 else currentMetroLegIndex
+                                )
+                            } else {
+                                LocationMarkerUtils.updateRoadAndAlertOverlays(
+                                    map = map,
+                                    vehicleMode = selectedVehicleMode,
+                                    targetLocation = targetLocation,
+                                    alertDistanceMeters = radiusMeters,
+                                    primaryRoutePoints = routePoints,
+                                    alternativeRoutes = alternativeRoutes,
+                                    themeColorInt = themeColorInt,
+                                    targetName = targetName
+                                )
+                            }
 
                             if (isHeadingUp && currentBearing != null) {
                                 map.mapOrientation = -currentBearing!!
@@ -608,16 +749,28 @@ fun WakeMeActiveTripScreen(
                             else -> 0xFF1E88E5.toInt()
                         }
 
-                        LocationMarkerUtils.updateRoadAndAlertOverlays(
-                            map = map,
-                            vehicleMode = selectedVehicleMode,
-                            targetLocation = targetLocation,
-                            alertDistanceMeters = radiusMeters,
-                            primaryRoutePoints = routePoints,
-                            alternativeRoutes = alternativeRoutes,
-                            themeColorInt = themeColorInt,
-                            targetName = targetName
-                        )
+                        val plan = activeMetroPlan
+                        if (selectedVehicleMode == VehicleMode.METRO && plan != null) {
+                            LocationMarkerUtils.renderMetroJourneyOverlays(
+                                map = map,
+                                context = map.context,
+                                plan = plan,
+                                boardingRoadPoints = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) routePoints else emptyList(),
+                                stopsBeforeAlert = metroStopsBeforeAlert,
+                                activeLegIndex = if (metroStage == MetroJourneyStage.TO_BOARDING_ROAD) 0 else currentMetroLegIndex
+                            )
+                        } else {
+                            LocationMarkerUtils.updateRoadAndAlertOverlays(
+                                map = map,
+                                vehicleMode = selectedVehicleMode,
+                                targetLocation = targetLocation,
+                                alertDistanceMeters = radiusMeters,
+                                primaryRoutePoints = routePoints,
+                                alternativeRoutes = alternativeRoutes,
+                                themeColorInt = themeColorInt,
+                                targetName = targetName
+                            )
+                        }
 
                         map.invalidate()
                     },

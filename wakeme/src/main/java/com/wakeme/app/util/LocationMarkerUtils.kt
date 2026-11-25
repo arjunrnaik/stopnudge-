@@ -2,6 +2,7 @@ package com.wakeme.app.util
 
 import android.content.Context
 import android.graphics.DashPathEffect
+import com.wakeme.app.data.MetroJourneyPlan
 import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.data.local.transit.BmtcBusCategory
@@ -992,5 +993,88 @@ object LocationMarkerUtils {
                 outlinePaint.strokeWidth = 3.5f
             })
         }
+    }
+
+    /**
+     * Renders the complete 2-stage Namma Metro journey on an OsmDroid MapView:
+     * - Stage 1 (if far > 50m): Blue road route from current GPS to boarding station + 50m boarding ring
+     * - Stage 2: Each Metro leg polyline in its authentic line color (Purple, Green, Yellow, Pink)
+     * - Station markers for boarding, interchanges, and exit
+     */
+    fun renderMetroJourneyOverlays(
+        map: MapView,
+        context: Context,
+        plan: MetroJourneyPlan,
+        boardingRoadPoints: List<GeoPoint>,
+        stopsBeforeAlert: Int,
+        activeLegIndex: Int = -1
+    ): List<GeoPoint> {
+        map.overlays.removeAll(map.overlays.filterIsInstance<Polygon>())
+        map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
+        val allPoints = mutableListOf<GeoPoint>()
+
+        // 1. Stage 1 Road Path to Boarding Station (when > 50m away)
+        if (boardingRoadPoints.size >= 2) {
+            map.overlays.add(Polyline(map).apply {
+                setPoints(boardingRoadPoints)
+                outlinePaint.color = 0xFF1976D2.toInt() // Road blue
+                outlinePaint.strokeWidth = 8.5f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                infoWindow = null
+            })
+            allPoints.addAll(boardingRoadPoints)
+        }
+
+        // 2. 50m Boarding Station Ring
+        map.overlays.add(Polygon(map).apply {
+            points = Polygon.pointsAsCircle(plan.boardingStation.geoPoint, 50.0)
+            fillPaint.color = 0x261976D2
+            outlinePaint.color = 0xFF1976D2.toInt()
+            outlinePaint.strokeWidth = 2.5f
+        })
+
+        // 3. Metro Rail Track Legs (in line color)
+        plan.legs.forEachIndexed { idx, leg ->
+            if (leg.trackPoints.size >= 2) {
+                val isCurrentOrPreview = activeLegIndex < 0 || idx >= activeLegIndex
+                map.overlays.add(Polyline(map).apply {
+                    setPoints(leg.trackPoints)
+                    outlinePaint.color = if (isCurrentOrPreview) leg.lineColorInt else 0xFF90A4AE.toInt()
+                    outlinePaint.strokeWidth = if (idx == activeLegIndex || activeLegIndex < 0) 10.5f else 6.5f
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.strokeJoin = Paint.Join.ROUND
+                    infoWindow = null
+                })
+                allPoints.addAll(leg.trackPoints)
+            }
+
+            // Highlight alert stop for this leg
+            val alertStop = plan.getAlertStopForLeg(idx, stopsBeforeAlert)
+            if (alertStop != null) {
+                val alertRadius = if (idx == plan.legs.size - 1 && stopsBeforeAlert == 0) 50.0 else 250.0
+                map.overlays.add(Polygon(map).apply {
+                    points = Polygon.pointsAsCircle(alertStop.geoPoint, alertRadius)
+                    fillPaint.color = 0x33FF6D00
+                    outlinePaint.color = 0xFFFF6D00.toInt()
+                    outlinePaint.strokeWidth = 3f
+                })
+            }
+        }
+
+        // 4. Optional short exit walk path from exit station to pin
+        if (plan.exitWalkDistanceMeters > 100f) {
+            val walkPts = listOf(plan.exitStation.geoPoint, plan.destinationPinPoint)
+            map.overlays.add(Polyline(map).apply {
+                setPoints(walkPts)
+                outlinePaint.color = 0xFF4CAF50.toInt()
+                outlinePaint.strokeWidth = 6f
+                outlinePaint.pathEffect = DashPathEffect(floatArrayOf(12f, 10f), 0f)
+                infoWindow = null
+            })
+            allPoints.add(plan.destinationPinPoint)
+        }
+
+        return allPoints
     }
 }

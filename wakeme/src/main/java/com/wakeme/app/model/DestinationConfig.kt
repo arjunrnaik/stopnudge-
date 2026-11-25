@@ -14,5 +14,9 @@ data class DestinationConfig(
     val reminderNote: String = "",
     val isTransitStop: Boolean = false,
     val transitType: String? = null,
-    val vibrate: Boolean = true
+    val vibrate: Boolean = true,
+    val metroStopsBeforeAlert: Int = 1,
+    val metroBoardingLat: Double? = null,
+    val metroBoardingLon: Double? = null,
+    val metroBoardingName: String? = null
 )

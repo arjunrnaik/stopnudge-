@@ -8,6 +8,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
+import com.wakeme.app.data.MetroJourneyPlan
+import com.wakeme.app.data.MetroRoutePlanner
 import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.data.RouteResult
 import com.wakeme.app.data.SearchResultItem
@@ -146,6 +148,18 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _isLoadingPreviewRoute = MutableStateFlow(false)
     val isLoadingPreviewRoute: StateFlow<Boolean> = _isLoadingPreviewRoute.asStateFlow()
 
+    private val _metroStopsBeforeAlert = MutableStateFlow(1)
+    val metroStopsBeforeAlert: StateFlow<Int> = _metroStopsBeforeAlert.asStateFlow()
+
+    private val _customBoardingStation = MutableStateFlow<NammaMetroNetwork.ActiveStation?>(null)
+    val customBoardingStation: StateFlow<NammaMetroNetwork.ActiveStation?> = _customBoardingStation.asStateFlow()
+
+    private val _metroJourneyPlan = MutableStateFlow<MetroJourneyPlan?>(null)
+    val metroJourneyPlan: StateFlow<MetroJourneyPlan?> = _metroJourneyPlan.asStateFlow()
+
+    private val _boardingRoadRoute = MutableStateFlow<RouteResult?>(null)
+    val boardingRoadRoute: StateFlow<RouteResult?> = _boardingRoadRoute.asStateFlow()
+
     private val _selectedBusStop = MutableStateFlow<SelectedBusStop?>(null)
     val selectedBusStop: StateFlow<SelectedBusStop?> = _selectedBusStop.asStateFlow()
 
@@ -221,6 +235,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     _audioRouting.value = config.audioRouting
                     _vibrateEnabled.value = config.vibrate
                     _reminderNote.value = config.reminderNote
+                    _metroStopsBeforeAlert.value = config.metroStopsBeforeAlert
                 }
             }
         }
@@ -236,9 +251,17 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _selectedVehicleMode.value = mode
         _alertMode.value = mode.alertMode
         _radiusMeters.value = mode.defaultRadiusMeters
-        if (mode.usesRoadDistanceTrigger) {
-            refreshPreviewRoadRoute()
-        }
+        refreshPreviewRoadRoute()
+    }
+
+    fun setMetroStopsBeforeAlert(stops: Int) {
+        _metroStopsBeforeAlert.value = stops.coerceIn(0, 5)
+    }
+
+    fun setCustomBoardingStation(station: NammaMetroNetwork.ActiveStation?) {
+        _customBoardingStation.value = station
+        _boardingRoadRoute.value = null
+        refreshPreviewRoadRoute()
     }
 
     fun updateCurrentOrigin(point: GeoPoint?) {
@@ -250,13 +273,14 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     fun refreshPreviewRoadRoute() {
         previewRouteJob?.cancel()
         val dest = _targetLocation.value
+        val mode = _selectedVehicleMode.value
         previewRouteJob = viewModelScope.launch {
             _isLoadingPreviewRoute.value = true
             try {
                 val origin = _currentOriginLocation.value ?: fetchLastKnownOrigin()?.also {
                     _currentOriginLocation.value = it
                 }
-                if (origin != null) {
+                if (origin != null && mode.usesRoadDistanceTrigger) {
                     val route = RoadRoutingRepository.getRoute(
                         origin.latitude,
                         origin.longitude,
@@ -267,8 +291,44 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 } else {
                     _previewRoadRoute.value = null
                 }
+
+                // Always build Metro stop-to-stop plan when METRO mode is active
+                if (mode == VehicleMode.METRO) {
+                    val exitStation = NammaMetroNetwork.findNearestActiveStation(dest).first
+                    val boardingStation = _customBoardingStation.value
+                        ?: if (origin != null) {
+                            RoadRoutingRepository.findNearestMetroStationByRoad(origin).station
+                        } else {
+                            NammaMetroNetwork.findNearestActiveStation(dest).first
+                        }
+                    val plan = MetroRoutePlanner.planJourney(
+                        boardingStation = boardingStation,
+                        exitStation = exitStation,
+                        destinationPinName = _targetName.value,
+                        destinationPinPoint = dest
+                    )
+                    _metroJourneyPlan.value = plan
+
+                    if (origin != null) {
+                        val distToBoard = RoadRoutingRepository.haversineDistanceMeters(
+                            origin.latitude, origin.longitude,
+                            boardingStation.latitude, boardingStation.longitude
+                        )
+                        if (distToBoard > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+                            _boardingRoadRoute.value = RoadRoutingRepository.getRoute(
+                                origin.latitude, origin.longitude,
+                                boardingStation.latitude, boardingStation.longitude
+                            )
+                        } else {
+                            _boardingRoadRoute.value = null
+                        }
+                    } else {
+                        _boardingRoadRoute.value = null
+                    }
+                }
             } catch (_: Exception) {
                 _previewRoadRoute.value = null
+                _boardingRoadRoute.value = null
             } finally {
                 _isLoadingPreviewRoute.value = false
             }
@@ -303,6 +363,9 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private fun openModeSelectionForTarget(geoPoint: GeoPoint) {
         _cameraMoveTarget.tryEmit(geoPoint)
         _previewRoadRoute.value = null
+        _customBoardingStation.value = null
+        _metroJourneyPlan.value = null
+        _boardingRoadRoute.value = null
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
         refreshPreviewRoadRoute()
     }
@@ -638,6 +701,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun getDestinationConfig(): DestinationConfig {
         val target = _targetLocation.value
+        val boarding = _customBoardingStation.value ?: _metroJourneyPlan.value?.boardingStation
         return DestinationConfig(
             name = _targetName.value,
             latitude = target.latitude,
@@ -647,7 +711,11 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             alertMode = _alertMode.value,
             audioRouting = _audioRouting.value,
             reminderNote = _reminderNote.value,
-            vibrate = _vibrateEnabled.value
+            vibrate = _vibrateEnabled.value,
+            metroStopsBeforeAlert = _metroStopsBeforeAlert.value,
+            metroBoardingLat = boarding?.latitude,
+            metroBoardingLon = boarding?.longitude,
+            metroBoardingName = boarding?.name
         )
     }
 

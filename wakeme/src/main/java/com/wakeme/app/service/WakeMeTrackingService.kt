@@ -25,12 +25,22 @@ import com.wakeme.app.MainActivity
 import com.wakeme.app.WakeMeApp
 import com.wakeme.app.alarm.AlarmDismissActivity
 import com.wakeme.app.alarm.WakeMeAlarmController
+import com.wakeme.app.data.MetroJourneyPlan
+import com.wakeme.app.data.MetroRoutePlanner
 import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.data.RouteCandidate
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
+
+enum class MetroJourneyStage {
+    NONE,
+    TO_BOARDING_ROAD,
+    ON_METRO_LEG,
+    INTERCHANGE_WAIT
+}
 
 class WakeMeTrackingService : Service() {
 
@@ -40,7 +50,6 @@ class WakeMeTrackingService : Service() {
 
     private var destinationConfig: DestinationConfig? = null
     private var lastDistanceMeters: Float = Float.MAX_VALUE
-    private var hasAlertFired = false
     private var lastRouteFetchTime: Long = 0L
     private var consecutiveOffRouteCount = 0
 
@@ -67,6 +76,10 @@ class WakeMeTrackingService : Service() {
                 val mode = intent.getStringExtra(EXTRA_MODE)?.let { AlertMode.valueOf(it) } ?: AlertMode.WAKEUP_ALARM
                 val routing = intent.getStringExtra(EXTRA_ROUTING)?.let { AudioRouting.valueOf(it) } ?: AudioRouting.BOTH
                 val note = intent.getStringExtra(EXTRA_NOTE) ?: ""
+                val metroStopsBefore = intent.getIntExtra(EXTRA_METRO_STOPS_BEFORE, 1)
+                val boardingLat = intent.getDoubleExtra(EXTRA_METRO_BOARDING_LAT, Double.NaN)
+                val boardingLon = intent.getDoubleExtra(EXTRA_METRO_BOARDING_LON, Double.NaN)
+                val boardingName = intent.getStringExtra(EXTRA_METRO_BOARDING_NAME)
 
                 destinationConfig = DestinationConfig(
                     name = name,
@@ -76,9 +89,14 @@ class WakeMeTrackingService : Service() {
                     vehicleMode = vehicleMode,
                     alertMode = mode,
                     audioRouting = routing,
-                    reminderNote = note
+                    reminderNote = note,
+                    metroStopsBeforeAlert = metroStopsBefore,
+                    metroBoardingLat = if (boardingLat.isNaN()) null else boardingLat,
+                    metroBoardingLon = if (boardingLon.isNaN()) null else boardingLon,
+                    metroBoardingName = boardingName
                 )
                 hasAlertFired = false
+                hasInterchangeAlertFiredForLeg = -1
                 isTracking.value = true
                 activeConfig.value = destinationConfig
                 initialDistanceMeters.value = null
@@ -95,6 +113,15 @@ class WakeMeTrackingService : Service() {
                 currentLocationPoint.value = null
                 lastRouteFetchTime = 0L
                 matchedPolylineSegmentIndex = 0
+                matchedMetroStationIndex = 0
+                metroStage.value = MetroJourneyStage.NONE
+                activeMetroPlan.value = null
+                currentMetroLegIndex.value = 0
+                metroStopsRemaining.value = null
+                metroCurrentStationName.value = null
+                metroNextStationName.value = null
+                metroAlertStationName.value = null
+                metroInterchangePrompt.value = null
 
                 startForegroundNotification(name, "Initiating hardware GPS tracking...")
                 startLocationUpdates()
@@ -199,7 +226,47 @@ class WakeMeTrackingService : Service() {
         val speedKmh = speedMps * 3.6f
         currentSpeedKmh.value = speedKmh
 
-        // 3. Real-time Polyline Road Progress & Off-Route Dynamic Rerouting
+        if (config.vehicleMode == VehicleMode.METRO) {
+            handleMetroLocationUpdate(currentLocation, config, speedMps)
+            return
+        }
+
+        // Non-Metro Modes (Cab/Auto Road Trigger or Bus Radius)
+        updateRoadRouteTelemetry(currentLocation, config.latitude, config.longitude, straightDist, speedMps)
+
+        // Arrival Trigger Evaluation
+        val triggerDecision = RoadRoutingRepository.evaluateArrivalTrigger(
+            vehicleMode = config.vehicleMode,
+            targetThresholdMeters = config.radiusMeters,
+            straightLineMeters = straightDist,
+            roadDistanceMeters = liveDistanceMeters.value,
+            hasActiveRoadRoute = isRoadRouteActive.value || routePolyline.value.size >= 2
+        )
+
+        if (triggerDecision.shouldTrigger) {
+            if (!hasAlertFired) {
+                hasAlertFired = true
+                triggerArrivalAlert(config, triggerDecision.effectiveDistanceMeters)
+            }
+        } else {
+            val dist = liveDistanceMeters.value ?: (straightDist * 1.28f)
+            val distText = if (dist >= 1000f) {
+                String.format("%.1f km remaining", dist / 1000f)
+            } else {
+                "${dist.toInt()}m remaining"
+            }
+            val etaText = estimatedEtaMinutes.value?.let { " • ~$it min" } ?: ""
+            updateNotification("$distText$etaText")
+        }
+    }
+
+    private fun updateRoadRouteTelemetry(
+        currentLocation: Location,
+        targetLat: Double,
+        targetLon: Double,
+        straightDist: Float,
+        speedMps: Float
+    ) {
         val currentPoly = routePolyline.value
         var triggeredOffRouteReroute = false
         if (currentPoly.size >= 2) {
@@ -228,8 +295,8 @@ class WakeMeTrackingService : Service() {
                             val route = RoadRoutingRepository.getRoute(
                                 currentLocation.latitude,
                                 currentLocation.longitude,
-                                config.latitude,
-                                config.longitude
+                                targetLat,
+                                targetLon
                             )
                             val allRoutes = listOf(route.fastestRoute) + route.alternativeRoutes
                             allCandidateRoutes.value = allRoutes
@@ -259,7 +326,6 @@ class WakeMeTrackingService : Service() {
             }
         }
 
-        // 4. Adaptive Periodic Road Distance & Multi-Route Fetch (8s when <2.5km, 20s otherwise)
         val now = System.currentTimeMillis()
         val estRemainingRoad = liveDistanceMeters.value ?: (straightDist * 1.28f)
         val refreshIntervalMs = if (estRemainingRoad <= 2500f) 8_000L else 20_000L
@@ -269,8 +335,8 @@ class WakeMeTrackingService : Service() {
                 val route = RoadRoutingRepository.getRoute(
                     currentLocation.latitude,
                     currentLocation.longitude,
-                    config.latitude,
-                    config.longitude
+                    targetLat,
+                    targetLon
                 )
                 val allRoutes = listOf(route.fastestRoute) + route.alternativeRoutes
                 allCandidateRoutes.value = allRoutes
@@ -304,31 +370,178 @@ class WakeMeTrackingService : Service() {
                 estimatedEtaMinutes.value = etaMin
             }
         }
+    }
 
-        // 5. Mode-Aware Arrival Trigger Condition (Road Distance for Cab/Auto, Radius for Metro)
-        val triggerDecision = RoadRoutingRepository.evaluateArrivalTrigger(
-            vehicleMode = config.vehicleMode,
-            targetThresholdMeters = config.radiusMeters,
-            straightLineMeters = straightDist,
-            roadDistanceMeters = liveDistanceMeters.value,
-            hasActiveRoadRoute = isRoadRouteActive.value || routePolyline.value.size >= 2
-        )
-
-        if (triggerDecision.shouldTrigger) {
-            if (!hasAlertFired) {
-                hasAlertFired = true
-                triggerArrivalAlert(config, triggerDecision.effectiveDistanceMeters)
-            }
-        } else {
-            val dist = liveDistanceMeters.value ?: (straightDist * 1.28f)
-            val distText = if (dist >= 1000f) {
-                String.format("%.1f km remaining", dist / 1000f)
+    private fun handleMetroLocationUpdate(
+        currentLocation: Location,
+        config: DestinationConfig,
+        speedMps: Float
+    ) {
+        val currentGeo = GeoPoint(currentLocation.latitude, currentLocation.longitude)
+        var plan = activeMetroPlan.value
+        if (plan == null) {
+            val boardingStation = if (config.metroBoardingLat != null && config.metroBoardingLon != null) {
+                NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.metroBoardingLat, config.metroBoardingLon)).first
             } else {
-                "${dist.toInt()}m remaining"
+                NammaMetroNetwork.findNearestActiveStation(currentGeo).first
             }
-            val etaText = estimatedEtaMinutes.value?.let { " • ~$it min" } ?: ""
-            updateNotification("$distText$etaText")
+            val exitStation = NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.latitude, config.longitude)).first
+            plan = MetroRoutePlanner.planJourney(
+                boardingStation = boardingStation,
+                exitStation = exitStation,
+                destinationPinName = config.name,
+                destinationPinPoint = GeoPoint(config.latitude, config.longitude)
+            )
+            activeMetroPlan.value = plan
         }
+
+        val distToBoarding = haversineDistanceMeters(
+            currentLocation.latitude, currentLocation.longitude,
+            plan.boardingStation.latitude, plan.boardingStation.longitude
+        ).toFloat()
+
+        // Initialize stage on first fix: 50m boarding check
+        if (metroStage.value == MetroJourneyStage.NONE) {
+            if (distToBoarding <= MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+                enterMetroRideStage(plan, 0)
+            } else {
+                metroStage.value = MetroJourneyStage.TO_BOARDING_ROAD
+            }
+        }
+
+        when (metroStage.value) {
+            MetroJourneyStage.TO_BOARDING_ROAD -> {
+                if (distToBoarding <= MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+                    enterMetroRideStage(plan, 0)
+                    postBoardingReachedNotification(plan.boardingStation.name, plan.exitStation.name)
+                } else {
+                    updateRoadRouteTelemetry(
+                        currentLocation,
+                        plan.boardingStation.latitude,
+                        plan.boardingStation.longitude,
+                        distToBoarding,
+                        speedMps
+                    )
+                    val dist = liveDistanceMeters.value ?: (distToBoarding * 1.28f)
+                    val distText = if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
+                    updateNotification("Go to ${plan.boardingStation.name} Metro: $distText")
+                }
+            }
+
+            MetroJourneyStage.INTERCHANGE_WAIT -> {
+                val nextIdx = currentMetroLegIndex.value + 1
+                val nextLeg = plan.legs.getOrNull(nextIdx)
+                if (nextLeg != null && nextLeg.stations.size >= 2) {
+                    val interchange = nextLeg.stations[0]
+                    val nextSt = nextLeg.stations[1]
+                    val distInterchange = haversineDistanceMeters(
+                        currentLocation.latitude, currentLocation.longitude,
+                        interchange.latitude, interchange.longitude
+                    )
+                    val distNext = haversineDistanceMeters(
+                        currentLocation.latitude, currentLocation.longitude,
+                        nextSt.latitude, nextSt.longitude
+                    )
+                    // Auto-advance once user departs interchange platform along the new Metro line
+                    if (distInterchange > 150.0 && distNext < distInterchange) {
+                        WakeMeAlarmController.stopAlert(this)
+                        hasAlertFired = false
+                        metroInterchangePrompt.value = null
+                        enterMetroRideStage(plan, nextIdx)
+                    }
+                }
+            }
+
+            MetroJourneyStage.ON_METRO_LEG -> {
+                val legIdx = currentMetroLegIndex.value
+                val leg = plan.legs.getOrNull(legIdx) ?: return
+                val isInterchangeLeg = legIdx < plan.legs.size - 1
+                val effectiveStopsBefore = if (isInterchangeLeg) {
+                    config.metroStopsBeforeAlert.coerceIn(1, leg.stopsCount.coerceAtLeast(1))
+                } else {
+                    config.metroStopsBeforeAlert.coerceIn(0, leg.stopsCount)
+                }
+
+                val progress = MetroRoutePlanner.evaluateMetroLegProgress(
+                    lat = currentLocation.latitude,
+                    lon = currentLocation.longitude,
+                    leg = leg,
+                    stopsBeforeAlert = effectiveStopsBefore,
+                    minStationIndex = matchedMetroStationIndex
+                )
+
+                matchedMetroStationIndex = progress.currentStationIndex
+                metroStopsRemaining.value = progress.stopsRemaining
+                metroCurrentStationName.value = progress.currentStation.name
+                metroNextStationName.value = progress.nextStation?.name ?: leg.alightingStation.name
+                metroAlertStationName.value = progress.alertStopStation.name
+                liveDistanceMeters.value = progress.distanceToEndMeters
+
+                if (initialDistanceMeters.value == null || initialDistanceMeters.value == 0f) {
+                    initialDistanceMeters.value = progress.distanceToEndMeters.coerceAtLeast(1f)
+                }
+                if (speedMps > 1.0f) {
+                    estimatedEtaMinutes.value = ((progress.distanceToEndMeters / speedMps) / 60).toInt().coerceAtLeast(1)
+                }
+
+                val nextName = progress.nextStation?.name ?: leg.alightingStation.name
+                updateNotification("🚇 ${leg.lineName}: ${progress.stopsRemaining} stops left (Next: $nextName)")
+
+                if (progress.shouldTriggerStopAlert) {
+                    if (isInterchangeLeg) {
+                        val nextLeg = plan.legs[legIdx + 1]
+                        if (hasInterchangeAlertFiredForLeg != legIdx) {
+                            hasInterchangeAlertFiredForLeg = legIdx
+                            val interchangeName = leg.alightingStation.name
+                            val prompt = "Change at $interchangeName ➔ ${nextLeg.lineName} Line (${nextLeg.directionLabel})"
+                            metroInterchangePrompt.value = prompt
+                            triggerInterchangeAlert(config, interchangeName, prompt)
+                        }
+                        if (progress.distanceToEndMeters <= 150f) {
+                            metroStage.value = MetroJourneyStage.INTERCHANGE_WAIT
+                        }
+                    } else {
+                        if (!hasAlertFired) {
+                            hasAlertFired = true
+                            val targetLabel = if (effectiveStopsBefore == 0) {
+                                "${leg.alightingStation.name} Metro"
+                            } else {
+                                "${leg.alightingStation.name} ($effectiveStopsBefore stop${if (effectiveStopsBefore > 1) "s" else ""} away)"
+                            }
+                            triggerArrivalAlert(config.copy(name = targetLabel), progress.distanceToEndMeters)
+                        }
+                    }
+                }
+            }
+
+            MetroJourneyStage.NONE -> Unit
+        }
+    }
+
+    private fun postBoardingReachedNotification(boardingName: String, exitName: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
+            .setContentTitle("Reached $boardingName Metro")
+            .setContentText("Board the train! Now tracking Metro stops to $exitName.")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ARRIVAL_ID, notif)
+    }
+
+    private fun triggerInterchangeAlert(config: DestinationConfig, interchangeName: String, prompt: String) {
+        WakeMeAlarmController.triggerAlert(applicationContext, config)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
+            .setContentTitle("🔄 Line Change Ahead: $interchangeName")
+            .setContentText(prompt)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ARRIVAL_ID, notif)
+        updateNotification("🔄 $prompt")
     }
 
     private fun triggerArrivalAlert(config: DestinationConfig, finalDistance: Float) {
@@ -396,6 +609,15 @@ class WakeMeTrackingService : Service() {
         currentLocationPoint.value = null
         activeConfig.value = null
         matchedPolylineSegmentIndex = 0
+        matchedMetroStationIndex = 0
+        metroStage.value = MetroJourneyStage.NONE
+        activeMetroPlan.value = null
+        currentMetroLegIndex.value = 0
+        metroStopsRemaining.value = null
+        metroCurrentStationName.value = null
+        metroNextStationName.value = null
+        metroAlertStationName.value = null
+        metroInterchangePrompt.value = null
     }
 
     override fun onDestroy() {
@@ -421,6 +643,10 @@ class WakeMeTrackingService : Service() {
         const val EXTRA_MODE = "extra_mode"
         const val EXTRA_ROUTING = "extra_routing"
         const val EXTRA_NOTE = "extra_note"
+        const val EXTRA_METRO_STOPS_BEFORE = "extra_metro_stops_before"
+        const val EXTRA_METRO_BOARDING_LAT = "extra_metro_boarding_lat"
+        const val EXTRA_METRO_BOARDING_LON = "extra_metro_boarding_lon"
+        const val EXTRA_METRO_BOARDING_NAME = "extra_metro_boarding_name"
 
         val liveDistanceMeters = MutableStateFlow<Float?>(null) // Real Road Driving Distance
         val straightLineDistanceMeters = MutableStateFlow<Float?>(null) // Geodesic straight-line
@@ -438,8 +664,61 @@ class WakeMeTrackingService : Service() {
         val isTracking = MutableStateFlow(false)
         val activeConfig = MutableStateFlow<DestinationConfig?>(null)
 
+        // 2-Stage Stop-to-Stop Metro StateFlows
+        val metroStage = MutableStateFlow(MetroJourneyStage.NONE)
+        val activeMetroPlan = MutableStateFlow<MetroJourneyPlan?>(null)
+        val currentMetroLegIndex = MutableStateFlow(0)
+        val metroStopsRemaining = MutableStateFlow<Int?>(null)
+        val metroCurrentStationName = MutableStateFlow<String?>(null)
+        val metroNextStationName = MutableStateFlow<String?>(null)
+        val metroAlertStationName = MutableStateFlow<String?>(null)
+        val metroInterchangePrompt = MutableStateFlow<String?>(null)
+
         @Volatile
         private var matchedPolylineSegmentIndex = 0
+        @Volatile
+        private var matchedMetroStationIndex = 0
+        @Volatile
+        private var hasAlertFired = false
+        @Volatile
+        private var hasInterchangeAlertFiredForLeg = -1
+
+        fun enterMetroRideStage(plan: MetroJourneyPlan, legIndex: Int) {
+            val leg = plan.legs.getOrNull(legIndex) ?: return
+            currentMetroLegIndex.value = legIndex
+            matchedMetroStationIndex = 0
+            hasAlertFired = false
+            metroStage.value = MetroJourneyStage.ON_METRO_LEG
+            routePolyline.value = leg.trackPoints
+            alternativeRoutes.value = emptyList()
+            isRoadRouteActive.value = false
+            metroStopsRemaining.value = leg.stopsCount
+            metroCurrentStationName.value = leg.boardingStation.name
+            metroNextStationName.value = leg.stations.getOrNull(1)?.name ?: leg.alightingStation.name
+            val cfg = activeConfig.value
+            val stopsBefore = if (legIndex < plan.legs.size - 1) {
+                (cfg?.metroStopsBeforeAlert ?: 1).coerceIn(1, leg.stopsCount.coerceAtLeast(1))
+            } else {
+                (cfg?.metroStopsBeforeAlert ?: 1).coerceIn(0, leg.stopsCount)
+            }
+            metroAlertStationName.value = plan.getAlertStopForLeg(legIndex, stopsBefore)?.name
+            initialDistanceMeters.value = null
+        }
+
+        fun confirmBoardedMetro() {
+            val plan = activeMetroPlan.value ?: return
+            enterMetroRideStage(plan, 0)
+        }
+
+        fun confirmLineSwitched(context: Context) {
+            val plan = activeMetroPlan.value ?: return
+            val nextIdx = currentMetroLegIndex.value + 1
+            if (nextIdx < plan.legs.size) {
+                WakeMeAlarmController.stopAlert(context)
+                metroInterchangePrompt.value = null
+                enterMetroRideStage(plan, nextIdx)
+            }
+        }
 
         fun start(context: Context, config: DestinationConfig) {
             val intent = Intent(context, WakeMeTrackingService::class.java).apply {
@@ -452,6 +731,10 @@ class WakeMeTrackingService : Service() {
                 putExtra(EXTRA_MODE, config.alertMode.name)
                 putExtra(EXTRA_ROUTING, config.audioRouting.name)
                 putExtra(EXTRA_NOTE, config.reminderNote)
+                putExtra(EXTRA_METRO_STOPS_BEFORE, config.metroStopsBeforeAlert)
+                config.metroBoardingLat?.let { putExtra(EXTRA_METRO_BOARDING_LAT, it) }
+                config.metroBoardingLon?.let { putExtra(EXTRA_METRO_BOARDING_LON, it) }
+                config.metroBoardingName?.let { putExtra(EXTRA_METRO_BOARDING_NAME, it) }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
