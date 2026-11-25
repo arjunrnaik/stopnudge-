@@ -22,9 +22,6 @@ import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.VehicleMode
-import com.wakeme.app.data.MultimodalTransitPlanner
-import com.wakeme.app.data.MultimodalTripPlan
-import com.wakeme.app.data.MultimodalLegType
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.GoogleMapsUrlParser
 import kotlinx.coroutines.Dispatchers
@@ -38,11 +35,6 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
-
-enum class MultimodalAlarmTarget {
-    DEBOARDING_STATION,
-    FINAL_DESTINATION
-}
 
 data class SelectedBusStop(
     val name: String,
@@ -67,32 +59,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     // Vehicle Mode State (Car / Cab vs City Bus)
     private val _selectedVehicleMode = MutableStateFlow(VehicleMode.METRO)
     val selectedVehicleMode: StateFlow<VehicleMode> = _selectedVehicleMode.asStateFlow()
-
-    // Multimodal Trip Planning State (Google Maps Style: Walk + Metro + Cab/Bus)
-    private val _multimodalPlan = MutableStateFlow<MultimodalTripPlan?>(null)
-    val multimodalPlan: StateFlow<MultimodalTripPlan?> = _multimodalPlan.asStateFlow()
-
-    private val _multimodalAlarmTarget = MutableStateFlow(MultimodalAlarmTarget.DEBOARDING_STATION)
-    val multimodalAlarmTarget: StateFlow<MultimodalAlarmTarget> = _multimodalAlarmTarget.asStateFlow()
-
-    fun setMultimodalAlarmTarget(target: MultimodalAlarmTarget) {
-        _multimodalAlarmTarget.value = target
-        if (target == MultimodalAlarmTarget.DEBOARDING_STATION) {
-            _radiusMeters.value = 800f
-            _userMessage.tryEmit("⏰ Alarm set for Metro Deboarding Station")
-        } else {
-            _radiusMeters.value = 1000f
-            _userMessage.tryEmit("⏰ Alarm set for Final Destination")
-        }
-    }
-
-    fun updateMultimodalPlan(originGeo: GeoPoint? = null) {
-        val origin = originGeo ?: defaultCenter
-        val dest = _targetLocation.value
-        val destName = _targetName.value
-        val plan = MultimodalTransitPlanner.planJourney(origin, dest, destName)
-        _multimodalPlan.value = plan
-    }
 
     // BMTC Bus Category State (AC Volvo vs Normal Sarige vs Electric EV)
     private val _selectedBusCategory = MutableStateFlow(BmtcBusCategory.NORMAL_SARIGE)
@@ -239,12 +205,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _selectedVehicleMode.value = mode
         _alertMode.value = mode.alertMode
         _radiusMeters.value = mode.defaultRadiusMeters
-        if (mode == VehicleMode.MULTIMODAL) {
-            updateMultimodalPlan()
-            _userMessage.tryEmit("🔀 Mixed transit route: Walk + Metro + Cab")
-        } else if (mode == VehicleMode.BUS) {
-            _userMessage.tryEmit("🚌 BMTC bus network will be added in a future update. Using Namma Metro or Mixed Transit recommended.")
-        }
     }
 
     fun selectFavorite(fav: FavoritePlaceEntity) {
@@ -260,7 +220,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: Exception) {}
         _reminderNote.value = fav.reminderNote
         _cameraMoveTarget.tryEmit(geo)
-        updateMultimodalPlan()
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
@@ -280,7 +239,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         } catch (_: Exception) {}
         _reminderNote.value = trip.reminderNote
         _cameraMoveTarget.tryEmit(geo)
-        updateMultimodalPlan()
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
@@ -384,7 +342,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         _cameraMoveTarget.tryEmit(geoPoint)
-        updateMultimodalPlan()
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
@@ -398,7 +355,6 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(name)
         }
         _cameraMoveTarget.tryEmit(geoPoint)
-        updateMultimodalPlan()
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
     }
 
@@ -417,8 +373,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 val name = parsed.name ?: "Shared Google Maps Location"
                 _targetName.value = name
                 _cameraMoveTarget.tryEmit(geoPoint)
-                updateMultimodalPlan()
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                _currentScreen.value = WakeMeScreen.MODE_SELECTION
                 _userMessage.tryEmit("Destination: $name")
             } else {
                 // Try searching for place name extracted from text or URL
@@ -433,8 +388,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                             _targetLocation.value = geoPoint
                             _targetName.value = top.title
                             _cameraMoveTarget.tryEmit(geoPoint)
-                            updateMultimodalPlan()
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                            _currentScreen.value = WakeMeScreen.MODE_SELECTION
                             _userMessage.tryEmit("Destination: ${top.title}")
                             resolved = true
                         }
@@ -563,19 +517,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun getDestinationConfig(): DestinationConfig {
         val target = _targetLocation.value
-        val isMultimodal = _selectedVehicleMode.value == VehicleMode.MULTIMODAL
-        val plan = _multimodalPlan.value
-
-        val (finalTarget, finalName) = if (isMultimodal && _multimodalAlarmTarget.value == MultimodalAlarmTarget.DEBOARDING_STATION && plan != null && !plan.isSameStationCatchment) {
-            Pair(plan.exitStation.geoPoint, "Deboard at ${plan.exitStation.name} Metro")
-        } else {
-            Pair(target, _targetName.value)
-        }
-
         return DestinationConfig(
-            name = finalName,
-            latitude = finalTarget.latitude,
-            longitude = finalTarget.longitude,
+            name = _targetName.value,
+            latitude = target.latitude,
+            longitude = target.longitude,
             radiusMeters = _radiusMeters.value,
             vehicleMode = _selectedVehicleMode.value,
             alertMode = _alertMode.value,
