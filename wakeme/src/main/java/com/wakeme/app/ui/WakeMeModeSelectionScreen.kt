@@ -29,6 +29,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.wakeme.app.alarm.WakeMeAlarmController
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.VehicleMode
+import com.wakeme.app.data.MultimodalLegType
+import com.wakeme.app.data.MultimodalTripPlan
+import com.wakeme.app.ui.MultimodalAlarmTarget
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import com.wakeme.app.data.local.transit.BmtcBusCategory
@@ -66,6 +69,8 @@ fun WakeMeModeSelectionScreen(
     val audioRouting by viewModel.audioRouting.collectAsState()
     val vibrateEnabled by viewModel.vibrateEnabled.collectAsState()
     val selectedBusCategory by viewModel.selectedBusCategory.collectAsState()
+    val multimodalPlan by viewModel.multimodalPlan.collectAsState()
+    val multimodalAlarmTarget by viewModel.multimodalAlarmTarget.collectAsState()
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
 
@@ -236,10 +241,18 @@ fun WakeMeModeSelectionScreen(
 
                             val isBusMode = selectedVehicleMode == VehicleMode.BUS
                             val isMetroMode = selectedVehicleMode == VehicleMode.METRO
+                            val isMultimodal = selectedVehicleMode == VehicleMode.MULTIMODAL
                             val themeColorInt = when {
                                 isBusMode -> selectedBusCategory.primaryColorInt
                                 isMetroMode -> NammaMetroNetwork.COLOR_PURPLE
+                                isMultimodal -> 0xFF7B1FA2.toInt() // Deep Violet / Indigo
                                 else -> 0xFF1E88E5.toInt()
+                            }
+
+                            val alarmTargetPoint = if (isMultimodal && multimodalAlarmTarget == MultimodalAlarmTarget.DEBOARDING_STATION && multimodalPlan != null && !multimodalPlan!!.isSameStationCatchment) {
+                                multimodalPlan!!.exitStation.geoPoint
+                            } else {
+                                targetLocation
                             }
 
                             val destMarker = Marker(this).apply {
@@ -248,14 +261,27 @@ fun WakeMeModeSelectionScreen(
                                 icon = when {
                                     isBusMode -> LocationMarkerUtils.createTwoToneBusBadgeDrawable(ctx, selectedBusCategory, sizeDp = 30)
                                     isMetroMode -> LocationMarkerUtils.createStationMarkerDrawable(ctx, targetName, NammaMetroNetwork.COLOR_PURPLE)
+                                    isMultimodal -> LocationMarkerUtils.createStationMarkerDrawable(ctx, targetName, 0xFF7B1FA2.toInt())
                                     else -> LocationMarkerUtils.createModernPinDrawable(ctx)
                                 }
                                 setAnchor(Marker.ANCHOR_CENTER, if (isBusMode) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
                             }
                             overlays.add(destMarker)
 
+                            // Exit Station Marker for Multimodal mode
+                            if (isMultimodal && multimodalPlan != null && !multimodalPlan!!.isSameStationCatchment) {
+                                val exitStation = multimodalPlan!!.exitStation
+                                val exitMarker = Marker(this).apply {
+                                    position = exitStation.geoPoint
+                                    title = "Deboard: ${exitStation.name} Metro"
+                                    icon = LocationMarkerUtils.createStationMarkerDrawable(ctx, exitStation.name, NammaMetroNetwork.COLOR_PURPLE)
+                                    setAnchor(Marker.ANCHOR_CENTER, LocationMarkerUtils.getStationMarkerAnchorY(ctx))
+                                }
+                                overlays.add(exitMarker)
+                            }
+
                             val geofenceCircle = Polygon(this).apply {
-                                points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                                points = Polygon.pointsAsCircle(alarmTargetPoint, radiusMeters.toDouble())
                                 fillPaint.color = (0x33000000 or (themeColorInt and 0x00FFFFFF))
                                 outlinePaint.color = themeColorInt
                                 outlinePaint.strokeWidth = 3.5f
@@ -264,10 +290,16 @@ fun WakeMeModeSelectionScreen(
                         }
                     },
                     update = { map ->
-                        map.controller.setCenter(targetLocation)
+                        val isMultimodal = selectedVehicleMode == VehicleMode.MULTIMODAL
+                        val alarmTargetPoint = if (isMultimodal && multimodalAlarmTarget == MultimodalAlarmTarget.DEBOARDING_STATION && multimodalPlan != null && !multimodalPlan!!.isSameStationCatchment) {
+                            multimodalPlan!!.exitStation.geoPoint
+                        } else {
+                            targetLocation
+                        }
+                        map.controller.setCenter(alarmTargetPoint)
                         val circle = map.overlays.filterIsInstance<Polygon>().firstOrNull()
                         if (circle != null) {
-                            circle.points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
+                            circle.points = Polygon.pointsAsCircle(alarmTargetPoint, radiusMeters.toDouble())
                             map.invalidate()
                         }
                     },
@@ -275,141 +307,370 @@ fun WakeMeModeSelectionScreen(
                 )
             }
 
-            // 3. Travel Mode Selector: 3-Button Row Side-by-Side (from sketch: [Bus] [Metro] [Direction])
+            // 3. Travel Ways & Multimodal Mixed Transit (Google Maps Style)
             Text(
-                text = "TRAVEL MODE",
+                text = "HOW DO YOU WANT TO TRAVEL?",
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            Row(
+            // Grid of 4 Ways to Travel:
+            // Row 1: [ 🚕 Cab & Auto ] [ 🚇 Namma Metro ]
+            // Row 2: [ 🔀 Mixed Mode (Google Maps) ] [ 🚌 City Bus (Future) ]
+            Column(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Metro Button (Primary Mode)
-                val isMetro = selectedVehicleMode == VehicleMode.METRO
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.METRO) },
-                    modifier = Modifier.weight(1.1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isMetro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isMetro) 2.dp else 1.dp,
-                        if (isMetro) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
+                // Row 1
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    // Option 1: Cab & Booking Transport
+                    val isCab = selectedVehicleMode == VehicleMode.CAR
+                    Surface(
+                        onClick = { viewModel.setVehicleMode(VehicleMode.CAR) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isCab) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isCab) 2.dp else 1.dp,
+                            if (isCab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        )
                     ) {
-                        Text("🚇", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Namma Metro", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Active Lines", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("🚕", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Cab & Auto", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Uber / Ola / Rapido", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    // Option 2: Namma Metro
+                    val isMetro = selectedVehicleMode == VehicleMode.METRO
+                    Surface(
+                        onClick = { viewModel.setVehicleMode(VehicleMode.METRO) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isMetro) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isMetro) 2.dp else 1.dp,
+                            if (isMetro) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("🚇", fontSize = 24.sp)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text("Namma Metro", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Active Rapid Lines", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
 
-                // Direct Road Button
-                val isCar = selectedVehicleMode == VehicleMode.CAR
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.CAR) },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isCar) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isCar) 2.dp else 1.dp,
-                        if (isCar) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
+                // Row 2
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    // Option 3: Multimodal Mixed Transit (Google Maps Style: Walk + Metro + Cab/Bus)
+                    val isMixed = selectedVehicleMode == VehicleMode.MULTIMODAL
+                    Surface(
+                        onClick = { viewModel.setVehicleMode(VehicleMode.MULTIMODAL) },
+                        modifier = Modifier.weight(1.1f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isMixed) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isMixed) 2.dp else 1.dp,
+                            if (isMixed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        )
                     ) {
-                        Text("🚗", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("Direct Road", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("Cab / Auto", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🔀", fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "Google Maps",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Mixed Transit", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("Walk + Metro + Cab", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
-                }
 
-                // City Bus Button (Paused / Coming Soon)
-                val isBus = selectedVehicleMode == VehicleMode.BUS
-                Surface(
-                    onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
-                    modifier = Modifier.weight(0.9f),
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(
-                        if (isBus) 2.dp else 1.dp,
-                        if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(vertical = 12.dp, horizontal = 6.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    // Option 4: City Bus (BMTC - In Future)
+                    val isBus = selectedVehicleMode == VehicleMode.BUS
+                    Surface(
+                        onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
+                        modifier = Modifier.weight(0.9f),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isBus) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        border = BorderStroke(
+                            if (isBus) 2.dp else 1.dp,
+                            if (isBus) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        )
                     ) {
-                        Text("🚌", fontSize = 24.sp)
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("BMTC (Soon)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 8.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("🚌", fontSize = 20.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFFFF9800).copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "In Future",
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("BMTC Details", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
 
-            // 3b. BMTC Bus 50/50 Livery Divisions (Dark Blue AC / Normal Blue Sarige / Light Blue EV)
-            AnimatedVisibility(visible = selectedVehicleMode == VehicleMode.BUS) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    Text(
-                        text = "BMTC BUS DIVISION (50/50 LIVERY)",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = selectedBusCategory.composeColor
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+            // 3b. Multimodal Mixed Transit Details Card (Google Maps Style)
+            AnimatedVisibility(visible = selectedVehicleMode == VehicleMode.MULTIMODAL) {
+                val plan = multimodalPlan
+                if (plan != null) {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        border = BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
                     ) {
-                        BmtcBusCategory.values().forEach { cat ->
-                            val isSelected = selectedBusCategory == cat
-                            Surface(
-                                onClick = { viewModel.setBusCategory(cat) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) cat.composeColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(
-                                    if (isSelected) 2.dp else 1.dp,
-                                    if (isSelected) cat.composeColor else MaterialTheme.colorScheme.outlineVariant
-                                )
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            // Header: Summary Chips & Total Time
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text(
+                                    text = "🔀 JOURNEY BREAKDOWN",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "⏱️ ~${plan.totalDurationMinutes} mins total",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Flow chip: e.g. 🚶 6m ➔ 🚇 22m ➔ 🚶 4m
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
+                            ) {
+                                Text(
+                                    text = plan.summary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+
+                            // Step-by-Step Multimodal Legs (Google Maps Style)
+                            plan.legs.forEachIndexed { idx, leg ->
                                 Row(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.Top
                                 ) {
-                                    // 50/50 two-tone visual indicator dot
-                                    Box(
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .clip(CircleShape)
-                                            .background(cat.composeColor)
-                                            .border(1.dp, Color.White, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = cat.shortCode,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) cat.composeColor else MaterialTheme.colorScheme.onSurface
-                                    )
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = when (leg.type) {
+                                            MultimodalLegType.WALK -> Color(0xFF4CAF50)
+                                            MultimodalLegType.METRO -> NammaMetroNetwork.COLOR_PURPLE
+                                            MultimodalLegType.CAB -> Color(0xFF1976D2)
+                                            MultimodalLegType.BUS -> Color(0xFF00838F)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(leg.type.iconEmoji, fontSize = 14.sp)
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = leg.title,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = leg.subtitle,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp), color = MaterialTheme.colorScheme.outlineVariant)
+
+                            // Multimodal Alarm Target Switcher
+                            Text(
+                                text = "COMMUTE ALARM WAKE-UP TARGET:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+
+                            // Option A: Metro Deboarding Station
+                            val isDeboardTarget = multimodalAlarmTarget == MultimodalAlarmTarget.DEBOARDING_STATION
+                            Surface(
+                                onClick = { viewModel.setMultimodalAlarmTarget(MultimodalAlarmTarget.DEBOARDING_STATION) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isDeboardTarget) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    if (isDeboardTarget) 1.5.dp else 1.dp,
+                                    if (isDeboardTarget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = isDeboardTarget,
+                                        onClick = { viewModel.setMultimodalAlarmTarget(MultimodalAlarmTarget.DEBOARDING_STATION) }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "🚇 Wake me before Deboarding Metro (${plan.exitStation.name})",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "Alarm sounds 800m before your exit station so you never miss your stop.",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Option B: Final Destination
+                            val isFinalTarget = multimodalAlarmTarget == MultimodalAlarmTarget.FINAL_DESTINATION
+                            Surface(
+                                onClick = { viewModel.setMultimodalAlarmTarget(MultimodalAlarmTarget.FINAL_DESTINATION) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isFinalTarget) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                                border = BorderStroke(
+                                    if (isFinalTarget) 1.5.dp else 1.dp,
+                                    if (isFinalTarget) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    RadioButton(
+                                        selected = isFinalTarget,
+                                        onClick = { viewModel.setMultimodalAlarmTarget(MultimodalAlarmTarget.FINAL_DESTINATION) }
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Column {
+                                        Text(
+                                            text = "📍 Wake me before Final Destination ($targetName)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                        Text(
+                                            text = "Alarm triggers when arriving at your final destination.",
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "💡 BMTC feeder bus schedules will be integrated into multimodal routes in an upcoming release.",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                            )
                         }
+                    }
+                }
+            }
+
+            // 3c. City Bus (In Future Update Notice)
+            AnimatedVisibility(visible = selectedVehicleMode == VehicleMode.BUS) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = Color(0xFFFF9800).copy(alpha = 0.10f),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.4f))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🚌", fontSize = 20.sp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "BMTC City Bus Integration",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = Color(0xFFE65100)
+                            )
+                        }
+                        Text(
+                            text = "We are refining the BMTC bus network dataset and will add live bus stops, routes, and timings in an upcoming update.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "👉 For daily commuting right now, please use Namma Metro or Mixed Transit (Walk + Metro + Cab).",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }

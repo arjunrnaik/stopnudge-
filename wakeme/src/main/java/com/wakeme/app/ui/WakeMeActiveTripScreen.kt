@@ -247,6 +247,22 @@ fun WakeMeActiveTripScreen(
                         )
                     }
 
+                    if (selectedVehicleMode == VehicleMode.MULTIMODAL) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+                            modifier = Modifier.padding(top = 4.dp)
+                        ) {
+                            Text(
+                                text = "🔀 Mixed Mode: Walk + Metro + Cab",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(10.dp))
 
                     // Live Distance Countdown (Real road or approximate)
