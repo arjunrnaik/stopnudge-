@@ -35,5 +35,13 @@ enum class VehicleMode(
         alertMode = AlertMode.GENTLE_REMINDER,
         subtitle = "Personal car, Uber, Ola, Auto or direct route.",
         alertTag = "🔔 Gentle Reminder"
-    )
+    );
+
+    /**
+     * Road transport modes (Cab, Auto, Car) trigger reminders based on actual remaining
+     * road distance to avoid false early alarms across flyovers, dividers, or U-turns.
+     * Rail/station modes (Metro) use a station-centric geofence radius.
+     */
+    val usesRoadDistanceTrigger: Boolean
+        get() = this == CAR
 }

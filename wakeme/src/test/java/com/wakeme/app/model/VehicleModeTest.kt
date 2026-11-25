@@ -1,7 +1,9 @@
 package com.wakeme.app.model
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VehicleModeTest {
@@ -46,5 +48,12 @@ class VehicleModeTest {
         assertEquals(VehicleMode.BUS, config.vehicleMode)
         assertEquals("Silk Board", config.name)
         assertNotNull(config.vehicleMode.iconEmoji)
+    }
+
+    @Test
+    fun roadDistanceTrigger_enabledOnlyForCarMode() {
+        assertTrue(VehicleMode.CAR.usesRoadDistanceTrigger)
+        assertFalse(VehicleMode.METRO.usesRoadDistanceTrigger)
+        assertFalse(VehicleMode.BUS.usesRoadDistanceTrigger)
     }
 }

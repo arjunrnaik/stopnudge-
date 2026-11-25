@@ -1,6 +1,7 @@
 package com.wakeme.app.data
 
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.model.VehicleMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -15,6 +16,18 @@ data class NearestMetroRoadResult(
     val durationSeconds: Float,
     val routePoints: List<GeoPoint> = emptyList(),
     val isRoadAccurate: Boolean = true
+)
+
+data class PolylineProgress(
+    val remainingMeters: Float,
+    val offRouteMeters: Double,
+    val matchedSegmentIndex: Int
+)
+
+data class ArrivalTriggerDecision(
+    val shouldTrigger: Boolean,
+    val effectiveDistanceMeters: Float,
+    val reason: String
 )
 
 data class RouteCandidate(
@@ -250,6 +263,172 @@ object RoadRoutingRepository {
             routePoints = directRoute,
             isRoadAccurate = false
         )
+    }
+
+    /**
+     * Evaluates whether the arrival reminder should trigger based on the vehicle mode.
+     * - Cab / Auto (road modes): Triggers strictly on remaining road distance, with a
+     *   micro-arrival gate safety net (120m) so pins slightly off the street never miss.
+     * - Metro / Bus: Triggers on station-centric radius geofence.
+     */
+    fun evaluateArrivalTrigger(
+        vehicleMode: VehicleMode,
+        targetThresholdMeters: Float,
+        straightLineMeters: Float,
+        roadDistanceMeters: Float?,
+        hasActiveRoadRoute: Boolean,
+        microArrivalGateMeters: Float = 120f
+    ): ArrivalTriggerDecision {
+        if (!vehicleMode.usesRoadDistanceTrigger) {
+            val trigger = straightLineMeters <= targetThresholdMeters
+            return ArrivalTriggerDecision(
+                shouldTrigger = trigger,
+                effectiveDistanceMeters = straightLineMeters,
+                reason = if (trigger) "Entered ${targetThresholdMeters.toInt()}m station radius" else "Outside station radius"
+            )
+        }
+
+        // Road-based trigger for Cab / Auto / Direct Road
+        if (roadDistanceMeters != null && hasActiveRoadRoute) {
+            val hitRoadThreshold = roadDistanceMeters <= targetThresholdMeters
+            val hitMicroGate = straightLineMeters <= microArrivalGateMeters
+            return ArrivalTriggerDecision(
+                shouldTrigger = hitRoadThreshold || hitMicroGate,
+                effectiveDistanceMeters = roadDistanceMeters,
+                reason = when {
+                    hitRoadThreshold -> "Road distance ${roadDistanceMeters.toInt()}m <= ${targetThresholdMeters.toInt()}m"
+                    hitMicroGate -> "Arrived at destination gate (${straightLineMeters.toInt()}m straight-line)"
+                    else -> "${roadDistanceMeters.toInt()}m remaining along road"
+                }
+            )
+        }
+
+        // Offline / fallback road curvature estimate (1.28x urban winding factor)
+        val estimatedRoad = straightLineMeters * 1.28f
+        val hitFallback = estimatedRoad <= targetThresholdMeters || straightLineMeters <= microArrivalGateMeters
+        return ArrivalTriggerDecision(
+            shouldTrigger = hitFallback,
+            effectiveDistanceMeters = estimatedRoad,
+            reason = if (hitFallback) "Estimated road distance ${estimatedRoad.toInt()}m <= ${targetThresholdMeters.toInt()}m" else "${estimatedRoad.toInt()}m estimated road remaining"
+        )
+    }
+
+    /**
+     * Computes remaining road distance along an active polyline from a GPS fix.
+     * Prefers forward progression from [minSegmentIndex] within 45m cross-track error
+     * to prevent snapping across concrete dividers onto opposite U-turn lanes.
+     */
+    fun computeRemainingRoadDistanceAlongPolyline(
+        lat: Double,
+        lon: Double,
+        polyline: List<GeoPoint>,
+        minSegmentIndex: Int = 0
+    ): PolylineProgress? {
+        if (polyline.size < 2) return null
+
+        val safeStart = minSegmentIndex.coerceIn(0, polyline.size - 2)
+
+        fun findBestInRange(startIdx: Int, endIdxInclusive: Int): Triple<Int, Double, Double> {
+            var bestIdx = startIdx
+            var bestDist = Double.MAX_VALUE
+            var bestT = 0.0
+            for (i in startIdx..endIdxInclusive) {
+                val p1 = polyline[i]
+                val p2 = polyline[i + 1]
+                val (dist, t) = projectOntoSegment(lat, lon, p1.latitude, p1.longitude, p2.latitude, p2.longitude)
+                if (dist < bestDist) {
+                    bestDist = dist
+                    bestIdx = i
+                    bestT = t
+                }
+            }
+            return Triple(bestIdx, bestDist, bestT)
+        }
+
+        // 1. Search local forward window (~25 segments or until end) first to stay on current lane
+        val localEnd = (safeStart + 25).coerceAtMost(polyline.size - 2)
+        val localMatch = findBestInRange(safeStart, localEnd)
+
+        val (matchedIdx, offRouteDist, matchedT) = if (localMatch.second <= 45.0) {
+            localMatch
+        } else {
+            // Fall back to global search across entire polyline
+            findBestInRange(0, polyline.size - 2)
+        }
+
+        val segStart = polyline[matchedIdx]
+        val segEnd = polyline[matchedIdx + 1]
+        val projLat = segStart.latitude + matchedT * (segEnd.latitude - segStart.latitude)
+        val projLon = segStart.longitude + matchedT * (segEnd.longitude - segStart.longitude)
+
+        var remaining = haversineDistanceMeters(projLat, projLon, segEnd.latitude, segEnd.longitude)
+        for (k in (matchedIdx + 1) until (polyline.size - 1)) {
+            val a = polyline[k]
+            val b = polyline[k + 1]
+            remaining += haversineDistanceMeters(a.latitude, a.longitude, b.latitude, b.longitude)
+        }
+
+        return PolylineProgress(
+            remainingMeters = remaining.toFloat(),
+            offRouteMeters = offRouteDist,
+            matchedSegmentIndex = matchedIdx
+        )
+    }
+
+    /**
+     * Extracts the final [alertMeters] stretch of a road polyline leading up to the destination,
+     * so maps can visually highlight where along the road the alarm will trigger.
+     */
+    fun extractFinalAlertSegment(points: List<GeoPoint>, alertMeters: Float): List<GeoPoint> {
+        if (points.size < 2 || alertMeters <= 0f) return emptyList()
+
+        val reversedResult = mutableListOf(points.last())
+        var accumulated = 0.0
+
+        for (i in points.size - 1 downTo 1) {
+            val endPt = points[i]
+            val startPt = points[i - 1]
+            val segLen = haversineDistanceMeters(startPt.latitude, startPt.longitude, endPt.latitude, endPt.longitude)
+
+            if (accumulated + segLen >= alertMeters) {
+                val needed = alertMeters - accumulated
+                val fracFromEnd = if (segLen > 1e-6) (needed / segLen).coerceIn(0.0, 1.0) else 0.0
+                val cutLat = endPt.latitude + fracFromEnd * (startPt.latitude - endPt.latitude)
+                val cutLon = endPt.longitude + fracFromEnd * (startPt.longitude - endPt.longitude)
+                reversedResult.add(GeoPoint(cutLat, cutLon))
+                break
+            } else {
+                reversedResult.add(startPt)
+                accumulated += segLen
+            }
+        }
+
+        return reversedResult.reversed()
+    }
+
+    private fun projectOntoSegment(
+        lat: Double, lon: Double,
+        lat1: Double, lon1: Double,
+        lat2: Double, lon2: Double
+    ): Pair<Double, Double> {
+        val cosLat = Math.cos(Math.toRadians(lat1))
+        val mPerDegLat = 111320.0
+        val mPerDegLon = 111320.0 * cosLat
+
+        val x = (lon - lon1) * mPerDegLon
+        val y = (lat - lat1) * mPerDegLat
+        val dx = (lon2 - lon1) * mPerDegLon
+        val dy = (lat2 - lat1) * mPerDegLat
+
+        val segLenSq = dx * dx + dy * dy
+        if (segLenSq < 1e-6) {
+            return Pair(Math.hypot(x, y), 0.0)
+        }
+
+        val t = ((x * dx + y * dy) / segLenSq).coerceIn(0.0, 1.0)
+        val projX = t * dx
+        val projY = t * dy
+        return Pair(Math.hypot(x - projX, y - projY), t)
     }
 
     fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {

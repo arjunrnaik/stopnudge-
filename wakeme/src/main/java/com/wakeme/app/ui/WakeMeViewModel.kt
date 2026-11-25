@@ -1,10 +1,15 @@
 package com.wakeme.app.ui
 
+import android.Manifest
 import android.app.Application
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.android.gms.location.LocationServices
 import com.wakeme.app.data.RoadRoutingRepository
+import com.wakeme.app.data.RouteResult
 import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.SearchRepository
@@ -36,6 +41,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import org.osmdroid.util.GeoPoint
 
 data class SelectedBusStop(
@@ -53,6 +60,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val recentTripDao = WakeMeUserDatabase.getInstance(application).recentTripDao()
     private val searchRepository = SearchRepository(application)
     private var searchJob: Job? = null
+    private var previewRouteJob: Job? = null
 
     // Screen Navigation State (Uber/Rapido 3-Step Flow)
     private val _currentScreen = MutableStateFlow(WakeMeScreen.SEARCH_LANDING)
@@ -128,6 +136,15 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _isCalculatingRoadToMetro = MutableStateFlow(false)
     val isCalculatingRoadToMetro: StateFlow<Boolean> = _isCalculatingRoadToMetro.asStateFlow()
+
+    private val _currentOriginLocation = MutableStateFlow<GeoPoint?>(null)
+    val currentOriginLocation: StateFlow<GeoPoint?> = _currentOriginLocation.asStateFlow()
+
+    private val _previewRoadRoute = MutableStateFlow<RouteResult?>(null)
+    val previewRoadRoute: StateFlow<RouteResult?> = _previewRoadRoute.asStateFlow()
+
+    private val _isLoadingPreviewRoute = MutableStateFlow(false)
+    val isLoadingPreviewRoute: StateFlow<Boolean> = _isLoadingPreviewRoute.asStateFlow()
 
     private val _selectedBusStop = MutableStateFlow<SelectedBusStop?>(null)
     val selectedBusStop: StateFlow<SelectedBusStop?> = _selectedBusStop.asStateFlow()
@@ -219,6 +236,75 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _selectedVehicleMode.value = mode
         _alertMode.value = mode.alertMode
         _radiusMeters.value = mode.defaultRadiusMeters
+        if (mode.usesRoadDistanceTrigger) {
+            refreshPreviewRoadRoute()
+        }
+    }
+
+    fun updateCurrentOrigin(point: GeoPoint?) {
+        if (point != null) {
+            _currentOriginLocation.value = point
+        }
+    }
+
+    fun refreshPreviewRoadRoute() {
+        previewRouteJob?.cancel()
+        val dest = _targetLocation.value
+        previewRouteJob = viewModelScope.launch {
+            _isLoadingPreviewRoute.value = true
+            try {
+                val origin = _currentOriginLocation.value ?: fetchLastKnownOrigin()?.also {
+                    _currentOriginLocation.value = it
+                }
+                if (origin != null) {
+                    val route = RoadRoutingRepository.getRoute(
+                        origin.latitude,
+                        origin.longitude,
+                        dest.latitude,
+                        dest.longitude
+                    )
+                    _previewRoadRoute.value = route
+                } else {
+                    _previewRoadRoute.value = null
+                }
+            } catch (_: Exception) {
+                _previewRoadRoute.value = null
+            } finally {
+                _isLoadingPreviewRoute.value = false
+            }
+        }
+    }
+
+    private suspend fun fetchLastKnownOrigin(): GeoPoint? {
+        val ctx = getApplication<Application>()
+        val hasFine = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) return null
+
+        return suspendCancellableCoroutine { cont ->
+            try {
+                LocationServices.getFusedLocationProviderClient(ctx).lastLocation
+                    .addOnSuccessListener { loc ->
+                        if (cont.isActive) {
+                            cont.resume(loc?.let { GeoPoint(it.latitude, it.longitude) })
+                        }
+                    }
+                    .addOnFailureListener {
+                        if (cont.isActive) cont.resume(null)
+                    }
+            } catch (_: SecurityException) {
+                if (cont.isActive) cont.resume(null)
+            } catch (_: Exception) {
+                if (cont.isActive) cont.resume(null)
+            }
+        }
+    }
+
+    private fun openModeSelectionForTarget(geoPoint: GeoPoint) {
+        _cameraMoveTarget.tryEmit(geoPoint)
+        _previewRoadRoute.value = null
+        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+        refreshPreviewRoadRoute()
     }
 
     fun selectFavorite(fav: FavoritePlaceEntity) {
@@ -233,8 +319,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _audioRouting.value = AudioRouting.valueOf(fav.audioRouting)
         } catch (_: Exception) {}
         _reminderNote.value = fav.reminderNote
-        _cameraMoveTarget.tryEmit(geo)
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+        openModeSelectionForTarget(geo)
     }
 
     fun selectRecentTrip(trip: RecentTripEntity) {
@@ -252,8 +337,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _audioRouting.value = AudioRouting.valueOf(trip.audioRouting)
         } catch (_: Exception) {}
         _reminderNote.value = trip.reminderNote
-        _cameraMoveTarget.tryEmit(geo)
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+        openModeSelectionForTarget(geo)
     }
 
     fun clearRecentTrips() {
@@ -355,8 +439,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(item.subtitle + " " + item.title)
         }
 
-        _cameraMoveTarget.tryEmit(geoPoint)
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+        openModeSelectionForTarget(geoPoint)
     }
 
     fun selectMapPin(geoPoint: GeoPoint, name: String? = null) {
@@ -368,8 +451,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             _selectedVehicleMode.value = VehicleMode.BUS
             _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(name)
         }
-        _cameraMoveTarget.tryEmit(geoPoint)
-        _currentScreen.value = WakeMeScreen.MODE_SELECTION
+        openModeSelectionForTarget(geoPoint)
     }
 
     fun clearSearch() {
@@ -386,8 +468,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 _targetLocation.value = geoPoint
                 val name = parsed.name ?: "Shared Google Maps Location"
                 _targetName.value = name
-                _cameraMoveTarget.tryEmit(geoPoint)
-                _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                openModeSelectionForTarget(geoPoint)
                 _userMessage.tryEmit("Destination: $name")
             } else {
                 // Try searching for place name extracted from text or URL
@@ -401,8 +482,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                             val geoPoint = GeoPoint(top.latitude, top.longitude)
                             _targetLocation.value = geoPoint
                             _targetName.value = top.title
-                            _cameraMoveTarget.tryEmit(geoPoint)
-                            _currentScreen.value = WakeMeScreen.MODE_SELECTION
+                            openModeSelectionForTarget(geoPoint)
                             _userMessage.tryEmit("Destination: ${top.title}")
                             resolved = true
                         }

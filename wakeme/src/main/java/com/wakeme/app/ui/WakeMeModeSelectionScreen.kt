@@ -34,10 +34,11 @@ import androidx.compose.foundation.border
 import com.wakeme.app.data.local.transit.BmtcBusCategory
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.util.LocationMarkerUtils
+import java.util.Locale
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
-import org.osmdroid.views.overlay.Polygon
 
 /**
  * Screen 2: Mode Setup Screen ("After search & I select a place").
@@ -66,8 +67,17 @@ fun WakeMeModeSelectionScreen(
     val audioRouting by viewModel.audioRouting.collectAsState()
     val vibrateEnabled by viewModel.vibrateEnabled.collectAsState()
     val selectedBusCategory by viewModel.selectedBusCategory.collectAsState()
+    val previewRoadRoute by viewModel.previewRoadRoute.collectAsState()
+    val isLoadingPreviewRoute by viewModel.isLoadingPreviewRoute.collectAsState()
+    val isRoadMode = selectedVehicleMode.usesRoadDistanceTrigger
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(targetLocation, selectedVehicleMode) {
+        if (previewRoadRoute == null) {
+            viewModel.refreshPreviewRoadRoute()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -134,8 +144,9 @@ fun WakeMeModeSelectionScreen(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
+                        val actionLabel = if (isRoadMode) "START ROAD ALARM" else "START COMMUTE ALARM"
                         Text(
-                            text = "${selectedVehicleMode.iconEmoji} START COMMUTE ALARM ($radiusLabel)",
+                            text = "${selectedVehicleMode.iconEmoji} $actionLabel ($radiusLabel)",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -206,10 +217,25 @@ fun WakeMeModeSelectionScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val routeSummaryText = when {
+                                isLoadingPreviewRoute -> "Calculating road distance..."
+                                previewRoadRoute != null -> {
+                                    val r = previewRoadRoute!!
+                                    val dText = if (r.distanceMeters >= 1000f) {
+                                        String.format(Locale.US, "%.1f km", r.distanceMeters / 1000f)
+                                    } else {
+                                        "${r.distanceMeters.toInt()} m"
+                                    }
+                                    val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
+                                    "🛣️ $dText by road • ~$minText min"
+                                }
+                                else -> String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude)
+                            }
                             Text(
-                                text = String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude),
+                                text = routeSummaryText,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (previewRoadRoute != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = if (previewRoadRoute != null) FontWeight.SemiBold else FontWeight.Normal,
                                 fontSize = 11.sp
                             )
                         }
@@ -233,43 +259,58 @@ fun WakeMeModeSelectionScreen(
                             setMultiTouchControls(true)
                             controller.setZoom(14.5)
                             controller.setCenter(targetLocation)
-
-                            val isBusMode = selectedVehicleMode == VehicleMode.BUS
-                            val isMetroMode = selectedVehicleMode == VehicleMode.METRO
-                            val themeColorInt = when {
-                                isBusMode -> selectedBusCategory.primaryColorInt
-                                isMetroMode -> NammaMetroNetwork.COLOR_PURPLE
-                                else -> 0xFF1E88E5.toInt()
-                            }
-
-                            val destMarker = Marker(this).apply {
-                                position = targetLocation
-                                title = targetName
-                                icon = when {
-                                    isBusMode -> LocationMarkerUtils.createTwoToneBusBadgeDrawable(ctx, selectedBusCategory, sizeDp = 30)
-                                    isMetroMode -> LocationMarkerUtils.createStationMarkerDrawable(ctx, targetName, NammaMetroNetwork.COLOR_PURPLE)
-                                    else -> LocationMarkerUtils.createModernPinDrawable(ctx)
-                                }
-                                setAnchor(Marker.ANCHOR_CENTER, if (isBusMode) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
-                            }
-                            overlays.add(destMarker)
-
-                            val geofenceCircle = Polygon(this).apply {
-                                points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
-                                fillPaint.color = (0x33000000 or (themeColorInt and 0x00FFFFFF))
-                                outlinePaint.color = themeColorInt
-                                outlinePaint.strokeWidth = 3.5f
-                            }
-                            overlays.add(geofenceCircle)
                         }
                     },
                     update = { map ->
-                        map.controller.setCenter(targetLocation)
-                        val circle = map.overlays.filterIsInstance<Polygon>().firstOrNull()
-                        if (circle != null) {
-                            circle.points = Polygon.pointsAsCircle(targetLocation, radiusMeters.toDouble())
-                            map.invalidate()
+                        val isBusMode = selectedVehicleMode == VehicleMode.BUS
+                        val isMetroMode = selectedVehicleMode == VehicleMode.METRO
+                        val themeColorInt = when {
+                            isBusMode -> selectedBusCategory.primaryColorInt
+                            isMetroMode -> NammaMetroNetwork.COLOR_PURPLE
+                            else -> 0xFF1E88E5.toInt()
                         }
+
+                        map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())
+                        val routePts = if (selectedVehicleMode.usesRoadDistanceTrigger) {
+                            previewRoadRoute?.points.orEmpty()
+                        } else {
+                            emptyList()
+                        }
+
+                        LocationMarkerUtils.updateRoadAndAlertOverlays(
+                            map = map,
+                            vehicleMode = selectedVehicleMode,
+                            targetLocation = targetLocation,
+                            alertDistanceMeters = radiusMeters,
+                            primaryRoutePoints = routePts,
+                            themeColorInt = themeColorInt,
+                            targetName = targetName
+                        )
+
+                        val destMarker = Marker(map).apply {
+                            position = targetLocation
+                            title = targetName
+                            icon = when {
+                                isBusMode -> LocationMarkerUtils.createTwoToneBusBadgeDrawable(map.context, selectedBusCategory, sizeDp = 30)
+                                isMetroMode -> LocationMarkerUtils.createStationMarkerDrawable(map.context, targetName, NammaMetroNetwork.COLOR_PURPLE)
+                                else -> LocationMarkerUtils.createModernPinDrawable(map.context)
+                            }
+                            setAnchor(Marker.ANCHOR_CENTER, if (isBusMode) Marker.ANCHOR_CENTER else Marker.ANCHOR_BOTTOM)
+                        }
+                        map.overlays.add(destMarker)
+
+                        if (selectedVehicleMode.usesRoadDistanceTrigger && routePts.size >= 2) {
+                            map.post {
+                                try {
+                                    map.zoomToBoundingBox(BoundingBox.fromGeoPoints(routePts), true, 60)
+                                } catch (_: Exception) {
+                                    map.controller.setCenter(targetLocation)
+                                }
+                            }
+                        } else {
+                            map.controller.setCenter(targetLocation)
+                        }
+                        map.invalidate()
                     },
                     modifier = Modifier.fillMaxSize()
                 )
@@ -414,13 +455,23 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            // 4. Wake-Up Radius Distance (from sketch: [200] [500] [1k] [2k] + [custom values])
-            Text(
-                text = "WAKE-UP RADIUS",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            // 4. Alert Threshold: Road Distance for Cab/Auto, Radius for Metro
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = if (isRoadMode) "ALERT DISTANCE BY ROAD" else "WAKE-UP RADIUS",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (isRoadMode) {
+                    Text(
+                        text = "Reminders follow real driving roads (no flyover or divider false alarms).",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
 
             val radiusPresets = listOf(200f, 500f, 1000f, 2000f)
             Row(
@@ -534,7 +585,11 @@ fun WakeMeModeSelectionScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            text = "Alarm activates at $radiusLabel perimeter before $targetName",
+                            text = if (isRoadMode) {
+                                "Reminder fires when $radiusLabel of road route remains to $targetName"
+                            } else {
+                                "Alarm activates at $radiusLabel radius before $targetName"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -554,19 +609,26 @@ fun WakeMeModeSelectionScreen(
         AlertDialog(
             onDismissRequest = { showCustomRadiusDialog = false },
             title = {
-                Text("Set Custom Wake-Up Radius", fontWeight = FontWeight.Bold)
+                Text(
+                    if (isRoadMode) "Set Custom Road Alert Distance" else "Set Custom Wake-Up Radius",
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Enter distance in meters (50m to 10,000m):",
+                        text = if (isRoadMode) {
+                            "Enter remaining road distance in meters (50m to 5,000m):"
+                        } else {
+                            "Enter radius distance in meters (50m to 5,000m):"
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedTextField(
                         value = customInput,
                         onValueChange = { customInput = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Radius (meters)") },
+                        label = { Text(if (isRoadMode) "Road distance (meters)" else "Radius (meters)") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth()

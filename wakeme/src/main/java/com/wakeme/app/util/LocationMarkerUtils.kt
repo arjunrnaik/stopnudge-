@@ -2,9 +2,14 @@ package com.wakeme.app.util
 
 import android.content.Context
 import android.graphics.DashPathEffect
+import com.wakeme.app.data.RoadRoutingRepository
+import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.data.local.transit.BmtcBusCategory
+import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.model.VehicleMode
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -910,5 +915,82 @@ object LocationMarkerUtils {
         canvas.drawPath(path, fillPaint)
 
         return bitmap
+    }
+
+    /**
+     * Renders mode-appropriate alert overlays cleanly without duplication:
+     * - Road transport (Cab / Auto): Draws active road polyline + highlighted final alert road stretch (NO radius circle).
+     * - Station/rail transport (Metro / Bus): Draws station radius geofence circle + optional route polylines.
+     */
+    fun updateRoadAndAlertOverlays(
+        map: MapView,
+        vehicleMode: VehicleMode,
+        targetLocation: GeoPoint,
+        alertDistanceMeters: Float,
+        primaryRoutePoints: List<GeoPoint>,
+        alternativeRoutes: List<RouteCandidate> = emptyList(),
+        themeColorInt: Int,
+        targetName: String = ""
+    ) {
+        map.overlays.removeAll(map.overlays.filterIsInstance<Polygon>())
+        map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
+
+        for (alt in alternativeRoutes) {
+            if (alt.points.size >= 2) {
+                map.overlays.add(Polyline(map).apply {
+                    setPoints(alt.points)
+                    outlinePaint.color = 0xFF90A4AE.toInt()
+                    outlinePaint.strokeWidth = 6f
+                    infoWindow = null
+                })
+            }
+        }
+
+        if (primaryRoutePoints.size >= 2) {
+            if (vehicleMode == VehicleMode.BUS) {
+                val busCat = BmtcBusCategory.fromRouteOrName(targetName)
+                val (baseWhite, dashedBlue) = createTwoToneBusPolylines(
+                    mapView = map,
+                    points = primaryRoutePoints,
+                    category = busCat,
+                    widthDp = 8.5f
+                )
+                map.overlays.add(baseWhite)
+                map.overlays.add(dashedBlue)
+            } else {
+                val lineColor = if (vehicleMode == VehicleMode.METRO) NammaMetroNetwork.COLOR_PURPLE else 0xFF1976D2.toInt()
+                map.overlays.add(Polyline(map).apply {
+                    setPoints(primaryRoutePoints)
+                    outlinePaint.color = lineColor
+                    outlinePaint.strokeWidth = 9f
+                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                    outlinePaint.strokeJoin = Paint.Join.ROUND
+                    infoWindow = null
+                })
+
+                if (vehicleMode.usesRoadDistanceTrigger) {
+                    val alertStretch = RoadRoutingRepository.extractFinalAlertSegment(primaryRoutePoints, alertDistanceMeters)
+                    if (alertStretch.size >= 2) {
+                        map.overlays.add(Polyline(map).apply {
+                            setPoints(alertStretch)
+                            outlinePaint.color = 0xFFFF6D00.toInt() // Highlighted final road alert segment
+                            outlinePaint.strokeWidth = 12.5f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
+                            infoWindow = null
+                        })
+                    }
+                }
+            }
+        }
+
+        if (!vehicleMode.usesRoadDistanceTrigger) {
+            map.overlays.add(Polygon(map).apply {
+                points = Polygon.pointsAsCircle(targetLocation, alertDistanceMeters.toDouble())
+                fillPaint.color = (0x33000000 or (themeColorInt and 0x00FFFFFF))
+                outlinePaint.color = themeColorInt
+                outlinePaint.strokeWidth = 3.5f
+            })
+        }
     }
 }

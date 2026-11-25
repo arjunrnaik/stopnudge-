@@ -94,6 +94,7 @@ class WakeMeTrackingService : Service() {
                 currentBearing.value = null
                 currentLocationPoint.value = null
                 lastRouteFetchTime = 0L
+                matchedPolylineSegmentIndex = 0
 
                 startForegroundNotification(name, "Initiating hardware GPS tracking...")
                 startLocationUpdates()
@@ -198,12 +199,25 @@ class WakeMeTrackingService : Service() {
         val speedKmh = speedMps * 3.6f
         currentSpeedKmh.value = speedKmh
 
-        // 3. Dynamic Off-Route Deviation Detection & Dynamic Rerouting (Google Maps style)
+        // 3. Real-time Polyline Road Progress & Off-Route Dynamic Rerouting
         val currentPoly = routePolyline.value
         var triggeredOffRouteReroute = false
-        if (currentPoly.size >= 2 && !isRerouting.value) {
-            val offDist = distanceToPolylineMeters(currentLocation.latitude, currentLocation.longitude, currentPoly)
-            if (offDist > 55.0 && speedMps > 0.8f) {
+        if (currentPoly.size >= 2) {
+            val polyProgress = RoadRoutingRepository.computeRemainingRoadDistanceAlongPolyline(
+                lat = currentLocation.latitude,
+                lon = currentLocation.longitude,
+                polyline = currentPoly,
+                minSegmentIndex = matchedPolylineSegmentIndex
+            )
+            if (polyProgress != null && polyProgress.offRouteMeters <= 55.0) {
+                matchedPolylineSegmentIndex = polyProgress.matchedSegmentIndex
+                liveDistanceMeters.value = polyProgress.remainingMeters
+                consecutiveOffRouteCount = 0
+                if (speedMps > 1.0f) {
+                    val etaSec = (polyProgress.remainingMeters / speedMps).toInt()
+                    estimatedEtaMinutes.value = (etaSec / 60).coerceAtLeast(1)
+                }
+            } else if (!isRerouting.value && polyProgress != null && polyProgress.offRouteMeters > 55.0 && speedMps > 0.8f) {
                 consecutiveOffRouteCount++
                 if (consecutiveOffRouteCount >= 2) {
                     consecutiveOffRouteCount = 0
@@ -223,6 +237,7 @@ class WakeMeTrackingService : Service() {
                             val currentSelId = selectedRouteId.value
                             val activeRoute = allRoutes.find { it.id == currentSelId } ?: route.fastestRoute
                             selectedRouteId.value = activeRoute.id
+                            matchedPolylineSegmentIndex = 0
                             routePolyline.value = activeRoute.points
                             alternativeRoutes.value = allRoutes.filter { it.id != activeRoute.id }
                             liveDistanceMeters.value = activeRoute.distanceMeters
@@ -244,9 +259,11 @@ class WakeMeTrackingService : Service() {
             }
         }
 
-        // 4. Periodic Road Distance & Multi-Route Fetch (every 20s or on startup)
+        // 4. Adaptive Periodic Road Distance & Multi-Route Fetch (8s when <2.5km, 20s otherwise)
         val now = System.currentTimeMillis()
-        if (!triggeredOffRouteReroute && (now - lastRouteFetchTime > 20_000L || liveDistanceMeters.value == null)) {
+        val estRemainingRoad = liveDistanceMeters.value ?: (straightDist * 1.28f)
+        val refreshIntervalMs = if (estRemainingRoad <= 2500f) 8_000L else 20_000L
+        if (!triggeredOffRouteReroute && (now - lastRouteFetchTime > refreshIntervalMs || liveDistanceMeters.value == null)) {
             lastRouteFetchTime = now
             serviceScope.launch {
                 val route = RoadRoutingRepository.getRoute(
@@ -261,6 +278,7 @@ class WakeMeTrackingService : Service() {
                 val currentSelId = selectedRouteId.value
                 val activeRoute = allRoutes.find { it.id == currentSelId } ?: route.fastestRoute
                 selectedRouteId.value = activeRoute.id
+                matchedPolylineSegmentIndex = 0
                 routePolyline.value = activeRoute.points
                 alternativeRoutes.value = allRoutes.filter { it.id != activeRoute.id }
                 liveDistanceMeters.value = activeRoute.distanceMeters
@@ -277,7 +295,6 @@ class WakeMeTrackingService : Service() {
                 }
             }
         } else if (!triggeredOffRouteReroute) {
-            // Extrapolate distance decrease between routing fetches
             if (liveDistanceMeters.value == null) {
                 liveDistanceMeters.value = straightDist * 1.28f
             }
@@ -288,11 +305,19 @@ class WakeMeTrackingService : Service() {
             }
         }
 
-        // 4. Geofence Trigger Condition
-        if (straightDist <= config.radiusMeters) {
+        // 5. Mode-Aware Arrival Trigger Condition (Road Distance for Cab/Auto, Radius for Metro)
+        val triggerDecision = RoadRoutingRepository.evaluateArrivalTrigger(
+            vehicleMode = config.vehicleMode,
+            targetThresholdMeters = config.radiusMeters,
+            straightLineMeters = straightDist,
+            roadDistanceMeters = liveDistanceMeters.value,
+            hasActiveRoadRoute = isRoadRouteActive.value || routePolyline.value.size >= 2
+        )
+
+        if (triggerDecision.shouldTrigger) {
             if (!hasAlertFired) {
                 hasAlertFired = true
-                triggerArrivalAlert(config, straightDist)
+                triggerArrivalAlert(config, triggerDecision.effectiveDistanceMeters)
             }
         } else {
             val dist = liveDistanceMeters.value ?: (straightDist * 1.28f)
@@ -325,14 +350,20 @@ class WakeMeTrackingService : Service() {
             postGentleReminderNotification(config)
         }
 
-        updateNotification("Arrived at destination (${finalDistance.toInt()}m)")
+        val distUnit = if (config.vehicleMode.usesRoadDistanceTrigger) "m along road" else "m"
+        updateNotification("Arrived at destination (${finalDistance.toInt()}$distUnit)")
     }
 
     private fun postGentleReminderNotification(config: DestinationConfig) {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val defaultText = if (config.vehicleMode.usesRoadDistanceTrigger) {
+            "Approaching destination along your road route."
+        } else {
+            "You have reached your destination geofence."
+        }
         val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
             .setContentTitle("Arrived at ${config.name}")
-            .setContentText(if (config.reminderNote.isNotEmpty()) config.reminderNote else "You have reached your destination geofence.")
+            .setContentText(if (config.reminderNote.isNotEmpty()) config.reminderNote else defaultText)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -364,6 +395,7 @@ class WakeMeTrackingService : Service() {
         currentBearing.value = null
         currentLocationPoint.value = null
         activeConfig.value = null
+        matchedPolylineSegmentIndex = 0
     }
 
     override fun onDestroy() {
@@ -406,6 +438,9 @@ class WakeMeTrackingService : Service() {
         val isTracking = MutableStateFlow(false)
         val activeConfig = MutableStateFlow<DestinationConfig?>(null)
 
+        @Volatile
+        private var matchedPolylineSegmentIndex = 0
+
         fun start(context: Context, config: DestinationConfig) {
             val intent = Intent(context, WakeMeTrackingService::class.java).apply {
                 action = ACTION_START_TRACKING
@@ -436,6 +471,7 @@ class WakeMeTrackingService : Service() {
             val all = allCandidateRoutes.value
             val target = all.find { it.id == routeId } ?: return
             selectedRouteId.value = target.id
+            matchedPolylineSegmentIndex = 0
             routePolyline.value = target.points
             alternativeRoutes.value = all.filter { it.id != target.id }
             liveDistanceMeters.value = target.distanceMeters

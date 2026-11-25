@@ -317,6 +317,9 @@ fun WakeMeLandingScreen(
                     val locOverlay = MyLocationNewOverlay(GpsMyLocationProvider(ctx), this).apply {
                         enableMyLocation()
                         enableFollowLocation()
+                        runOnFirstFix {
+                            myLocation?.let { viewModel.updateCurrentOrigin(it) }
+                        }
                     }
                     LocationMarkerUtils.applyModernLocationOverlay(ctx, locOverlay)
                     overlays.add(locOverlay)
@@ -830,6 +833,7 @@ fun WakeMeLandingScreen(
                     ) {
                         Button(
                             onClick = {
+                                viewModel.updateCurrentOrigin(locationOverlayRef?.myLocation)
                                 viewModel.selectMapPin(pin)
                             },
                             modifier = Modifier
@@ -960,6 +964,7 @@ fun WakeMeLandingScreen(
                     ) {
                         Button(
                             onClick = {
+                                viewModel.updateCurrentOrigin(locationOverlayRef?.myLocation)
                                 viewModel.selectMapPin(
                                     nearestMetro.geoPoint,
                                     "${nearestMetro.name} Metro Station"
