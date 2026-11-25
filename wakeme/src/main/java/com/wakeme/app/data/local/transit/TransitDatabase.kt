@@ -6,8 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [MetroStationEntity::class, BusStopEntity::class],
-    version = 7,
+    entities = [MetroStationEntity::class, BusStopEntity::class, BusRouteEntity::class],
+    version = 8,
     exportSchema = false
 )
 abstract class TransitDatabase : RoomDatabase() {
@@ -15,7 +15,7 @@ abstract class TransitDatabase : RoomDatabase() {
     abstract fun transitDao(): TransitDao
 
     companion object {
-        private const val DB_NAME = "wakeme_transit_stops_v7.db"
+        private const val DB_NAME = "wakeme_transit_stops_v8.db"
         private const val ASSET_PATH = "databases/transit_stops.db"
 
         @Volatile
@@ -24,18 +24,19 @@ abstract class TransitDatabase : RoomDatabase() {
         fun getInstance(context: Context): TransitDatabase {
             return INSTANCE ?: synchronized(this) {
                 val dbFile = context.applicationContext.getDatabasePath(DB_NAME)
-                if (dbFile.exists() && dbFile.length() < 30_000L) {
+                if (dbFile.exists() && dbFile.length() < 100_000L) {
                     dbFile.delete()
                 }
 
-                // Clean up legacy v1 through v6 db files if present to force-load the pure Namma Metro database
+                // Clean up legacy v1 through v7 db files so v8 BMTC + Metro DB loads cleanly
                 for (legacyName in listOf(
                     "transit_stops.db",
                     "transit_stops_v2.db",
                     "wakeme_transit_stops_v3.db",
                     "wakeme_transit_stops_v4.db",
                     "wakeme_transit_stops_v5.db",
-                    "wakeme_transit_stops_v6.db"
+                    "wakeme_transit_stops_v6.db",
+                    "wakeme_transit_stops_v7.db"
                 )) {
                     val oldDb = context.applicationContext.getDatabasePath(legacyName)
                     if (oldDb.exists()) {

@@ -448,7 +448,35 @@ object LocationMarkerUtils {
         stopName: String,
         tealColorHex: String = "#00838F"
     ): Drawable {
-        val bmp = createBmtcBusStopMarkerBitmap(context, stopName, tealColorHex)
+        val key = "bus|$stopName|$tealColorHex"
+        val bmp = stationBitmapCache.getOrPut(key) {
+            createBmtcBusStopMarkerBitmap(context, stopName, tealColorHex)
+        }
+        val drawable = BitmapDrawable(context.resources, bmp)
+        drawable.setBounds(0, 0, bmp.width, bmp.height)
+        return drawable
+    }
+
+    fun createBmtcCompactStopDrawable(
+        context: Context,
+        stopName: String,
+        directionHint: String = "",
+        isSelected: Boolean = false
+    ): Drawable {
+        val shortDir = directionHint.substringAfter("Towards ", "").substringBefore(",").trim()
+        val label = if (shortDir.isNotEmpty() && !stopName.contains(shortDir, ignoreCase = true)) {
+            "$stopName ➔ ${shortDir.take(14)}"
+        } else {
+            stopName
+        }
+        val key = "bmtc_compact|$label|$isSelected"
+        val bmp = stationBitmapCache.getOrPut(key) {
+            createBmtcBusStopMarkerBitmap(
+                context = context,
+                stopName = label,
+                tealColorHex = if (isSelected) "#0D47A1" else "#1565C0"
+            )
+        }
         val drawable = BitmapDrawable(context.resources, bmp)
         drawable.setBounds(0, 0, bmp.width, bmp.height)
         return drawable
@@ -1018,13 +1046,14 @@ object LocationMarkerUtils {
         boardingRoadPoints: List<GeoPoint>,
         stopsBeforeAlert: Int,
         activeLegIndex: Int = -1,
-        exitRoadPoints: List<GeoPoint> = emptyList()
+        exitRoadPoints: List<GeoPoint> = emptyList(),
+        busLegRoadPoints: Map<Int, List<GeoPoint>> = emptyMap()
     ): List<GeoPoint> {
         map.overlays.removeAll(map.overlays.filterIsInstance<Polygon>())
         map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
         val allPoints = mutableListOf<GeoPoint>()
 
-        // 1. Stage 1 Road Path to Boarding Station (Orange)
+        // 1. Stage 1 Road Path to Boarding Station / Stop (Orange)
         if (boardingRoadPoints.size >= 2) {
             map.overlays.add(Polyline(map).apply {
                 setPoints(boardingRoadPoints)
@@ -1037,7 +1066,7 @@ object LocationMarkerUtils {
             allPoints.addAll(boardingRoadPoints)
         }
 
-        // 2. 50m Boarding Station Ring
+        // 2. 50m Boarding Station / Stop Ring
         map.overlays.add(Polygon(map).apply {
             points = Polygon.pointsAsCircle(plan.boardingStation.geoPoint, 50.0)
             fillPaint.color = 0x26FF6D00
@@ -1045,19 +1074,26 @@ object LocationMarkerUtils {
             outlinePaint.strokeWidth = 2.5f
         })
 
-        // 3. Metro Rail Track Legs (in line color)
+        // 3. Stage 2 Transit Legs (Metro rail or smooth BMTC road corridors)
         plan.legs.forEachIndexed { idx, leg ->
-            if (leg.trackPoints.size >= 2) {
+            val rawLegRoad = if (leg.isBusLeg) busLegRoadPoints[idx] else null
+            val drawPoints = if (rawLegRoad != null && rawLegRoad.size >= 2) rawLegRoad else leg.trackPoints
+            if (drawPoints.size >= 2) {
                 val isCurrentOrPreview = activeLegIndex < 0 || idx >= activeLegIndex
-                map.overlays.add(Polyline(map).apply {
-                    setPoints(leg.trackPoints)
-                    outlinePaint.color = if (isCurrentOrPreview) leg.lineColorInt else 0xFF90A4AE.toInt()
-                    outlinePaint.strokeWidth = if (idx == activeLegIndex || activeLegIndex < 0) 10.5f else 6.5f
-                    outlinePaint.strokeCap = Paint.Cap.ROUND
-                    outlinePaint.strokeJoin = Paint.Join.ROUND
-                    infoWindow = null
-                })
-                allPoints.addAll(leg.trackPoints)
+                if (leg.isBusLeg && isCurrentOrPreview) {
+                    val category = com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName(leg.lineName)
+                    map.overlays.addAll(createTwoToneBusPolylines(map, drawPoints, category, 9.5f))
+                } else {
+                    map.overlays.add(Polyline(map).apply {
+                        setPoints(drawPoints)
+                        outlinePaint.color = if (isCurrentOrPreview) leg.lineColorInt else 0xFF90A4AE.toInt()
+                        outlinePaint.strokeWidth = if (idx == activeLegIndex || activeLegIndex < 0) 10.5f else 6.5f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                        outlinePaint.strokeJoin = Paint.Join.ROUND
+                        infoWindow = null
+                    })
+                }
+                allPoints.addAll(drawPoints)
             }
 
             // Highlight alert stop for this leg in Crimson Red so it stands out cleanly from Orange roads

@@ -8,7 +8,8 @@ data class MetroLeg(
     val lineName: String,
     val lineColorInt: Int,
     val stations: List<NammaMetroNetwork.ActiveStation>,
-    val directionLabel: String
+    val directionLabel: String,
+    val isBusLeg: Boolean = false
 ) {
     val stopsCount: Int get() = (stations.size - 1).coerceAtLeast(0)
     val boardingStation: NammaMetroNetwork.ActiveStation get() = stations.first()
@@ -25,7 +26,8 @@ data class MetroJourneyPlan(
     val interchangeStations: List<NammaMetroNetwork.ActiveStation>,
     val destinationPinName: String,
     val destinationPinPoint: GeoPoint,
-    val exitWalkDistanceMeters: Float
+    val exitWalkDistanceMeters: Float,
+    val isBusJourney: Boolean = false
 ) {
     fun getAlertStopForLeg(legIndex: Int, stopsBeforeAlert: Int): NammaMetroNetwork.ActiveStation? {
         val leg = legs.getOrNull(legIndex) ?: return null

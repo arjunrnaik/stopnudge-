@@ -121,7 +121,7 @@ class WakeMeTrackingService : Service() {
                 metroAlertStationName.value = null
                 metroInterchangePrompt.value = null
 
-                if (vehicleMode == VehicleMode.METRO && activeMetroPlan.value != null) {
+                if ((vehicleMode == VehicleMode.METRO || vehicleMode == VehicleMode.BUS) && activeMetroPlan.value != null) {
                     val bPts = preloadedBoardingRoadPoints.value
                     if (bPts.size >= 2) {
                         metroStage.value = MetroJourneyStage.TO_BOARDING_ROAD
@@ -244,12 +244,12 @@ class WakeMeTrackingService : Service() {
         val speedKmh = speedMps * 3.6f
         currentSpeedKmh.value = speedKmh
 
-        if (config.vehicleMode == VehicleMode.METRO) {
+        if (config.vehicleMode == VehicleMode.METRO || config.vehicleMode == VehicleMode.BUS) {
             handleMetroLocationUpdate(currentLocation, config, speedMps)
             return
         }
 
-        // Non-Metro Modes (Cab/Auto Road Trigger or Bus Radius)
+        // Driving / Cab / Auto Road Trigger
         updateRoadRouteTelemetry(currentLocation, config.latitude, config.longitude, straightDist, speedMps)
 
         // Arrival Trigger Evaluation
@@ -396,22 +396,62 @@ class WakeMeTrackingService : Service() {
         speedMps: Float
     ) {
         val currentGeo = GeoPoint(currentLocation.latitude, currentLocation.longitude)
+        val isBusMode = config.vehicleMode == VehicleMode.BUS
         var plan = activeMetroPlan.value
         if (plan == null) {
-            val boardingStation = if (config.metroBoardingLat != null && config.metroBoardingLon != null) {
-                NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.metroBoardingLat, config.metroBoardingLon)).first
+            if (isBusMode) {
+                val bStop = NammaMetroNetwork.ActiveStation(
+                    id = "bus_board_fallback",
+                    name = config.metroBoardingName ?: "Nearest Bus Stop",
+                    line = "BMTC",
+                    latitude = config.metroBoardingLat ?: currentGeo.latitude,
+                    longitude = config.metroBoardingLon ?: currentGeo.longitude
+                )
+                val eStop = NammaMetroNetwork.ActiveStation(
+                    id = "bus_exit_fallback",
+                    name = config.name,
+                    line = "BMTC",
+                    latitude = config.latitude,
+                    longitude = config.longitude
+                )
+                val leg = com.wakeme.app.data.MetroLeg(
+                    lineName = "BMTC",
+                    lineColorInt = 0xFF1E88E5.toInt(),
+                    stations = listOf(bStop, eStop),
+                    directionLabel = "Towards ${config.name}",
+                    isBusLeg = true
+                )
+                plan = com.wakeme.app.data.MetroJourneyPlan(
+                    boardingStation = bStop,
+                    exitStation = eStop,
+                    legs = listOf(leg),
+                    totalStops = 1,
+                    requiresLineChange = false,
+                    interchangeStations = emptyList(),
+                    destinationPinName = config.name,
+                    destinationPinPoint = GeoPoint(config.latitude, config.longitude),
+                    exitWalkDistanceMeters = 0f,
+                    isBusJourney = true
+                )
             } else {
-                NammaMetroNetwork.findNearestActiveStation(currentGeo).first
+                val boardingStation = if (config.metroBoardingLat != null && config.metroBoardingLon != null) {
+                    NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.metroBoardingLat, config.metroBoardingLon)).first
+                } else {
+                    NammaMetroNetwork.findNearestActiveStation(currentGeo).first
+                }
+                val exitStation = NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.latitude, config.longitude)).first
+                plan = MetroRoutePlanner.planJourney(
+                    boardingStation = boardingStation,
+                    exitStation = exitStation,
+                    destinationPinName = config.name,
+                    destinationPinPoint = GeoPoint(config.latitude, config.longitude)
+                )
             }
-            val exitStation = NammaMetroNetwork.findNearestActiveStation(GeoPoint(config.latitude, config.longitude)).first
-            plan = MetroRoutePlanner.planJourney(
-                boardingStation = boardingStation,
-                exitStation = exitStation,
-                destinationPinName = config.name,
-                destinationPinPoint = GeoPoint(config.latitude, config.longitude)
-            )
             activeMetroPlan.value = plan
         }
+
+        val transitLabel = if (plan.isBusJourney || isBusMode) "Bus Stop" else "Metro"
+        val modeIcon = if (plan.isBusJourney || isBusMode) "🚌" else "🚇"
 
         // Ensure solid Stage 3 exit road path is always loaded for Active Trip map even on Stage 1/2
         if (plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS &&
@@ -453,7 +493,7 @@ class WakeMeTrackingService : Service() {
             MetroJourneyStage.TO_BOARDING_ROAD -> {
                 if (distToBoarding <= MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
                     enterMetroRideStage(plan, 0)
-                    postBoardingReachedNotification(plan.boardingStation.name, plan.exitStation.name)
+                    postBoardingReachedNotification(plan.boardingStation.name, plan.exitStation.name, plan.isBusJourney || isBusMode)
                 } else {
                     updateRoadRouteTelemetry(
                         currentLocation,
@@ -464,7 +504,7 @@ class WakeMeTrackingService : Service() {
                     )
                     val dist = liveDistanceMeters.value ?: (distToBoarding * 1.28f)
                     val distText = if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
-                    updateNotification("Go to ${plan.boardingStation.name} Metro: $distText")
+                    updateNotification("Go to ${plan.boardingStation.name} $transitLabel: $distText")
                 }
             }
 
@@ -482,7 +522,7 @@ class WakeMeTrackingService : Service() {
                         currentLocation.latitude, currentLocation.longitude,
                         nextSt.latitude, nextSt.longitude
                     )
-                    // Auto-advance once user departs interchange platform along the new Metro line
+                    // Auto-advance once user departs interchange platform/stop along the next leg
                     if (distInterchange > 150.0 && distNext < distInterchange) {
                         WakeMeAlarmController.stopAlert(this)
                         hasAlertFired = false
@@ -525,7 +565,7 @@ class WakeMeTrackingService : Service() {
                 }
 
                 val nextName = progress.nextStation?.name ?: leg.alightingStation.name
-                updateNotification("🚇 ${leg.lineName}: ${progress.stopsRemaining} stops left (Next: $nextName)")
+                updateNotification("$modeIcon ${leg.lineName}: ${progress.stopsRemaining} stops left (Next: $nextName)")
 
                 if (progress.shouldTriggerStopAlert) {
                     if (isInterchangeLeg) {
@@ -533,7 +573,8 @@ class WakeMeTrackingService : Service() {
                         if (hasInterchangeAlertFiredForLeg != legIdx) {
                             hasInterchangeAlertFiredForLeg = legIdx
                             val interchangeName = leg.alightingStation.name
-                            val prompt = "Change at $interchangeName ➔ ${nextLeg.lineName} Line (${nextLeg.directionLabel})"
+                            val nextLegDesc = if (nextLeg.isBusLeg) "Bus ${nextLeg.lineName}" else "${nextLeg.lineName} Line"
+                            val prompt = "Change at $interchangeName ➔ $nextLegDesc (${nextLeg.directionLabel})"
                             metroInterchangePrompt.value = prompt
                             triggerInterchangeAlert(config, interchangeName, prompt)
                         }
@@ -544,14 +585,14 @@ class WakeMeTrackingService : Service() {
                         if (!hasAlertFired) {
                             hasAlertFired = true
                             val targetLabel = if (effectiveStopsBefore == 0) {
-                                "${leg.alightingStation.name} Metro"
+                                "${leg.alightingStation.name} $transitLabel"
                             } else {
                                 "${leg.alightingStation.name} ($effectiveStopsBefore stop${if (effectiveStopsBefore > 1) "s" else ""} away)"
                             }
                             triggerArrivalAlert(config.copy(name = targetLabel), progress.distanceToEndMeters)
                         }
 
-                        // Auto-transition to Stage 3 once commuter arrives at / steps outside exit station
+                        // Auto-transition to Stage 3 once commuter arrives at / steps outside exit station/stop
                         val hasFinalRoadLeg = plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS
                         val distToFinalDest = haversineDistanceMeters(
                             currentLocation.latitude, currentLocation.longitude,
@@ -562,7 +603,7 @@ class WakeMeTrackingService : Service() {
                                 (progress.distanceToEndMeters > 100f && distToFinalDest < plan.exitWalkDistanceMeters))
                         ) {
                             enterFinalDestinationRoadStage()
-                            postExitedMetroNotification(plan.exitStation.name, plan.destinationPinName)
+                            postExitedMetroNotification(plan.exitStation.name, plan.destinationPinName, plan.isBusJourney || isBusMode)
                         }
                     }
                 }
@@ -613,10 +654,11 @@ class WakeMeTrackingService : Service() {
         }
     }
 
-    private fun postExitedMetroNotification(exitName: String, destName: String) {
+    private fun postExitedMetroNotification(exitName: String, destName: String, isBus: Boolean = false) {
+        val label = if (isBus) "Bus Stop" else "Metro"
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
-            .setContentTitle("Reached $exitName Metro")
+            .setContentTitle("Reached $exitName $label")
             .setContentText("Stage 3: Follow the road path to $destName.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -625,11 +667,14 @@ class WakeMeTrackingService : Service() {
         notificationManager.notify(NOTIFICATION_ARRIVAL_ID, notif)
     }
 
-    private fun postBoardingReachedNotification(boardingName: String, exitName: String) {
+    private fun postBoardingReachedNotification(boardingName: String, exitName: String, isBus: Boolean = false) {
+        val label = if (isBus) "Bus Stop" else "Metro"
+        val vehicleWord = if (isBus) "bus" else "train"
+        val trackWord = if (isBus) "BMTC stops" else "Metro stops"
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
-            .setContentTitle("Reached $boardingName Metro")
-            .setContentText("Board the train! Now tracking Metro stops to $exitName.")
+            .setContentTitle("Reached $boardingName $label")
+            .setContentText("Board the $vehicleWord! Now tracking $trackWord to $exitName.")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
@@ -732,6 +777,7 @@ class WakeMeTrackingService : Service() {
         preloadedBoardingRoadDurationSeconds.value = null
         preloadedExitRoadDistanceMeters.value = null
         preloadedExitRoadDurationSeconds.value = null
+        preloadedBusLegRoadPoints.value = emptyMap()
         isFetchingExitPreview = false
     }
 
@@ -795,6 +841,7 @@ class WakeMeTrackingService : Service() {
         val preloadedBoardingRoadDurationSeconds = MutableStateFlow<Float?>(null)
         val preloadedExitRoadDistanceMeters = MutableStateFlow<Float?>(null)
         val preloadedExitRoadDurationSeconds = MutableStateFlow<Float?>(null)
+        val preloadedBusLegRoadPoints = MutableStateFlow<Map<Int, List<GeoPoint>>>(emptyMap())
 
         @Volatile
         private var matchedPolylineSegmentIndex = 0
@@ -816,7 +863,8 @@ class WakeMeTrackingService : Service() {
             boardingDurSeconds: Float?,
             exitPoints: List<GeoPoint>,
             exitDistMeters: Float?,
-            exitDurSeconds: Float?
+            exitDurSeconds: Float?,
+            busLegRoadPoints: Map<Int, List<GeoPoint>> = emptyMap()
         ) {
             activeMetroPlan.value = plan
             preloadedBoardingRoadPoints.value = boardingPoints
@@ -825,6 +873,7 @@ class WakeMeTrackingService : Service() {
             preloadedExitRoadPoints.value = exitPoints
             preloadedExitRoadDistanceMeters.value = exitDistMeters
             preloadedExitRoadDurationSeconds.value = exitDurSeconds
+            preloadedBusLegRoadPoints.value = busLegRoadPoints
             preloadedRoadRoutePoints.value = emptyList()
         }
 
@@ -833,6 +882,7 @@ class WakeMeTrackingService : Service() {
             activeMetroPlan.value = null
             preloadedBoardingRoadPoints.value = emptyList()
             preloadedExitRoadPoints.value = emptyList()
+            preloadedBusLegRoadPoints.value = emptyMap()
         }
 
         fun enterMetroRideStage(plan: MetroJourneyPlan, legIndex: Int) {
@@ -841,7 +891,8 @@ class WakeMeTrackingService : Service() {
             matchedMetroStationIndex = 0
             hasAlertFired = false
             metroStage.value = MetroJourneyStage.ON_METRO_LEG
-            routePolyline.value = leg.trackPoints
+            val legRoadPts = preloadedBusLegRoadPoints.value[legIndex]
+            routePolyline.value = if (!legRoadPts.isNullOrEmpty()) legRoadPts else leg.trackPoints
             alternativeRoutes.value = emptyList()
             isRoadRouteActive.value = false
             metroStopsRemaining.value = leg.stopsCount

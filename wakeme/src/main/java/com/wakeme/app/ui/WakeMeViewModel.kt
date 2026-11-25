@@ -8,6 +8,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.LocationServices
+import com.wakeme.app.data.BmtcRouteOption
+import com.wakeme.app.data.BmtcRoutePlanner
+import com.wakeme.app.data.IndexedBmtcData
 import com.wakeme.app.data.MetroJourneyPlan
 import com.wakeme.app.data.MetroRoutePlanner
 import com.wakeme.app.data.RoadRoutingRepository
@@ -169,6 +172,34 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _busStops = MutableStateFlow<List<BusStopEntity>>(emptyList())
     val busStops: StateFlow<List<BusStopEntity>> = _busStops.asStateFlow()
 
+    private val _nearestBusRoadDistance = MutableStateFlow<Float?>(null)
+    val nearestBusRoadDistance: StateFlow<Float?> = _nearestBusRoadDistance.asStateFlow()
+
+    private val _nearestBusRoadDuration = MutableStateFlow<Float?>(null)
+    val nearestBusRoadDuration: StateFlow<Float?> = _nearestBusRoadDuration.asStateFlow()
+
+    private val _nearestBusRoutePoints = MutableStateFlow<List<GeoPoint>>(emptyList())
+    val nearestBusRoutePoints: StateFlow<List<GeoPoint>> = _nearestBusRoutePoints.asStateFlow()
+
+    private val _isCalculatingRoadToBus = MutableStateFlow(false)
+    val isCalculatingRoadToBus: StateFlow<Boolean> = _isCalculatingRoadToBus.asStateFlow()
+
+    private val _bmtcIndex = MutableStateFlow(IndexedBmtcData.EMPTY)
+    private val _allBusStopsList = MutableStateFlow<List<BusStopEntity>>(emptyList())
+    val allBusStopsList: StateFlow<List<BusStopEntity>> = _allBusStopsList.asStateFlow()
+
+    private val _bmtcRouteOptions = MutableStateFlow<List<BmtcRouteOption>>(emptyList())
+    val bmtcRouteOptions: StateFlow<List<BmtcRouteOption>> = _bmtcRouteOptions.asStateFlow()
+
+    private val _selectedBusRouteIndex = MutableStateFlow(0)
+    val selectedBusRouteIndex: StateFlow<Int> = _selectedBusRouteIndex.asStateFlow()
+
+    private val _busLegRoadPoints = MutableStateFlow<Map<Int, List<GeoPoint>>>(emptyMap())
+    val busLegRoadPoints: StateFlow<Map<Int, List<GeoPoint>>> = _busLegRoadPoints.asStateFlow()
+
+    private val _customBoardingBusStop = MutableStateFlow<BusStopEntity?>(null)
+    val customBoardingBusStop: StateFlow<BusStopEntity?> = _customBoardingBusStop.asStateFlow()
+
     private val _isTrackingActive = MutableStateFlow(false)
     val isTrackingActive: StateFlow<Boolean> = _isTrackingActive.asStateFlow()
 
@@ -201,15 +232,16 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        // Preload metro stations in background
+        // Preload metro stations & BMTC stop/route graph in background
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val metros = transitDao.getAllMetroStations()
                 _metroStations.value = metros
             } catch (_: Exception) {}
+            try {
+                ensureBmtcIndexLoaded()
+            } catch (_: Exception) {}
         }
-
-        // Bus data removed - pure Namma Metro focus
 
         // Collect user saved favorites
         viewModelScope.launch(Dispatchers.IO) {
@@ -273,8 +305,89 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun setCustomBoardingStation(station: NammaMetroNetwork.ActiveStation?) {
         _customBoardingStation.value = station
+        _customBoardingBusStop.value = null
         _boardingRoadRoute.value = null
         refreshPreviewRoadRoute()
+    }
+
+    fun setCustomBoardingBusStop(stop: BusStopEntity?) {
+        _customBoardingBusStop.value = stop
+        _customBoardingStation.value = null
+        _boardingRoadRoute.value = null
+        _selectedBusRouteIndex.value = 0
+        refreshPreviewRoadRoute()
+    }
+
+    fun selectBusRouteOption(index: Int) {
+        val options = _bmtcRouteOptions.value
+        val option = options.getOrNull(index) ?: return
+        _selectedBusRouteIndex.value = index
+        _metroJourneyPlan.value = option.plan
+        viewModelScope.launch {
+            loadTransitPlanRoadSegments(option.plan, _currentOriginLocation.value ?: fetchLastKnownOrigin(), _targetLocation.value)
+        }
+    }
+
+    private suspend fun ensureBmtcIndexLoaded(): IndexedBmtcData {
+        val current = _bmtcIndex.value
+        if (!current.isEmpty) return current
+        val stops = transitDao.getAllBusStops()
+        val routes = transitDao.getAllBusRoutes()
+        val built = BmtcRoutePlanner.buildIndex(stops, routes)
+        _bmtcIndex.value = built
+        _allBusStopsList.value = stops.sortedByDescending { it.ref.length }
+        return built
+    }
+
+    private suspend fun loadTransitPlanRoadSegments(
+        plan: MetroJourneyPlan,
+        origin: GeoPoint?,
+        dest: GeoPoint
+    ) {
+        if (origin != null) {
+            val distToBoard = RoadRoutingRepository.haversineDistanceMeters(
+                origin.latitude, origin.longitude,
+                plan.boardingStation.latitude, plan.boardingStation.longitude
+            )
+            if (distToBoard > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+                _boardingRoadRoute.value = RoadRoutingRepository.getRoute(
+                    origin.latitude, origin.longitude,
+                    plan.boardingStation.latitude, plan.boardingStation.longitude
+                )
+            } else {
+                _boardingRoadRoute.value = null
+            }
+        } else {
+            _boardingRoadRoute.value = null
+        }
+
+        if (plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+            _exitRoadRoute.value = RoadRoutingRepository.getRoute(
+                plan.exitStation.latitude, plan.exitStation.longitude,
+                dest.latitude, dest.longitude
+            )
+        } else {
+            _exitRoadRoute.value = null
+        }
+
+        if (plan.isBusJourney) {
+            val legMap = HashMap<Int, List<GeoPoint>>(plan.legs.size)
+            plan.legs.forEachIndexed { idx, leg ->
+                if (leg.stations.size >= 2) {
+                    val b = leg.boardingStation
+                    val e = leg.alightingStation
+                    try {
+                        val routeRes = RoadRoutingRepository.getRoute(b.latitude, b.longitude, e.latitude, e.longitude)
+                        if (routeRes.points.size >= 2) {
+                            legMap[idx] = routeRes.points
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+            _busLegRoadPoints.value = legMap
+        } else {
+            _busLegRoadPoints.value = emptyMap()
+        }
     }
 
     fun updateCurrentOrigin(point: GeoPoint?) {
@@ -322,8 +435,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     _previewRoadRoute.value = null
                 }
 
-                // Always build Metro stop-to-stop plan when METRO mode is active
+                // Build 3-stage Stop-to-Stop plan for Metro or BMTC Bus
                 if (mode == VehicleMode.METRO) {
+                    _bmtcRouteOptions.value = emptyList()
+                    _busLegRoadPoints.value = emptyMap()
                     val exitStation = NammaMetroNetwork.findNearestActiveStation(dest).first
                     val boardingStation = _customBoardingStation.value
                         ?: if (origin != null) {
@@ -338,38 +453,43 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                         destinationPinPoint = dest
                     )
                     _metroJourneyPlan.value = plan
-
-                    if (origin != null) {
-                        val distToBoard = RoadRoutingRepository.haversineDistanceMeters(
-                            origin.latitude, origin.longitude,
-                            boardingStation.latitude, boardingStation.longitude
+                    loadTransitPlanRoadSegments(plan, origin, dest)
+                } else if (mode == VehicleMode.BUS) {
+                    val effectiveOrigin = origin ?: dest
+                    val index = kotlinx.coroutines.withContext(Dispatchers.IO) { ensureBmtcIndexLoaded() }
+                    val options = kotlinx.coroutines.withContext(Dispatchers.Default) {
+                        BmtcRoutePlanner.planBusJourneys(
+                            origin = effectiveOrigin,
+                            destination = dest,
+                            destinationName = _targetName.value,
+                            index = index,
+                            preferredBoardingStop = _customBoardingBusStop.value
                         )
-                        if (distToBoard > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
-                            _boardingRoadRoute.value = RoadRoutingRepository.getRoute(
-                                origin.latitude, origin.longitude,
-                                boardingStation.latitude, boardingStation.longitude
-                            )
-                        } else {
-                            _boardingRoadRoute.value = null
-                        }
+                    }
+                    _bmtcRouteOptions.value = options
+                    val selIdx = _selectedBusRouteIndex.value.coerceIn(0, (options.size - 1).coerceAtLeast(0))
+                    _selectedBusRouteIndex.value = selIdx
+                    val chosenPlan = options.getOrNull(selIdx)?.plan
+                    _metroJourneyPlan.value = chosenPlan
+                    if (chosenPlan != null) {
+                        loadTransitPlanRoadSegments(chosenPlan, origin, dest)
                     } else {
                         _boardingRoadRoute.value = null
-                    }
-
-                    // Stage 3: Fetch real road route from exit Metro station to Point B if > 50m away
-                    if (plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
-                        _exitRoadRoute.value = RoadRoutingRepository.getRoute(
-                            exitStation.latitude, exitStation.longitude,
-                            dest.latitude, dest.longitude
-                        )
-                    } else {
                         _exitRoadRoute.value = null
+                        _busLegRoadPoints.value = emptyMap()
                     }
+                } else {
+                    _bmtcRouteOptions.value = emptyList()
+                    _metroJourneyPlan.value = null
+                    _boardingRoadRoute.value = null
+                    _exitRoadRoute.value = null
+                    _busLegRoadPoints.value = emptyMap()
                 }
             } catch (_: Exception) {
                 _previewRoadRoute.value = null
                 _boardingRoadRoute.value = null
                 _exitRoadRoute.value = null
+                _busLegRoadPoints.value = emptyMap()
             } finally {
                 _isLoadingPreviewRoute.value = false
             }
@@ -405,7 +525,11 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _cameraMoveTarget.tryEmit(geoPoint)
         _previewRoadRoute.value = null
         _customBoardingStation.value = null
+        _customBoardingBusStop.value = null
         _metroJourneyPlan.value = null
+        _bmtcRouteOptions.value = emptyList()
+        _selectedBusRouteIndex.value = 0
+        _busLegRoadPoints.value = emptyMap()
         _boardingRoadRoute.value = null
         _exitRoadRoute.value = null
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
@@ -708,24 +832,113 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     fun selectBusStop(name: String, geoPoint: GeoPoint, routes: String? = null, direction: String? = null) {
         _selectedBusStop.value = SelectedBusStop(name, geoPoint.latitude, geoPoint.longitude, routes, direction)
         _nearestMetroStation.value = null
+        _nearestBusRoadDistance.value = null
+        _nearestBusRoadDuration.value = null
+        _nearestBusRoutePoints.value = emptyList()
         _cameraMoveTarget.tryEmit(geoPoint)
     }
 
     fun clearSelectedBusStop() {
         _selectedBusStop.value = null
+        _nearestBusRoadDistance.value = null
+        _nearestBusRoadDuration.value = null
+        _nearestBusRoutePoints.value = emptyList()
     }
 
     fun findAndFocusNearestBusStop(fromLocation: GeoPoint?) {
-        _userMessage.tryEmit("🚇 Showing nearest Namma Metro station")
-        findAndFocusNearestMetroStation(fromLocation)
+        val origin = fromLocation ?: _currentOriginLocation.value ?: _targetLocation.value
+        _isCalculatingRoadToBus.value = true
+        _userMessage.tryEmit("🔍 Finding nearest BMTC stop via road network...")
+
+        viewModelScope.launch {
+            try {
+                val candidates = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    transitDao.findNearestBusStops(origin.latitude, origin.longitude, 8)
+                }
+                val result = RoadRoutingRepository.findNearestBusStopByRoad(origin, candidates)
+                if (result != null) {
+                    val stop = result.stop
+                    _nearestMetroStation.value = null
+                    _nearestMetroRoutePoints.value = emptyList()
+                    _selectedBusStop.value = SelectedBusStop(
+                        name = stop.name,
+                        latitude = stop.latitude,
+                        longitude = stop.longitude,
+                        routes = stop.ref.takeIf { it.isNotBlank() },
+                        direction = stop.directionHint.takeIf { it.isNotBlank() }
+                    )
+                    _nearestBusRoadDistance.value = result.roadDistanceMeters
+                    _nearestBusRoadDuration.value = result.durationSeconds
+                    _nearestBusRoutePoints.value = result.routePoints
+                    _showBmtcOverlay.value = true
+                    updateBmtcBoundingBox(
+                        minLat = stop.latitude - 0.025,
+                        maxLat = stop.latitude + 0.025,
+                        minLon = stop.longitude - 0.025,
+                        maxLon = stop.longitude + 0.025,
+                        zoomLevel = 15.5
+                    )
+                    _cameraMoveTarget.tryEmit(GeoPoint(stop.latitude, stop.longitude))
+
+                    val distFormatted = if (result.roadDistanceMeters >= 1000) {
+                        String.format(Locale.US, "%.1f km", result.roadDistanceMeters / 1000f)
+                    } else {
+                        "${result.roadDistanceMeters.toInt()} m"
+                    }
+                    val minFormatted = (result.durationSeconds / 60).toInt().coerceAtLeast(1)
+                    _userMessage.tryEmit("🚌 Nearest Stop: ${stop.name} ($distFormatted by road • ~$minFormatted min)")
+                } else {
+                    _userMessage.tryEmit("No BMTC stops found nearby")
+                }
+            } catch (_: Exception) {
+                _userMessage.tryEmit("Could not locate nearest bus stop")
+            } finally {
+                _isCalculatingRoadToBus.value = false
+            }
+        }
     }
 
-    fun updateBmtcBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double) {
-        // Bus data removed - pure Namma Metro focus
+    fun updateBmtcBoundingBox(
+        minLat: Double,
+        maxLat: Double,
+        minLon: Double,
+        maxLon: Double,
+        zoomLevel: Double = 15.0
+    ) {
+        if (!_showBmtcOverlay.value) return
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val stops = if (zoomLevel < 14.5) {
+                    transitDao.getMajorBusHubs(minRoutes = 55, limit = 75)
+                } else {
+                    transitDao.getBusStopsInBoundingBox(minLat, maxLat, minLon, maxLon, limit = 160)
+                }
+                _busStops.value = stops
+            } catch (_: Exception) {}
+        }
     }
 
-    fun toggleBmtcOverlay(activeCenter: GeoPoint? = null) {
-        _userMessage.tryEmit("🚌 BMTC bus network is paused. Focusing on Namma Metro.")
+    fun toggleBmtcOverlay(activeCenter: GeoPoint? = null, zoomLevel: Double = 15.0) {
+        val next = !_showBmtcOverlay.value
+        _showBmtcOverlay.value = next
+        if (next) {
+            val center = activeCenter ?: _currentOriginLocation.value ?: _targetLocation.value
+            val delta = 0.03
+            updateBmtcBoundingBox(
+                minLat = center.latitude - delta,
+                maxLat = center.latitude + delta,
+                minLon = center.longitude - delta,
+                maxLon = center.longitude + delta,
+                zoomLevel = zoomLevel
+            )
+            _userMessage.tryEmit("🚌 BMTC Bus Stops ON (zoom in for both sides of road)")
+        } else {
+            _busStops.value = emptyList()
+            _selectedBusStop.value = null
+            _nearestBusRoutePoints.value = emptyList()
+            _nearestBusRoadDistance.value = null
+            _nearestBusRoadDuration.value = null
+        }
     }
 
     fun toggleTransitOverlay() {
@@ -743,7 +956,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun getDestinationConfig(): DestinationConfig {
         val target = _targetLocation.value
-        val boarding = _customBoardingStation.value ?: _metroJourneyPlan.value?.boardingStation
+        val customBus = _customBoardingBusStop.value?.let {
+            NammaMetroNetwork.ActiveStation(it.id, it.name, "BMTC", it.latitude, it.longitude)
+        }
+        val boarding = customBus ?: _customBoardingStation.value ?: _metroJourneyPlan.value?.boardingStation
         return DestinationConfig(
             name = _targetName.value,
             latitude = target.latitude,
@@ -783,7 +999,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
             } catch (_: Exception) {}
         }
 
-        if (config.vehicleMode == VehicleMode.METRO) {
+        if (config.vehicleMode == VehicleMode.METRO || config.vehicleMode == VehicleMode.BUS) {
             val bRoute = _boardingRoadRoute.value
             val eRoute = _exitRoadRoute.value
             WakeMeTrackingService.seedPreloadedMetroRoutes(
@@ -793,7 +1009,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                 boardingDurSeconds = bRoute?.durationSeconds,
                 exitPoints = eRoute?.points.orEmpty(),
                 exitDistMeters = eRoute?.distanceMeters,
-                exitDurSeconds = eRoute?.durationSeconds
+                exitDurSeconds = eRoute?.durationSeconds,
+                busLegRoadPoints = if (config.vehicleMode == VehicleMode.BUS) _busLegRoadPoints.value else emptyMap()
             )
         } else if (config.vehicleMode.usesRoadDistanceTrigger) {
             WakeMeTrackingService.seedPreloadedRoadRoute(_previewRoadRoute.value?.points.orEmpty())

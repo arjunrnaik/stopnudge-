@@ -77,12 +77,19 @@ fun WakeMeModeSelectionScreen(
     val isLoadingPreviewRoute by viewModel.isLoadingPreviewRoute.collectAsState()
     val metroStopsBeforeAlert by viewModel.metroStopsBeforeAlert.collectAsState()
     val customBoardingStation by viewModel.customBoardingStation.collectAsState()
+    val customBoardingBusStop by viewModel.customBoardingBusStop.collectAsState()
     val metroJourneyPlan by viewModel.metroJourneyPlan.collectAsState()
+    val bmtcRouteOptions by viewModel.bmtcRouteOptions.collectAsState()
+    val selectedBusRouteIndex by viewModel.selectedBusRouteIndex.collectAsState()
+    val busLegRoadPoints by viewModel.busLegRoadPoints.collectAsState()
+    val allBusStopsList by viewModel.allBusStopsList.collectAsState()
     val boardingRoadRoute by viewModel.boardingRoadRoute.collectAsState()
     val exitRoadRoute by viewModel.exitRoadRoute.collectAsState()
 
     val isRoadMode = selectedVehicleMode.usesRoadDistanceTrigger
     val isMetroMode = selectedVehicleMode == VehicleMode.METRO
+    val isBusMode = selectedVehicleMode == VehicleMode.BUS
+    val isTransitMode = isMetroMode || isBusMode
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
     var showBoardingStationPicker by remember { mutableStateOf(false) }
@@ -137,9 +144,12 @@ fun WakeMeModeSelectionScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    val triggerLabel = if (isMetroMode) {
-                        if (metroStopsBeforeAlert == 0) "At Station • 50m"
-                        else "$metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""} before"
+                    val triggerLabel = if (isTransitMode) {
+                        if (metroStopsBeforeAlert == 0) {
+                            "At ${if (isBusMode) "Stop" else "Station"} • 50m"
+                        } else {
+                            "$metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""} before"
+                        }
                     } else if (radiusMeters >= 1000f) {
                         "${(radiusMeters / 1000f).toInt()} km"
                     } else {
@@ -161,6 +171,7 @@ fun WakeMeModeSelectionScreen(
                     ) {
                         val actionLabel = when {
                             isMetroMode -> "START METRO JOURNEY"
+                            isBusMode -> "START BUS JOURNEY"
                             isRoadMode -> "START ROAD ALARM"
                             else -> "START COMMUTE ALARM"
                         }
@@ -247,7 +258,7 @@ fun WakeMeModeSelectionScreen(
                                             append("Calculating route...")
                                         }
                                     }
-                                    isMetroMode && metroJourneyPlan != null -> {
+                                    isTransitMode && metroJourneyPlan != null -> {
                                         val p = metroJourneyPlan!!
                                         val boardRoad = boardingRoadRoute
                                         if (boardRoad != null) {
@@ -265,7 +276,12 @@ fun WakeMeModeSelectionScreen(
                                         }
 
                                         withStyle(SpanStyle(color = primaryColor, fontWeight = FontWeight.SemiBold)) {
-                                            append("${p.totalStops} metro stops")
+                                            if (p.isBusJourney) {
+                                                val routesStr = p.legs.joinToString(" ➔ ") { it.lineName }
+                                                append("🚌 $routesStr (${p.totalStops} stops)")
+                                            } else {
+                                                append("${p.totalStops} metro stops")
+                                            }
                                             if (p.requiresLineChange) {
                                                 append(" • 🔄 Change at ${p.interchangeStations.joinToString { it.name }}")
                                             }
@@ -309,9 +325,10 @@ fun WakeMeModeSelectionScreen(
                         }
                     }
 
-                    // Stop-to-Stop Boarding Selector Pill (Metro mode)
-                    if (isMetroMode && metroJourneyPlan != null) {
+                    // Stop-to-Stop Boarding Selector Pill & Matching BMTC Bus Route Chips
+                    if (isTransitMode && metroJourneyPlan != null) {
                         val p = metroJourneyPlan!!
+                        val isCustomStart = if (isBusMode) customBoardingBusStop != null else customBoardingStation != null
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -320,7 +337,7 @@ fun WakeMeModeSelectionScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Board: ${p.boardingStation.name} ${if (customBoardingStation == null) "(Nearest)" else "(Custom)"}",
+                                    text = "Board: ${p.boardingStation.name} ${if (!isCustomStart) "(Nearest)" else "(Custom)"}",
                                     style = MaterialTheme.typography.labelMedium,
                                     fontWeight = FontWeight.Bold,
                                     maxLines = 1,
@@ -335,6 +352,30 @@ fun WakeMeModeSelectionScreen(
                             }
                             TextButton(onClick = { showBoardingStationPicker = true }) {
                                 Text("Change Start ▾", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (isBusMode && bmtcRouteOptions.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                bmtcRouteOptions.forEachIndexed { idx, opt ->
+                                    val isSel = idx == selectedBusRouteIndex
+                                    FilterChip(
+                                        selected = isSel,
+                                        onClick = { viewModel.selectBusRouteOption(idx) },
+                                        label = {
+                                            Text(
+                                                text = if (opt.isTransferRoute) "🔄 ${opt.routeTitle} (${opt.plan.totalStops})" else "🚌 ${opt.routeTitle} (${opt.plan.totalStops})",
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -371,33 +412,42 @@ fun WakeMeModeSelectionScreen(
                         map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())
                         val plan = metroJourneyPlan
 
-                        if (isMetroSelected && plan != null) {
+                        if (isTransitMode && plan != null) {
                             val zoomPts = LocationMarkerUtils.renderMetroJourneyOverlays(
                                 map = map,
                                 context = map.context,
                                 plan = plan,
                                 boardingRoadPoints = boardingRoadRoute?.points.orEmpty(),
                                 stopsBeforeAlert = metroStopsBeforeAlert,
-                                exitRoadPoints = exitRoadRoute?.points.orEmpty()
+                                exitRoadPoints = exitRoadRoute?.points.orEmpty(),
+                                busLegRoadPoints = if (plan.isBusJourney) busLegRoadPoints else emptyMap()
                             )
 
                             val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(map.context)
-                            // Boarding station marker
+                            // Boarding station / bus stop marker
                             map.overlays.add(Marker(map).apply {
                                 position = plan.boardingStation.geoPoint
                                 title = "Board: ${plan.boardingStation.name}"
-                                icon = LocationMarkerUtils.createStationMarkerDrawable(
-                                    map.context,
-                                    "Board: ${plan.boardingStation.name}",
-                                    NammaMetroNetwork.getLineColor(plan.legs.firstOrNull()?.lineName)
-                                )
+                                icon = if (plan.isBusJourney) {
+                                    LocationMarkerUtils.createBmtcCompactStopDrawable(
+                                        map.context,
+                                        "Board: ${plan.boardingStation.name}",
+                                        isSelected = true
+                                    )
+                                } else {
+                                    LocationMarkerUtils.createStationMarkerDrawable(
+                                        map.context,
+                                        "Board: ${plan.boardingStation.name}",
+                                        NammaMetroNetwork.getLineColor(plan.legs.firstOrNull()?.lineName)
+                                    )
+                                }
                                 setAnchor(Marker.ANCHOR_CENTER, anchorY)
                             })
-                            // Interchange station markers
+                            // Interchange station / bus transfer hub markers
                             for (inter in plan.interchangeStations) {
                                 map.overlays.add(Marker(map).apply {
                                     position = inter.geoPoint
-                                    title = "Change Line: ${inter.name}"
+                                    title = "Change at ${inter.name}"
                                     icon = LocationMarkerUtils.createStationMarkerDrawable(
                                         map.context,
                                         "🔄 ${inter.name}",
@@ -407,16 +457,23 @@ fun WakeMeModeSelectionScreen(
                                     setAnchor(Marker.ANCHOR_CENTER, anchorY)
                                 })
                             }
-                            // Exit station marker
+                            // Exit station / bus stop marker
                             if (plan.exitStation.id != plan.boardingStation.id) {
                                 map.overlays.add(Marker(map).apply {
                                     position = plan.exitStation.geoPoint
                                     title = "Exit: ${plan.exitStation.name}"
-                                    icon = LocationMarkerUtils.createStationMarkerDrawable(
-                                        map.context,
-                                        plan.exitStation.name,
-                                        NammaMetroNetwork.getLineColor(plan.legs.lastOrNull()?.lineName)
-                                    )
+                                    icon = if (plan.isBusJourney) {
+                                        LocationMarkerUtils.createBmtcCompactStopDrawable(
+                                            map.context,
+                                            plan.exitStation.name
+                                        )
+                                    } else {
+                                        LocationMarkerUtils.createStationMarkerDrawable(
+                                            map.context,
+                                            plan.exitStation.name,
+                                            NammaMetroNetwork.getLineColor(plan.legs.lastOrNull()?.lineName)
+                                        )
+                                    }
                                     setAnchor(Marker.ANCHOR_CENTER, anchorY)
                                 })
                             }
@@ -546,7 +603,7 @@ fun WakeMeModeSelectionScreen(
                     }
                 }
 
-                // City Bus Button (Paused / Coming Soon)
+                // City Bus Button (Active BMTC Network)
                 val isBus = selectedVehicleMode == VehicleMode.BUS
                 Surface(
                     onClick = { viewModel.setVehicleMode(VehicleMode.BUS) },
@@ -565,7 +622,7 @@ fun WakeMeModeSelectionScreen(
                         Text("🚌", fontSize = 24.sp)
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("BMTC (Soon)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("BMTC Routes", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -627,11 +684,11 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            // 4. Alert Threshold: Stops Before (Metro), Road Distance (Cab/Auto), Radius (Bus)
+            // 4. Alert Threshold: Stops Before (Metro & BMTC Bus), Road Distance (Cab/Auto)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = when {
-                        isMetroMode -> "WAKE-UP ALERT (STOPS BEFORE)"
+                        isTransitMode -> "WAKE-UP ALERT (STOPS BEFORE)"
                         isRoadMode -> "ALERT DISTANCE BY ROAD"
                         else -> "WAKE-UP RADIUS"
                     },
@@ -639,9 +696,13 @@ fun WakeMeModeSelectionScreen(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
-                if (isMetroMode) {
+                if (isTransitMode) {
                     Text(
-                        text = "Shows road path if >50m from Metro; wakes you at chosen stop before exit & line change.",
+                        text = if (isBusMode) {
+                            "Orange road path if >50m from stop; wakes you at chosen stop before exit & transfer."
+                        } else {
+                            "Shows road path if >50m from Metro; wakes you at chosen stop before exit & line change."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 11.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -656,7 +717,7 @@ fun WakeMeModeSelectionScreen(
                 }
             }
 
-            if (isMetroMode) {
+            if (isTransitMode) {
                 val stopOptions = listOf(1, 2, 3, 0)
                 Row(
                     modifier = Modifier
@@ -667,7 +728,7 @@ fun WakeMeModeSelectionScreen(
                     stopOptions.forEach { stopCount ->
                         val isSelected = (metroStopsBeforeAlert == stopCount)
                         val label = when (stopCount) {
-                            0 -> "At Station (50m)"
+                            0 -> if (isBusMode) "At Stop (50m)" else "At Station (50m)"
                             1 -> "1 Stop Before"
                             else -> "$stopCount Stops Before"
                         }
@@ -797,7 +858,7 @@ fun WakeMeModeSelectionScreen(
                             color = MaterialTheme.colorScheme.primary
                         )
                         val summaryText = when {
-                            isMetroMode && metroJourneyPlan != null -> {
+                            isTransitMode && metroJourneyPlan != null -> {
                                 val p = metroJourneyPlan!!
                                 val lastLegIdx = (p.legs.size - 1).coerceAtLeast(0)
                                 val alertStop = p.getAlertStopForLeg(lastLegIdx, metroStopsBeforeAlert)
@@ -807,11 +868,11 @@ fun WakeMeModeSelectionScreen(
                                     "Wake-up siren fires at ${alertStop?.name ?: p.exitStation.name} ($metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""} before ${p.exitStation.name})"
                                 }
                                 val stage3Desc = if (p.exitWalkDistanceMeters > 50f) {
-                                    " • Then road path to $targetName"
+                                    " • Then Orange road path to $targetName"
                                 } else ""
                                 if (p.requiresLineChange) {
                                     val interNames = p.interchangeStations.joinToString { it.name }
-                                    "Interchange alert before $interNames • $finalDesc$stage3Desc"
+                                    "Transfer alert before $interNames • $finalDesc$stage3Desc"
                                 } else {
                                     "$finalDesc$stage3Desc"
                                 }
@@ -887,7 +948,7 @@ fun WakeMeModeSelectionScreen(
         )
     }
 
-    // Searchable Starting / Boarding Metro Station Picker (Stop-to-Stop Setup)
+    // Searchable Starting / Boarding Metro Station or BMTC Bus Stop Picker
     if (showBoardingStationPicker) {
         var stationFilter by remember { mutableStateOf("") }
         val filteredStations = remember(stationFilter) {
@@ -900,11 +961,25 @@ fun WakeMeModeSelectionScreen(
                 }
             }
         }
+        val filteredBusStops = remember(stationFilter, allBusStopsList) {
+            if (stationFilter.isBlank()) {
+                allBusStopsList.take(50)
+            } else {
+                allBusStopsList.filter {
+                    it.name.contains(stationFilter, ignoreCase = true) ||
+                        it.ref.contains(stationFilter, ignoreCase = true) ||
+                        it.directionHint.contains(stationFilter, ignoreCase = true)
+                }.take(50)
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showBoardingStationPicker = false },
             title = {
-                Text("Select Boarding Metro Station", fontWeight = FontWeight.Bold)
+                Text(
+                    if (isBusMode) "Select Boarding BMTC Stop" else "Select Boarding Metro Station",
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column(
@@ -916,7 +991,9 @@ fun WakeMeModeSelectionScreen(
                     OutlinedTextField(
                         value = stationFilter,
                         onValueChange = { stationFilter = it },
-                        placeholder = { Text("Search station or line...") },
+                        placeholder = {
+                            Text(if (isBusMode) "Search bus stop or route (e.g. 500-D)..." else "Search station or line...")
+                        },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -925,13 +1002,14 @@ fun WakeMeModeSelectionScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .clickable {
-                                viewModel.setCustomBoardingStation(null)
+                                if (isBusMode) viewModel.setCustomBoardingBusStop(null)
+                                else viewModel.setCustomBoardingStation(null)
                                 showBoardingStationPicker = false
                             },
                         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                     ) {
                         Text(
-                            text = "📍 Auto (Nearest Metro by Road)",
+                            text = if (isBusMode) "📍 Auto (Best Matching Nearby Stop)" else "📍 Auto (Nearest Metro by Road)",
                             modifier = Modifier.padding(10.dp),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
@@ -939,33 +1017,78 @@ fun WakeMeModeSelectionScreen(
                         )
                     }
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        items(filteredStations, key = { it.id }) { st ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable {
-                                        viewModel.setCustomBoardingStation(st)
-                                        showBoardingStationPicker = false
+                        if (isBusMode) {
+                            items(filteredBusStops, key = { it.id }) { stop ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            viewModel.setCustomBoardingBusStop(stop)
+                                            showBoardingStationPicker = false
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = stop.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        if (stop.directionHint.isNotBlank()) {
+                                            Text(
+                                                text = stop.directionHint,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    text = st.name,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = st.line,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Color(NammaMetroNetwork.getLineColor(st.line)),
-                                    fontWeight = FontWeight.Bold
-                                )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = stop.ref.split(',').take(3).joinToString(","),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF1565C0),
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        } else {
+                            items(filteredStations, key = { it.id }) { st ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            viewModel.setCustomBoardingStation(st)
+                                            showBoardingStationPicker = false
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = st.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = st.line,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(NammaMetroNetwork.getLineColor(st.line)),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
                     }

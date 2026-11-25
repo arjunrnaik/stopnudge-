@@ -108,6 +108,10 @@ fun WakeMeLandingScreen(
     val currentOriginLocation by viewModel.currentOriginLocation.collectAsState()
     val selectedBusStop by viewModel.selectedBusStop.collectAsState()
     val busStops by viewModel.busStops.collectAsState()
+    val nearestBusRoadDistance by viewModel.nearestBusRoadDistance.collectAsState()
+    val nearestBusRoadDuration by viewModel.nearestBusRoadDuration.collectAsState()
+    val nearestBusRoutePoints by viewModel.nearestBusRoutePoints.collectAsState()
+    val isCalculatingRoadToBus by viewModel.isCalculatingRoadToBus.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentTrips by viewModel.recentTrips.collectAsState()
 
@@ -168,15 +172,16 @@ fun WakeMeLandingScreen(
         }
     }
 
-    // Render road network polyline to nearest metro station
-    LaunchedEffect(mapViewRef, nearestMetroRoutePoints) {
+    // Render Orange road network polyline to nearest Metro station or BMTC Bus stop
+    LaunchedEffect(mapViewRef, nearestMetroRoutePoints, nearestBusRoutePoints) {
         val map = mapViewRef ?: return@LaunchedEffect
         roadRoutePolyline?.let { map.overlays.remove(it) }
         roadRoutePolyline = null
 
-        if (nearestMetroRoutePoints.isNotEmpty()) {
+        val activeRoutePts = if (nearestBusRoutePoints.isNotEmpty()) nearestBusRoutePoints else nearestMetroRoutePoints
+        if (activeRoutePts.isNotEmpty()) {
             val poly = Polyline(map).apply {
-                setPoints(nearestMetroRoutePoints)
+                setPoints(activeRoutePts)
                 outlinePaint.color = LocationMarkerUtils.COLOR_METRO_ROAD_ORANGE // Consistent Vibrant Orange Road Path
                 outlinePaint.strokeWidth = 11.5f
                 outlinePaint.strokeCap = Paint.Cap.ROUND
@@ -258,17 +263,18 @@ fun WakeMeLandingScreen(
     // Continuously query BMTC bus stops in the visible bounding box as user scrolls or zooms
     LaunchedEffect(currentMapCenter, showBmtcOverlay) {
         if (showBmtcOverlay) {
-            val delta = 0.06
+            val delta = 0.035
             viewModel.updateBmtcBoundingBox(
                 minLat = currentMapCenter.latitude - delta,
                 maxLat = currentMapCenter.latitude + delta,
                 minLon = currentMapCenter.longitude - delta,
-                maxLon = currentMapCenter.longitude + delta
+                maxLon = currentMapCenter.longitude + delta,
+                zoomLevel = mapViewRef?.zoomLevelDouble ?: 15.0
             )
         }
     }
 
-    // Update BMTC bus stop markers with prominent Deep Teal badges and station name pills
+    // Update BMTC bus stop markers with opposite-side directional pills
     LaunchedEffect(mapViewRef, showBmtcOverlay, busStops, selectedBusStop) {
         val map = mapViewRef ?: return@LaunchedEffect
         busMarkersList.forEach { map.overlays.remove(it) }
@@ -287,12 +293,21 @@ fun WakeMeLandingScreen(
                 if (key !in addedKeys) {
                     addedKeys.add(key)
                     val stopPoint = GeoPoint(stop.latitude, stop.longitude)
+                    val isSel = selectedBusStop?.let {
+                        kotlin.math.abs(it.latitude - stop.latitude) < 1e-5 &&
+                            kotlin.math.abs(it.longitude - stop.longitude) < 1e-5
+                    } == true
 
                     val marker = Marker(map).apply {
                         position = stopPoint
                         title = "${stop.name} Bus Stop"
-                        snippet = stop.directionHint ?: "BMTC Bus Stop"
-                        icon = LocationMarkerUtils.createBmtcBusStopMarkerDrawable(context, stop.name, "#00838F")
+                        snippet = stop.directionHint.ifBlank { "BMTC Bus Stop" }
+                        icon = LocationMarkerUtils.createBmtcCompactStopDrawable(
+                            context = context,
+                            stopName = stop.name,
+                            directionHint = stop.directionHint,
+                            isSelected = isSel
+                        )
                         setAnchor(Marker.ANCHOR_CENTER, anchorY)
                         setOnMarkerClickListener { _, _ ->
                             viewModel.selectBusStop(
@@ -385,7 +400,8 @@ fun WakeMeLandingScreen(
                                         minLat = center.latitude - delta,
                                         maxLat = center.latitude + delta,
                                         minLon = center.longitude - delta,
-                                        maxLon = center.longitude + delta
+                                        maxLon = center.longitude + delta,
+                                        zoomLevel = zoomLevelDouble
                                     )
                                 }
                             }
@@ -403,7 +419,8 @@ fun WakeMeLandingScreen(
                                         minLat = center.latitude - delta,
                                         maxLat = center.latitude + delta,
                                         minLon = center.longitude - delta,
-                                        maxLon = center.longitude + delta
+                                        maxLon = center.longitude + delta,
+                                        zoomLevel = zoomLevelDouble
                                     )
                                 }
                             }
@@ -414,10 +431,11 @@ fun WakeMeLandingScreen(
                     mapViewRef = this
                     if (showBmtcOverlay) {
                         viewModel.updateBmtcBoundingBox(
-                            minLat = targetLocation.latitude - 0.06,
-                            maxLat = targetLocation.latitude + 0.06,
-                            minLon = targetLocation.longitude - 0.06,
-                            maxLon = targetLocation.longitude + 0.06
+                            minLat = targetLocation.latitude - 0.04,
+                            maxLat = targetLocation.latitude + 0.04,
+                            minLon = targetLocation.longitude - 0.04,
+                            maxLon = targetLocation.longitude + 0.04,
+                            zoomLevel = zoomLevelDouble
                         )
                     }
                 }
@@ -784,7 +802,47 @@ fun WakeMeLandingScreen(
                 }
             }
 
-            // BMTC Bus layer paused - pure Namma Metro focus
+            // FAB 3 (Bottom): BMTC Bus Stop Layer Toggle (Tap, OFF by default) & Nearest Bus Stop by Road (Long-press)
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .shadow(6.dp, CircleShape)
+                    .clip(CircleShape)
+                    .background(if (showBmtcOverlay) Color(0xFF1565C0).copy(alpha = 0.18f) else MaterialTheme.colorScheme.surface)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = {
+                                viewModel.toggleBmtcOverlay(
+                                    activeCenter = currentMapCenter,
+                                    zoomLevel = mapViewRef?.zoomLevelDouble ?: 15.0
+                                )
+                            },
+                            onLongPress = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                val refLocation = droppedPinLocation
+                                    ?: locationOverlayRef?.myLocation
+                                    ?: currentMapCenter
+                                viewModel.findAndFocusNearestBusStop(refLocation)
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (isCalculatingRoadToBus) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(20.dp),
+                        color = Color(0xFF1565C0),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsBus,
+                        contentDescription = "Toggle BMTC Bus Stops (Long press for Nearest Stop by Road)",
+                        tint = if (showBmtcOverlay) Color(0xFF0D47A1) else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
 
         // 4. Bottom Dropped Pin Action Card (if user tapped map)
@@ -1090,6 +1148,19 @@ fun WakeMeLandingScreen(
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
+                                }
+                                val busRoadDist = nearestBusRoadDistance
+                                val busRoadDur = nearestBusRoadDuration
+                                if (busRoadDist != null) {
+                                    val formattedDist = if (busRoadDist >= 1000f) String.format(Locale.US, "%.1f km", busRoadDist / 1000f) else "${busRoadDist.toInt()} m"
+                                    val mins = if (busRoadDur != null) (busRoadDur / 60).toInt().coerceAtLeast(1) else null
+                                    val durStr = if (mins != null) " • ~$mins min by road" else " by road"
+                                    Text(
+                                        text = "🛣️ $formattedDist$durStr",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100)
+                                    )
                                 }
                                 Text(
                                     text = selectedBus.routes?.let { "Routes: $it" } ?: "BMTC Transit Boarding Point",

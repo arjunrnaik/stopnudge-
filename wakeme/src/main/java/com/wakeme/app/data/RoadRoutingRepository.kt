@@ -1,5 +1,6 @@
 package com.wakeme.app.data
 
+import com.wakeme.app.data.local.transit.BusStopEntity
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.model.VehicleMode
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +13,14 @@ import java.util.Locale
 
 data class NearestMetroRoadResult(
     val station: NammaMetroNetwork.ActiveStation,
+    val roadDistanceMeters: Float,
+    val durationSeconds: Float,
+    val routePoints: List<GeoPoint> = emptyList(),
+    val isRoadAccurate: Boolean = true
+)
+
+data class NearestBusRoadResult(
+    val stop: BusStopEntity,
     val roadDistanceMeters: Float,
     val durationSeconds: Float,
     val routePoints: List<GeoPoint> = emptyList(),
@@ -177,7 +186,6 @@ object RoadRoutingRepository {
             return@withContext NearestMetroRoadResult(defaultStation, 0f, 0f, emptyList(), false)
         }
 
-        // 1. Pre-filter top 6 candidate stations by straight-line distance
         val sortedCandidates = candidateStations.map { station ->
             val straightMeters = haversineDistanceMeters(
                 origin.latitude, origin.longitude,
@@ -186,13 +194,97 @@ object RoadRoutingRepository {
             Pair(station, straightMeters)
         }.sortedBy { it.second }.take(6)
 
+        val matrixMatch = queryNearestCandidateIndexByRoad(
+            origin = origin,
+            points = sortedCandidates.map { it.first.geoPoint }
+        )
+
+        if (matrixMatch != null) {
+            val (bestIndex, minRoadDistance, bestDuration) = matrixMatch
+            val winningStation = sortedCandidates[bestIndex].first
+            val route = getRoute(origin.latitude, origin.longitude, winningStation.latitude, winningStation.longitude)
+            return@withContext NearestMetroRoadResult(
+                station = winningStation,
+                roadDistanceMeters = if (route.isRoadRoute) route.distanceMeters else minRoadDistance,
+                durationSeconds = if (route.isRoadRoute) route.durationSeconds else bestDuration,
+                routePoints = route.points,
+                isRoadAccurate = true
+            )
+        }
+
+        val (fallbackStation, straightMeters) = sortedCandidates.first()
+        val estimatedRoadDistance = (straightMeters * 1.28).toFloat()
+        val estimatedDuration = estimatedRoadDistance / (30f * 1000f / 3600f)
+        NearestMetroRoadResult(
+            station = fallbackStation,
+            roadDistanceMeters = estimatedRoadDistance,
+            durationSeconds = estimatedDuration,
+            routePoints = listOf(origin, fallbackStation.geoPoint),
+            isRoadAccurate = false
+        )
+    }
+
+    /**
+     * Finds the nearest BMTC bus stop pole by real road distance using the shared OSRM Table matrix.
+     */
+    suspend fun findNearestBusStopByRoad(
+        origin: GeoPoint,
+        candidateStops: List<BusStopEntity>
+    ): NearestBusRoadResult? = withContext(Dispatchers.IO) {
+        if (candidateStops.isEmpty()) return@withContext null
+
+        val sortedCandidates = candidateStops.map { stop ->
+            val straightMeters = haversineDistanceMeters(
+                origin.latitude, origin.longitude,
+                stop.latitude, stop.longitude
+            )
+            Pair(stop, straightMeters)
+        }.sortedBy { it.second }.take(6)
+
+        val matrixMatch = queryNearestCandidateIndexByRoad(
+            origin = origin,
+            points = sortedCandidates.map { GeoPoint(it.first.latitude, it.first.longitude) }
+        )
+
+        if (matrixMatch != null) {
+            val (bestIndex, minRoadDistance, bestDuration) = matrixMatch
+            val winningStop = sortedCandidates[bestIndex].first
+            val route = getRoute(origin.latitude, origin.longitude, winningStop.latitude, winningStop.longitude)
+            return@withContext NearestBusRoadResult(
+                stop = winningStop,
+                roadDistanceMeters = if (route.isRoadRoute) route.distanceMeters else minRoadDistance,
+                durationSeconds = if (route.isRoadRoute) route.durationSeconds else bestDuration,
+                routePoints = route.points,
+                isRoadAccurate = true
+            )
+        }
+
+        val (fallbackStop, straightMeters) = sortedCandidates.first()
+        val estimatedRoadDistance = (straightMeters * 1.28).toFloat()
+        val estimatedDuration = estimatedRoadDistance / (30f * 1000f / 3600f)
+        NearestBusRoadResult(
+            stop = fallbackStop,
+            roadDistanceMeters = estimatedRoadDistance,
+            durationSeconds = estimatedDuration,
+            routePoints = listOf(origin, GeoPoint(fallbackStop.latitude, fallbackStop.longitude)),
+            isRoadAccurate = false
+        )
+    }
+
+    /**
+     * Shared OSRM Table API one-to-many road distance solver returning (bestIndex, distanceMeters, durationSeconds).
+     */
+    private fun queryNearestCandidateIndexByRoad(
+        origin: GeoPoint,
+        points: List<GeoPoint>
+    ): Triple<Int, Float, Float>? {
+        if (points.isEmpty()) return null
         try {
-            // 2. Query OSRM Table API in driving mode with distance & duration annotations
             val coordsStr = buildString {
                 append(String.format(Locale.US, "%.6f,%.6f", origin.longitude, origin.latitude))
-                for ((station, _) in sortedCandidates) {
+                for (pt in points) {
                     append(";")
-                    append(String.format(Locale.US, "%.6f,%.6f", station.longitude, station.latitude))
+                    append(String.format(Locale.US, "%.6f,%.6f", pt.longitude, pt.latitude))
                 }
             }
 
@@ -217,8 +309,7 @@ object RoadRoutingRepository {
                         var minRoadDistance = Float.MAX_VALUE
                         var bestDuration = 0f
 
-                        // Index 0 is source to source (0 distance). Indices 1..N correspond to candidate stations
-                        for (i in 0 until sortedCandidates.size) {
+                        for (i in points.indices) {
                             val arrayIndex = i + 1
                             if (!distancesArray.isNull(arrayIndex)) {
                                 val dist = distancesArray.getDouble(arrayIndex).toFloat()
@@ -232,37 +323,15 @@ object RoadRoutingRepository {
                         }
 
                         if (bestIndex >= 0) {
-                            val winningStation = sortedCandidates[bestIndex].first
-                            // Fetch exact road polyline for the winning station
-                            val route = getRoute(origin.latitude, origin.longitude, winningStation.latitude, winningStation.longitude)
-                            return@withContext NearestMetroRoadResult(
-                                station = winningStation,
-                                roadDistanceMeters = if (route.isRoadRoute) route.distanceMeters else minRoadDistance,
-                                durationSeconds = if (route.isRoadRoute) route.durationSeconds else bestDuration,
-                                routePoints = route.points,
-                                isRoadAccurate = true
-                            )
+                            return Triple(bestIndex, minRoadDistance, bestDuration)
                         }
                     }
                 }
             }
         } catch (_: Exception) {
-            // Network failure or timeout -> fallback to curvature estimation
+            // Network failure or timeout -> caller handles curvature fallback
         }
-
-        // Fallback: Use top candidate with road curvature factor (1.28x)
-        val (fallbackStation, straightMeters) = sortedCandidates.first()
-        val estimatedRoadDistance = (straightMeters * 1.28).toFloat()
-        val estimatedDuration = estimatedRoadDistance / (30f * 1000f / 3600f)
-        val directRoute = listOf(origin, fallbackStation.geoPoint)
-
-        NearestMetroRoadResult(
-            station = fallbackStation,
-            roadDistanceMeters = estimatedRoadDistance,
-            durationSeconds = estimatedDuration,
-            routePoints = directRoute,
-            isRoadAccurate = false
-        )
+        return null
     }
 
     /**
