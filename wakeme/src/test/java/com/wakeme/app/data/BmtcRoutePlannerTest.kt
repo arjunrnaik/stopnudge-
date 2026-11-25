@@ -34,7 +34,7 @@ class BmtcRoutePlannerTest {
         source = "reclaim",
         osmTimestamp = "",
         lastCheckedDate = "",
-        verified = false,
+        verified = 0,
         directionHint = ""
     )
 
