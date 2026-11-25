@@ -200,6 +200,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _customBoardingBusStop = MutableStateFlow<BusStopEntity?>(null)
     val customBoardingBusStop: StateFlow<BusStopEntity?> = _customBoardingBusStop.asStateFlow()
 
+    private val _preferredSearchedBusRouteNo = MutableStateFlow<String?>(null)
+
     private val _isTrackingActive = MutableStateFlow(false)
     val isTrackingActive: StateFlow<Boolean> = _isTrackingActive.asStateFlow()
 
@@ -324,7 +326,12 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _selectedBusRouteIndex.value = index
         _metroJourneyPlan.value = option.plan
         viewModelScope.launch {
-            loadTransitPlanRoadSegments(option.plan, _currentOriginLocation.value ?: fetchLastKnownOrigin(), _targetLocation.value)
+            loadTransitPlanRoadSegments(
+                plan = option.plan,
+                origin = _currentOriginLocation.value ?: fetchLastKnownOrigin(),
+                dest = _targetLocation.value,
+                precomputedShapes = option.legShapePoints
+            )
         }
     }
 
@@ -342,7 +349,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private suspend fun loadTransitPlanRoadSegments(
         plan: MetroJourneyPlan,
         origin: GeoPoint?,
-        dest: GeoPoint
+        dest: GeoPoint,
+        precomputedShapes: Map<Int, List<GeoPoint>> = emptyMap()
     ) {
         if (origin != null) {
             val distToBoard = RoadRoutingRepository.haversineDistanceMeters(
@@ -373,7 +381,10 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         if (plan.isBusJourney) {
             val legMap = HashMap<Int, List<GeoPoint>>(plan.legs.size)
             plan.legs.forEachIndexed { idx, leg ->
-                if (leg.stations.size >= 2) {
+                val snapped = precomputedShapes[idx]
+                if (snapped != null && snapped.size >= 2) {
+                    legMap[idx] = snapped
+                } else if (leg.stations.size >= 2) {
                     val b = leg.boardingStation
                     val e = leg.alightingStation
                     try {
@@ -467,12 +478,22 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                         )
                     }
                     _bmtcRouteOptions.value = options
-                    val selIdx = _selectedBusRouteIndex.value.coerceIn(0, (options.size - 1).coerceAtLeast(0))
+                    val preferredRouteNo = _preferredSearchedBusRouteNo.value
+                    val matchedPreferredIdx = if (!preferredRouteNo.isNullOrBlank()) {
+                        options.indexOfFirst { it.routeTitle.equals(preferredRouteNo, ignoreCase = true) }
+                    } else -1
+                    val selIdx = if (matchedPreferredIdx >= 0) {
+                        matchedPreferredIdx
+                    } else {
+                        _selectedBusRouteIndex.value.coerceIn(0, (options.size - 1).coerceAtLeast(0))
+                    }
                     _selectedBusRouteIndex.value = selIdx
-                    val chosenPlan = options.getOrNull(selIdx)?.plan
+                    val chosenOpt = options.getOrNull(selIdx)
+                    val chosenPlan = chosenOpt?.plan
                     _metroJourneyPlan.value = chosenPlan
-                    if (chosenPlan != null) {
-                        loadTransitPlanRoadSegments(chosenPlan, origin, dest)
+                    if (chosenOpt != null) {
+                        _selectedBusCategory.value = chosenOpt.category
+                        loadTransitPlanRoadSegments(chosenOpt.plan, origin, dest, chosenOpt.legShapePoints)
                     } else {
                         _boardingRoadRoute.value = null
                         _exitRoadRoute.value = null
@@ -662,16 +683,21 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _searchResults.value = emptyList()
 
         if (item.type == SearchResultType.METRO) {
+            _preferredSearchedBusRouteNo.value = null
             _selectedVehicleMode.value = VehicleMode.METRO
-        } else if (item.type == SearchResultType.BUS) {
+        } else if (item.type == SearchResultType.BUS || item.type == SearchResultType.BUS_ROUTE) {
+            _preferredSearchedBusRouteNo.value = item.routeNo
             _selectedVehicleMode.value = VehicleMode.BUS
-            _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName(item.subtitle + " " + item.title)
+            _selectedBusCategory.value = BmtcBusCategory.fromRouteOrName((item.routeNo ?: "") + " " + item.subtitle + " " + item.title)
+        } else {
+            _preferredSearchedBusRouteNo.value = null
         }
 
         openModeSelectionForTarget(geoPoint)
     }
 
     fun selectMapPin(geoPoint: GeoPoint, name: String? = null) {
+        _preferredSearchedBusRouteNo.value = null
         _targetLocation.value = geoPoint
         _targetName.value = name ?: String.format("%.4f° N, %.4f° E", geoPoint.latitude, geoPoint.longitude)
         if (name?.contains("Metro", ignoreCase = true) == true) {

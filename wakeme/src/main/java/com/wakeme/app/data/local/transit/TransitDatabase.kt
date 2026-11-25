@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [MetroStationEntity::class, BusStopEntity::class, BusRouteEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class TransitDatabase : RoomDatabase() {
@@ -15,7 +15,7 @@ abstract class TransitDatabase : RoomDatabase() {
     abstract fun transitDao(): TransitDao
 
     companion object {
-        private const val DB_NAME = "wakeme_transit_stops_v8.db"
+        private const val DB_NAME = "wakeme_transit_stops_v9.db"
         private const val ASSET_PATH = "databases/transit_stops.db"
 
         @Volatile
@@ -28,7 +28,7 @@ abstract class TransitDatabase : RoomDatabase() {
                     dbFile.delete()
                 }
 
-                // Clean up legacy v1 through v7 db files so v8 BMTC + Metro DB loads cleanly
+                // Clean up legacy v1 through v8 db files so v9 BMTC + Metro DB loads cleanly
                 for (legacyName in listOf(
                     "transit_stops.db",
                     "transit_stops_v2.db",
@@ -36,7 +36,8 @@ abstract class TransitDatabase : RoomDatabase() {
                     "wakeme_transit_stops_v4.db",
                     "wakeme_transit_stops_v5.db",
                     "wakeme_transit_stops_v6.db",
-                    "wakeme_transit_stops_v7.db"
+                    "wakeme_transit_stops_v7.db",
+                    "wakeme_transit_stops_v8.db"
                 )) {
                     val oldDb = context.applicationContext.getDatabasePath(legacyName)
                     if (oldDb.exists()) {

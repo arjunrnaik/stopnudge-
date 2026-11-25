@@ -1802,6 +1802,10 @@ private fun SearchResultRow(
                 val cat = BmtcBusCategory.fromRouteOrName(item.subtitle)
                 Icons.Default.DirectionsBus to cat.composeColor
             }
+            SearchResultType.BUS_ROUTE -> {
+                val cat = BmtcBusCategory.fromRouteOrName(item.routeNo ?: item.title)
+                Icons.Default.DirectionsBus to cat.composeColor
+            }
             SearchResultType.ONLINE_PLACE -> Icons.Default.Place to Color(0xFF1E88E5)
             SearchResultType.GOOGLE_MAPS_SEARCH -> Icons.Default.OpenInNew to Color(0xFFEA4335)
         }

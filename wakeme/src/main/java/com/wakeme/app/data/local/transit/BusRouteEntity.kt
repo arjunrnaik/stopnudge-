@@ -21,5 +21,15 @@ data class BusRouteEntity(
     @ColumnInfo(name = "stop_ids")
     val stopIds: String,
     @ColumnInfo(name = "stop_count")
-    val stopCount: Int
+    val stopCount: Int,
+    @ColumnInfo(name = "daily_trips")
+    val dailyTrips: Int = 0,
+    @ColumnInfo(name = "first_bus")
+    val firstBus: String = "",
+    @ColumnInfo(name = "last_bus")
+    val lastBus: String = "",
+    @ColumnInfo(name = "freq_label")
+    val freqLabel: String = "",
+    @ColumnInfo(name = "encoded_shape")
+    val encodedShape: String = ""
 )

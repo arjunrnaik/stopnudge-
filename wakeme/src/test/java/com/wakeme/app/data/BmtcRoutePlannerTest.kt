@@ -156,4 +156,59 @@ class BmtcRoutePlannerTest {
         assertTrue(progress.shouldTriggerStopAlert)
         assertEquals(1, progress.stopsRemaining)
     }
+
+    @Test
+    fun planBusJourneys_ranksHighFrequencyRouteFirstAndSlicesEncodedShape() {
+        val stops = listOf(
+            makeStop("s1", "Origin Stop", 12.9716, 77.5946, "500-D,SPL-1"),
+            makeStop("s2", "Mid Stop", 12.9616, 77.6146, "500-D,SPL-1"),
+            makeStop("s3", "Dest Stop", 12.9516, 77.6346, "500-D,SPL-1")
+        )
+        // Standard Google encoded polyline covering ~ s1 -> s2 -> s3
+        val encoded = "upvmA_q_xMy~}@_`~B~}~@_`|B"
+        val routes = listOf(
+            BusRouteEntity(
+                id = "rare_1trip",
+                routeNo = "SPL-1",
+                origin = "Origin Stop",
+                destination = "Dest Stop",
+                stopIds = "s1,s2,s3",
+                stopCount = 3,
+                dailyTrips = 1,
+                firstBus = "09:00",
+                lastBus = "09:00",
+                freqLabel = "1 trip/day",
+                encodedShape = encoded
+            ),
+            BusRouteEntity(
+                id = "trunk_173trips",
+                routeNo = "500-D",
+                origin = "Origin Stop",
+                destination = "Dest Stop",
+                stopIds = "s1,s2,s3",
+                stopCount = 3,
+                dailyTrips = 173,
+                firstBus = "00:05",
+                lastBus = "21:40",
+                freqLabel = "every ~8 min",
+                encodedShape = encoded
+            )
+        )
+
+        val index = BmtcRoutePlanner.buildIndex(stops, routes)
+        val options = BmtcRoutePlanner.planBusJourneys(
+            origin = GeoPoint(12.9716, 77.5946),
+            destination = GeoPoint(12.9516, 77.6346),
+            destinationName = "Dest Stop",
+            index = index
+        )
+
+        assertEquals(2, options.size)
+        val top = options.first()
+        assertEquals("500-D", top.routeTitle)
+        assertEquals(173, top.dailyTrips)
+        assertEquals("every ~8 min • 00:05–21:40", top.frequencyText)
+        val sliced = top.legShapePoints[0]
+        assertTrue("Expected offline sliced corridor >= 3 points", (sliced?.size ?: 0) >= 3)
+    }
 }

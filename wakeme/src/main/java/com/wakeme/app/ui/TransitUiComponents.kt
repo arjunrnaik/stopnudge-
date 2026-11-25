@@ -277,6 +277,17 @@ fun BmtcRouteOptionCards(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        if (opt.frequencyText.isNotBlank()) {
+                            Text(
+                                text = "⏱️ ${opt.frequencyText}",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = accentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(
                             text = opt.subtitle,
                             style = MaterialTheme.typography.bodySmall,

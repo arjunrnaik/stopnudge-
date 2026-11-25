@@ -14,7 +14,12 @@ data class ParsedBusRoute(
     val destination: String,
     val stopIds: List<String>,
     val stopIndexById: Map<String, Int>,
-    val category: BmtcBusCategory
+    val category: BmtcBusCategory,
+    val dailyTrips: Int = 0,
+    val firstBus: String = "",
+    val lastBus: String = "",
+    val freqLabel: String = "",
+    val encodedShape: String = ""
 )
 
 data class BmtcRouteOption(
@@ -24,7 +29,10 @@ data class BmtcRouteOption(
     val category: BmtcBusCategory,
     val plan: MetroJourneyPlan,
     val isTransferRoute: Boolean,
-    val scoreMeters: Float
+    val scoreMeters: Float,
+    val dailyTrips: Int = 0,
+    val frequencyText: String = "",
+    val legShapePoints: Map<Int, List<GeoPoint>> = emptyMap()
 )
 
 data class IndexedBmtcData(
@@ -88,7 +96,12 @@ object BmtcRoutePlanner {
                     destination = raw.destination,
                     stopIds = tokens,
                     stopIndexById = indexById,
-                    category = category
+                    category = category,
+                    dailyTrips = raw.dailyTrips,
+                    firstBus = raw.firstBus,
+                    lastBus = raw.lastBus,
+                    freqLabel = raw.freqLabel,
+                    encodedShape = raw.encodedShape
                 )
             )
 
@@ -124,9 +137,114 @@ object BmtcRoutePlanner {
         )
     }
 
+    private fun frequencyPenaltyMeters(dailyTrips: Int): Float = when {
+        dailyTrips >= 60 -> 0f
+        dailyTrips >= 20 -> 180f
+        dailyTrips >= 5 -> 480f
+        dailyTrips in 1..4 -> 1150f
+        else -> 300f
+    }
+
+    private fun buildFrequencySummary(freqLabel: String, dailyTrips: Int, firstBus: String, lastBus: String): String {
+        val parts = ArrayList<String>(3)
+        if (freqLabel.isNotBlank()) parts.add(freqLabel)
+        else if (dailyTrips > 0) parts.add("$dailyTrips trips/day")
+        if (firstBus.isNotBlank() && lastBus.isNotBlank()) parts.add("$firstBus–$lastBus")
+        return parts.joinToString(" • ")
+    }
+
+    fun decodePolyline(encoded: String): List<GeoPoint> {
+        if (encoded.isEmpty()) return emptyList()
+        val path = ArrayList<GeoPoint>()
+        var index = 0
+        var lat = 0
+        var lng = 0
+        while (index < encoded.length) {
+            var b: Int
+            var shift = 0
+            var result = 0
+            do {
+                b = encoded[index++].code - 63
+                result = result or ((b and 0x1f) shl shift)
+                shift += 5
+            } while (b >= 0x20 && index < encoded.length)
+            lat += if (result and 1 != 0) (result shr 1).inv() else (result shr 1)
+
+            if (index >= encoded.length) break
+            shift = 0
+            result = 0
+            do {
+                b = encoded[index++].code - 63
+                result = result or ((b and 0x1f) shl shift)
+                shift += 5
+            } while (b >= 0x20 && index < encoded.length)
+            lng += if (result and 1 != 0) (result shr 1).inv() else (result shr 1)
+
+            path.add(GeoPoint(lat / 1e5, lng / 1e5))
+        }
+        return path
+    }
+
+    private fun sliceCorridorForLeg(encodedShape: String, startStop: GeoPoint, endStop: GeoPoint): List<GeoPoint> {
+        if (encodedShape.isEmpty()) return emptyList()
+        val shape = decodePolyline(encodedShape)
+        if (shape.size < 2) return emptyList()
+
+        var bestStartIdx = 0
+        var bestStartDist = Double.MAX_VALUE
+        for (i in shape.indices) {
+            val d = RoadRoutingRepository.haversineDistanceMeters(
+                startStop.latitude, startStop.longitude,
+                shape[i].latitude, shape[i].longitude
+            )
+            if (d < bestStartDist) {
+                bestStartDist = d
+                bestStartIdx = i
+            }
+        }
+
+        var bestEndIdx = shape.size - 1
+        var bestEndDist = Double.MAX_VALUE
+        for (i in bestStartIdx until shape.size) {
+            val d = RoadRoutingRepository.haversineDistanceMeters(
+                endStop.latitude, endStop.longitude,
+                shape[i].latitude, shape[i].longitude
+            )
+            if (d < bestEndDist) {
+                bestEndDist = d
+                bestEndIdx = i
+            }
+        }
+
+        if (bestEndIdx <= bestStartIdx) {
+            // Fallback search whole polyline if start/end snapped close together
+            bestEndDist = Double.MAX_VALUE
+            for (i in shape.indices) {
+                val d = RoadRoutingRepository.haversineDistanceMeters(
+                    endStop.latitude, endStop.longitude,
+                    shape[i].latitude, shape[i].longitude
+                )
+                if (d < bestEndDist) {
+                    bestEndDist = d
+                    bestEndIdx = i
+                }
+            }
+            if (bestEndIdx <= bestStartIdx) return emptyList()
+        }
+
+        val out = ArrayList<GeoPoint>(bestEndIdx - bestStartIdx + 3)
+        out.add(startStop)
+        for (i in bestStartIdx..bestEndIdx) {
+            out.add(shape[i])
+        }
+        out.add(endStop)
+        return out
+    }
+
     /**
      * Plans up to 5 best BMTC route options from [origin] to [destination] (`destinationName`).
-     * Supports opposite-side road pole selection (`bPos < ePos`), direct buses, and 1-transfer hubs.
+     * Supports opposite-side road pole selection (`bPos < ePos`), trip-frequency ranking,
+     * snapped offline road shapes, direct buses, and 1-transfer hubs.
      */
     fun planBusJourneys(
         origin: GeoPoint,
@@ -178,7 +296,8 @@ object BmtcRoutePlanner {
                     val stopsCount = ePos - bPos
                     val score = (walkToBoard * 2.0).toFloat() +
                         (walkFromExit * 2.0).toFloat() +
-                        stopsCount * STOP_WEIGHT_METERS
+                        stopsCount * STOP_WEIGHT_METERS +
+                        frequencyPenaltyMeters(route.dailyTrips)
                     if (score < bestDirectScore) {
                         bestDirectScore = score
                         bestExitStop = eStop
@@ -217,6 +336,8 @@ object BmtcRoutePlanner {
                         exitWalkDistanceMeters = exitWalkDist,
                         isBusJourney = true
                     )
+                    val freqSummary = buildFrequencySummary(route.freqLabel, route.dailyTrips, route.firstBus, route.lastBus)
+                    val legPts = sliceCorridorForLeg(route.encodedShape, stopsList.first().geoPoint, stopsList.last().geoPoint)
                     val option = BmtcRouteOption(
                         id = "direct_${route.id}_${bStop.id}_${bestExitStop.id}",
                         routeTitle = route.routeNo,
@@ -224,7 +345,10 @@ object BmtcRoutePlanner {
                         category = route.category,
                         plan = plan,
                         isTransferRoute = false,
-                        scoreMeters = bestDirectScore
+                        scoreMeters = bestDirectScore,
+                        dailyTrips = route.dailyTrips,
+                        frequencyText = freqSummary,
+                        legShapePoints = if (legPts.size >= 2) mapOf(0 to legPts) else emptyMap()
                     )
 
                     val familyKey = route.routeNo.trim().uppercase()
@@ -384,7 +508,9 @@ object BmtcRoutePlanner {
                         (walkFromExit * 2.0).toFloat() +
                         leg2StopsCount * STOP_WEIGHT_METERS +
                         TRANSFER_PENALTY_METERS +
-                        transferWalk * 2.0f
+                        transferWalk * 2.0f +
+                        frequencyPenaltyMeters(first.route.dailyTrips) * 0.5f +
+                        frequencyPenaltyMeters(r2.dailyTrips) * 0.5f
 
                     val pairKey = "${first.route.routeNo.uppercase()}->${r2.routeNo.uppercase()}"
                     val existing = bestByPairKey[pairKey]
@@ -435,6 +561,17 @@ object BmtcRoutePlanner {
                         exitWalkDistanceMeters = walkFromExit.toFloat(),
                         isBusJourney = true
                     )
+                    val shapeMap = HashMap<Int, List<GeoPoint>>(2)
+                    sliceCorridorForLeg(first.route.encodedShape, leg1Stations.first().geoPoint, leg1Stations.last().geoPoint)
+                        .takeIf { it.size >= 2 }?.let { shapeMap[0] = it }
+                    sliceCorridorForLeg(r2.encodedShape, leg2Stations.first().geoPoint, leg2Stations.last().geoPoint)
+                        .takeIf { it.size >= 2 }?.let { shapeMap[1] = it }
+                    val minTrips = minOf(first.route.dailyTrips, r2.dailyTrips)
+                    val xferFreq = buildList {
+                        first.route.freqLabel.takeIf { it.isNotBlank() }?.let { add("${first.route.routeNo}: $it") }
+                        r2.freqLabel.takeIf { it.isNotBlank() }?.let { add("${r2.routeNo}: $it") }
+                    }.joinToString(" • ")
+
                     bestByPairKey[pairKey] = BmtcRouteOption(
                         id = "xfer_${first.route.id}_${r2.id}",
                         routeTitle = "${first.route.routeNo} ➔ ${r2.routeNo}",
@@ -442,7 +579,10 @@ object BmtcRoutePlanner {
                         category = first.route.category,
                         plan = plan,
                         isTransferRoute = true,
-                        scoreMeters = totalScore
+                        scoreMeters = totalScore,
+                        dailyTrips = minTrips,
+                        frequencyText = xferFreq,
+                        legShapePoints = shapeMap
                     )
                 }
             }

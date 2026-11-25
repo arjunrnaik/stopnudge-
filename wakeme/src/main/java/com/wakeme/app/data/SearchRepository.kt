@@ -13,7 +13,7 @@ import java.net.URLEncoder
 import kotlin.math.abs
 
 enum class SearchResultType {
-    METRO, BUS, ONLINE_PLACE, GOOGLE_MAPS_SEARCH
+    METRO, BUS, BUS_ROUTE, ONLINE_PLACE, GOOGLE_MAPS_SEARCH
 }
 
 data class SearchResultItem(
@@ -21,7 +21,8 @@ data class SearchResultItem(
     val subtitle: String,
     val latitude: Double,
     val longitude: Double,
-    val type: SearchResultType
+    val type: SearchResultType,
+    val routeNo: String? = null
 )
 
 class SearchRepository(context: Context) {
@@ -55,7 +56,38 @@ class SearchRepository(context: Context) {
                 )
             }
 
-        // 2. 0ms Offline SQLite Search across 5,062 BMTC bus stops
+        // 1b. 0ms Offline BMTC Route Number Search (e.g. 500-D, 335-E, KIA-9, MF-1)
+        try {
+            val matchedRoutes = transitDao.searchBusRoutes(trimmed)
+            val dedup = LinkedHashSet<String>()
+            for (r in matchedRoutes) {
+                val key = "${r.routeNo.uppercase()}_${r.destination.uppercase()}"
+                if (!dedup.add(key)) continue
+                val destStopId = r.stopIds.split(',').lastOrNull()?.trim()
+                val destStop = if (!destStopId.isNullOrEmpty()) transitDao.getBusStopById(destStopId) else null
+                if (destStop != null) {
+                    val timingPart = when {
+                        r.freqLabel.isNotBlank() && r.firstBus.isNotBlank() -> "${r.freqLabel} (${r.firstBus}–${r.lastBus})"
+                        r.freqLabel.isNotBlank() -> r.freqLabel
+                        r.dailyTrips > 0 -> "${r.dailyTrips} trips/day"
+                        else -> "${r.stopCount} stops"
+                    }
+                    results.add(
+                        SearchResultItem(
+                            title = "Bus ${r.routeNo} ➔ ${r.destination}",
+                            subtitle = "${r.origin} ➔ ${r.destination} • $timingPart",
+                            latitude = destStop.latitude,
+                            longitude = destStop.longitude,
+                            type = SearchResultType.BUS_ROUTE,
+                            routeNo = r.routeNo
+                        )
+                    )
+                }
+                if (dedup.size >= 4) break
+            }
+        } catch (_: Exception) {}
+
+        // 2. 0ms Offline SQLite Search across 10,156 BMTC bus stops
         try {
             val buses = transitDao.searchBusStops(trimmed)
             buses.take(6).forEach { b ->

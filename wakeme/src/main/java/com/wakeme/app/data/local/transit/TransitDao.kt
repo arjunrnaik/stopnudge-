@@ -36,6 +36,24 @@ interface TransitDao {
     @Query("SELECT * FROM bus_routes")
     suspend fun getAllBusRoutes(): List<BusRouteEntity>
 
+    @Query("""
+        SELECT * FROM bus_routes
+        WHERE UPPER(route_no) LIKE '%' || UPPER(:query) || '%'
+        ORDER BY
+            CASE
+                WHEN UPPER(route_no) = UPPER(:query) THEN 0
+                WHEN UPPER(route_no) LIKE UPPER(:query) || '%' THEN 1
+                ELSE 2
+            END,
+            daily_trips DESC,
+            stop_count DESC
+        LIMIT 10
+    """)
+    suspend fun searchBusRoutes(query: String): List<BusRouteEntity>
+
+    @Query("SELECT * FROM bus_stops WHERE id = :id LIMIT 1")
+    suspend fun getBusStopById(id: String): BusStopEntity?
+
     @Query("SELECT * FROM bus_stops WHERE group_id = :groupId")
     suspend fun getBusStopsByGroup(groupId: String): List<BusStopEntity>
 
