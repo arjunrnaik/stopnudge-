@@ -374,13 +374,15 @@ object BmtcRoutePlanner {
                 destinationName = destinationName,
                 index = index
             )
-            val needed = (5 - results.size).coerceAtLeast(0)
+            val directRouteNames = bestDirectByRouteNo.keys
             for (opt in transferOptions) {
                 if (results.size >= 5) break
-                if (results.none { it.routeTitle.equals(opt.routeTitle, ignoreCase = true) }) {
+                val redundantWithDirect = opt.plan.legs.all { leg ->
+                    directRouteNames.contains(leg.lineName.trim().uppercase())
+                }
+                if (!redundantWithDirect && results.none { it.routeTitle.equals(opt.routeTitle, ignoreCase = true) }) {
                     results.add(opt)
                 }
-                if (results.size >= 5 || needed == 0) break
             }
         }
 
