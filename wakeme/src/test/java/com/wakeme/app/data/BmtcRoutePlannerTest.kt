@@ -164,8 +164,8 @@ class BmtcRoutePlannerTest {
             makeStop("s2", "Mid Stop", 12.9616, 77.6146, "500-D,SPL-1"),
             makeStop("s3", "Dest Stop", 12.9516, 77.6346, "500-D,SPL-1")
         )
-        // Standard Google encoded polyline covering ~ s1 -> s2 -> s3
-        val encoded = "upvmA_q_xMy~}@_`~B~}~@_`|B"
+        // Standard Google encoded polyline covering s1 (12.9716,77.5946) -> s2 (12.9616,77.6146) -> s3 (12.9516,77.6346)
+        val encoded = "oodnAgerxMn}@_|Bn}@_|B"
         val routes = listOf(
             BusRouteEntity(
                 id = "rare_1trip",
