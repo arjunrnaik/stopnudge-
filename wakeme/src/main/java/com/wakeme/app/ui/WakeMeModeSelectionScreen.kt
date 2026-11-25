@@ -76,6 +76,7 @@ fun WakeMeModeSelectionScreen(
     val customBoardingStation by viewModel.customBoardingStation.collectAsState()
     val metroJourneyPlan by viewModel.metroJourneyPlan.collectAsState()
     val boardingRoadRoute by viewModel.boardingRoadRoute.collectAsState()
+    val exitRoadRoute by viewModel.exitRoadRoute.collectAsState()
 
     val isRoadMode = selectedVehicleMode.usesRoadDistanceTrigger
     val isMetroMode = selectedVehicleMode == VehicleMode.METRO
@@ -246,7 +247,13 @@ fun WakeMeModeSelectionScreen(
                                     val transferText = if (p.requiresLineChange) {
                                         " • 🔄 Change at ${p.interchangeStations.joinToString { it.name }}"
                                     } else ""
-                                    "$stage1${p.totalStops} metro stops$transferText"
+                                    val exitRoad = exitRoadRoute
+                                    val stage3 = if (p.exitWalkDistanceMeters > 50f) {
+                                        val ed = exitRoad?.distanceMeters ?: (p.exitWalkDistanceMeters * 1.28f)
+                                        val edText = if (ed >= 1000f) String.format(Locale.US, "%.1f km", ed / 1000f) else "${ed.toInt()}m"
+                                        " • 🛣️ $edText road to Point B"
+                                    } else ""
+                                    "$stage1${p.totalStops} metro stops$transferText$stage3"
                                 }
                                 previewRoadRoute != null -> {
                                     val r = previewRoadRoute!!
@@ -338,7 +345,8 @@ fun WakeMeModeSelectionScreen(
                                 context = map.context,
                                 plan = plan,
                                 boardingRoadPoints = boardingRoadRoute?.points.orEmpty(),
-                                stopsBeforeAlert = metroStopsBeforeAlert
+                                stopsBeforeAlert = metroStopsBeforeAlert,
+                                exitRoadPoints = exitRoadRoute?.points.orEmpty()
                             )
 
                             val anchorY = LocationMarkerUtils.getStationMarkerAnchorY(map.context)
@@ -378,6 +386,15 @@ fun WakeMeModeSelectionScreen(
                                         NammaMetroNetwork.getLineColor(plan.legs.lastOrNull()?.lineName)
                                     )
                                     setAnchor(Marker.ANCHOR_CENTER, anchorY)
+                                })
+                            }
+                            // Final destination pin marker when > 50m beyond exit Metro station
+                            if (plan.exitWalkDistanceMeters > 50f) {
+                                map.overlays.add(Marker(map).apply {
+                                    position = plan.destinationPinPoint
+                                    title = plan.destinationPinName
+                                    icon = LocationMarkerUtils.createModernPinDrawable(map.context)
+                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                                 })
                             }
 
@@ -740,7 +757,7 @@ fun WakeMeModeSelectionScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     val radiusLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km" else "${radiusMeters.toInt()}m"
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "Trip Summary",
                             style = MaterialTheme.typography.labelSmall,
@@ -757,11 +774,14 @@ fun WakeMeModeSelectionScreen(
                                 } else {
                                     "Wake-up siren fires at ${alertStop?.name ?: p.exitStation.name} ($metroStopsBeforeAlert stop${if (metroStopsBeforeAlert > 1) "s" else ""} before ${p.exitStation.name})"
                                 }
+                                val stage3Desc = if (p.exitWalkDistanceMeters > 50f) {
+                                    " • Then road path to $targetName"
+                                } else ""
                                 if (p.requiresLineChange) {
                                     val interNames = p.interchangeStations.joinToString { it.name }
-                                    "Interchange alert before $interNames • $finalDesc"
+                                    "Interchange alert before $interNames • $finalDesc$stage3Desc"
                                 } else {
-                                    finalDesc
+                                    "$finalDesc$stage3Desc"
                                 }
                             }
                             isRoadMode -> "Reminder fires when $radiusLabel of road route remains to $targetName"

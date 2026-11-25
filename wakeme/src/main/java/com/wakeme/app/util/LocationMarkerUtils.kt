@@ -1007,7 +1007,8 @@ object LocationMarkerUtils {
         plan: MetroJourneyPlan,
         boardingRoadPoints: List<GeoPoint>,
         stopsBeforeAlert: Int,
-        activeLegIndex: Int = -1
+        activeLegIndex: Int = -1,
+        exitRoadPoints: List<GeoPoint> = emptyList()
     ): List<GeoPoint> {
         map.overlays.removeAll(map.overlays.filterIsInstance<Polygon>())
         map.overlays.removeAll(map.overlays.filterIsInstance<Polyline>())
@@ -1062,12 +1063,22 @@ object LocationMarkerUtils {
             }
         }
 
-        // 4. Optional short exit walk path from exit station to pin
-        if (plan.exitWalkDistanceMeters > 100f) {
+        // 4. Stage 3 Real Road Path from Exit Metro Station to Final Destination (Point B)
+        if (exitRoadPoints.size >= 2) {
+            map.overlays.add(Polyline(map).apply {
+                setPoints(exitRoadPoints)
+                outlinePaint.color = 0xFF00897B.toInt() // Real last-mile road teal-blue
+                outlinePaint.strokeWidth = 8.5f
+                outlinePaint.strokeCap = Paint.Cap.ROUND
+                outlinePaint.strokeJoin = Paint.Join.ROUND
+                infoWindow = null
+            })
+            allPoints.addAll(exitRoadPoints)
+        } else if (plan.exitWalkDistanceMeters > 50f) {
             val walkPts = listOf(plan.exitStation.geoPoint, plan.destinationPinPoint)
             map.overlays.add(Polyline(map).apply {
                 setPoints(walkPts)
-                outlinePaint.color = 0xFF4CAF50.toInt()
+                outlinePaint.color = 0xFF00897B.toInt()
                 outlinePaint.strokeWidth = 6f
                 outlinePaint.pathEffect = DashPathEffect(floatArrayOf(12f, 10f), 0f)
                 infoWindow = null

@@ -39,7 +39,8 @@ enum class MetroJourneyStage {
     NONE,
     TO_BOARDING_ROAD,
     ON_METRO_LEG,
-    INTERCHANGE_WAIT
+    INTERCHANGE_WAIT,
+    TO_FINAL_DESTINATION_ROAD
 }
 
 class WakeMeTrackingService : Service() {
@@ -50,7 +51,6 @@ class WakeMeTrackingService : Service() {
 
     private var destinationConfig: DestinationConfig? = null
     private var lastDistanceMeters: Float = Float.MAX_VALUE
-    private var lastRouteFetchTime: Long = 0L
     private var consecutiveOffRouteCount = 0
 
     override fun onCreate() {
@@ -510,12 +510,79 @@ class WakeMeTrackingService : Service() {
                             }
                             triggerArrivalAlert(config.copy(name = targetLabel), progress.distanceToEndMeters)
                         }
+
+                        // Auto-transition to Stage 3 once commuter arrives at / steps outside exit station
+                        val hasFinalRoadLeg = plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS
+                        val distToFinalDest = haversineDistanceMeters(
+                            currentLocation.latitude, currentLocation.longitude,
+                            config.latitude, config.longitude
+                        ).toFloat()
+                        if (hasAlertFired && hasFinalRoadLeg &&
+                            (progress.distanceToEndMeters <= 70f ||
+                                (progress.distanceToEndMeters > 100f && distToFinalDest < plan.exitWalkDistanceMeters))
+                        ) {
+                            enterFinalDestinationRoadStage()
+                            postExitedMetroNotification(plan.exitStation.name, plan.destinationPinName)
+                        }
                     }
+                }
+            }
+
+            MetroJourneyStage.TO_FINAL_DESTINATION_ROAD -> {
+                val distToFinalDest = haversineDistanceMeters(
+                    currentLocation.latitude, currentLocation.longitude,
+                    config.latitude, config.longitude
+                ).toFloat()
+
+                updateRoadRouteTelemetry(
+                    currentLocation,
+                    config.latitude,
+                    config.longitude,
+                    distToFinalDest,
+                    speedMps
+                )
+
+                val finalRoadDecision = RoadRoutingRepository.evaluateArrivalTrigger(
+                    vehicleMode = VehicleMode.CAR,
+                    targetThresholdMeters = 150f,
+                    straightLineMeters = distToFinalDest,
+                    roadDistanceMeters = liveDistanceMeters.value,
+                    hasActiveRoadRoute = isRoadRouteActive.value || routePolyline.value.size >= 2,
+                    microArrivalGateMeters = 80f
+                )
+
+                if (finalRoadDecision.shouldTrigger) {
+                    if (!hasAlertFired) {
+                        hasAlertFired = true
+                        triggerArrivalAlert(
+                            config.copy(
+                                alertMode = AlertMode.GENTLE_REMINDER,
+                                vehicleMode = VehicleMode.CAR
+                            ),
+                            finalRoadDecision.effectiveDistanceMeters
+                        )
+                    }
+                } else {
+                    val dist = liveDistanceMeters.value ?: (distToFinalDest * 1.28f)
+                    val distText = if (dist >= 1000f) String.format("%.1f km", dist / 1000f) else "${dist.toInt()}m"
+                    updateNotification("Go to ${config.name}: $distText by road")
                 }
             }
 
             MetroJourneyStage.NONE -> Unit
         }
+    }
+
+    private fun postExitedMetroNotification(exitName: String, destName: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notif = NotificationCompat.Builder(this, WakeMeApp.GENTLE_CHANNEL_ID)
+            .setContentTitle("Reached $exitName Metro")
+            .setContentText("Stage 3: Follow the road path to $destName.")
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ARRIVAL_ID, notif)
     }
 
     private fun postBoardingReachedNotification(boardingName: String, exitName: String) {
@@ -682,6 +749,8 @@ class WakeMeTrackingService : Service() {
         private var hasAlertFired = false
         @Volatile
         private var hasInterchangeAlertFiredForLeg = -1
+        @Volatile
+        private var lastRouteFetchTime = 0L
 
         fun enterMetroRideStage(plan: MetroJourneyPlan, legIndex: Int) {
             val leg = plan.legs.getOrNull(legIndex) ?: return
@@ -705,6 +774,20 @@ class WakeMeTrackingService : Service() {
             initialDistanceMeters.value = null
         }
 
+        fun enterFinalDestinationRoadStage() {
+            metroStage.value = MetroJourneyStage.TO_FINAL_DESTINATION_ROAD
+            hasAlertFired = false
+            matchedPolylineSegmentIndex = 0
+            lastRouteFetchTime = 0L
+            routePolyline.value = emptyList()
+            alternativeRoutes.value = emptyList()
+            allCandidateRoutes.value = emptyList()
+            liveDistanceMeters.value = null
+            initialDistanceMeters.value = null
+            isRoadRouteActive.value = false
+            metroInterchangePrompt.value = null
+        }
+
         fun confirmBoardedMetro() {
             val plan = activeMetroPlan.value ?: return
             enterMetroRideStage(plan, 0)
@@ -718,6 +801,11 @@ class WakeMeTrackingService : Service() {
                 metroInterchangePrompt.value = null
                 enterMetroRideStage(plan, nextIdx)
             }
+        }
+
+        fun confirmExitedMetro(context: Context) {
+            WakeMeAlarmController.stopAlert(context)
+            enterFinalDestinationRoadStage()
         }
 
         fun start(context: Context, config: DestinationConfig) {

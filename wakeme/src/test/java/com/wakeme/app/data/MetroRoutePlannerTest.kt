@@ -174,4 +174,26 @@ class MetroRoutePlannerTest {
         )
         assertTrue("Single-stop trip should fire as train approaches exit station", approachingDest.shouldTriggerStopAlert)
     }
+
+    @Test
+    fun planJourney_pointB1KmBeyondExitStation_setsExitWalkDistanceForStage3() {
+        val krPura = station("KR Pura")
+        val jalahalli = station("Jalahalli")
+        // Point B ~1.0 km north of Jalahalli Metro where there is no closer Metro
+        val pointB = org.osmdroid.util.GeoPoint(jalahalli.latitude + 0.009, jalahalli.longitude)
+
+        val plan = MetroRoutePlanner.planJourney(
+            boardingStation = krPura,
+            exitStation = jalahalli,
+            destinationPinName = "Point B (1km from Jalahalli)",
+            destinationPinPoint = pointB
+        )
+
+        assertTrue(plan.requiresLineChange)
+        assertTrue(
+            "Expected exitWalkDistanceMeters ~1000m for Stage 3 trigger, was ${plan.exitWalkDistanceMeters}",
+            plan.exitWalkDistanceMeters in 900f..1100f
+        )
+        assertEquals("Point B (1km from Jalahalli)", plan.destinationPinName)
+    }
 }

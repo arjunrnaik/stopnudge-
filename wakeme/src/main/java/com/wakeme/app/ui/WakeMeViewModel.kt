@@ -160,6 +160,9 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val _boardingRoadRoute = MutableStateFlow<RouteResult?>(null)
     val boardingRoadRoute: StateFlow<RouteResult?> = _boardingRoadRoute.asStateFlow()
 
+    private val _exitRoadRoute = MutableStateFlow<RouteResult?>(null)
+    val exitRoadRoute: StateFlow<RouteResult?> = _exitRoadRoute.asStateFlow()
+
     private val _selectedBusStop = MutableStateFlow<SelectedBusStop?>(null)
     val selectedBusStop: StateFlow<SelectedBusStop?> = _selectedBusStop.asStateFlow()
 
@@ -325,10 +328,21 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                     } else {
                         _boardingRoadRoute.value = null
                     }
+
+                    // Stage 3: Fetch real road route from exit Metro station to Point B if > 50m away
+                    if (plan.exitWalkDistanceMeters > MetroRoutePlanner.BOARDING_PROXIMITY_METERS) {
+                        _exitRoadRoute.value = RoadRoutingRepository.getRoute(
+                            exitStation.latitude, exitStation.longitude,
+                            dest.latitude, dest.longitude
+                        )
+                    } else {
+                        _exitRoadRoute.value = null
+                    }
                 }
             } catch (_: Exception) {
                 _previewRoadRoute.value = null
                 _boardingRoadRoute.value = null
+                _exitRoadRoute.value = null
             } finally {
                 _isLoadingPreviewRoute.value = false
             }
@@ -366,6 +380,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         _customBoardingStation.value = null
         _metroJourneyPlan.value = null
         _boardingRoadRoute.value = null
+        _exitRoadRoute.value = null
         _currentScreen.value = WakeMeScreen.MODE_SELECTION
         refreshPreviewRoadRoute()
     }
