@@ -25,11 +25,6 @@ import com.wakeme.app.model.VehicleMode
 import com.wakeme.app.data.MultimodalTransitPlanner
 import com.wakeme.app.data.MultimodalTripPlan
 import com.wakeme.app.data.MultimodalLegType
-
-enum class MultimodalAlarmTarget {
-    DEBOARDING_STATION,
-    FINAL_DESTINATION
-}
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.GoogleMapsUrlParser
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +38,11 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
+
+enum class MultimodalAlarmTarget {
+    DEBOARDING_STATION,
+    FINAL_DESTINATION
+}
 
 data class SelectedBusStop(
     val name: String,
