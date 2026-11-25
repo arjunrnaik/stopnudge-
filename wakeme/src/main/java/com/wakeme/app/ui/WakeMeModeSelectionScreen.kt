@@ -248,136 +248,80 @@ fun WakeMeModeSelectionScreen(
                                 overflow = TextOverflow.Ellipsis
                             )
                             val orangeColor = Color(0xFFE65100)
-                            val primaryColor = MaterialTheme.colorScheme.primary
                             val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant
 
-                            val annotatedSummary = buildAnnotatedString {
-                                when {
-                                    isLoadingPreviewRoute -> {
-                                        withStyle(SpanStyle(color = mutedColor)) {
-                                            append("Calculating route...")
-                                        }
-                                    }
-                                    isTransitMode && metroJourneyPlan != null -> {
-                                        val p = metroJourneyPlan!!
-                                        val boardRoad = boardingRoadRoute
-                                        if (boardRoad != null) {
-                                            val rd = if (boardRoad.distanceMeters >= 1000f) String.format(Locale.US, "%.1f km", boardRoad.distanceMeters / 1000f) else "${boardRoad.distanceMeters.toInt()}m"
-                                            val bMin = (boardRoad.durationSeconds / 60).toInt().coerceAtLeast(1)
-                                            withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
-                                                append("🛣️ $rd (~$bMin min) to ${p.boardingStation.name}")
+                            if (!isTransitMode) {
+                                val annotatedSummary = buildAnnotatedString {
+                                    when {
+                                        isLoadingPreviewRoute -> {
+                                            withStyle(SpanStyle(color = mutedColor)) {
+                                                append("Calculating route...")
                                             }
-                                            append(" • ")
-                                        } else {
-                                            withStyle(SpanStyle(color = primaryColor, fontWeight = FontWeight.SemiBold)) {
-                                                append("📍 At ${p.boardingStation.name} (≤50m)")
-                                            }
-                                            append(" • ")
                                         }
-
-                                        withStyle(SpanStyle(color = primaryColor, fontWeight = FontWeight.SemiBold)) {
-                                            if (p.isBusJourney) {
-                                                val routesStr = p.legs.joinToString(" ➔ ") { it.lineName }
-                                                append("🚌 $routesStr (${p.totalStops} stops)")
+                                        previewRoadRoute != null -> {
+                                            val r = previewRoadRoute!!
+                                            val dText = if (r.distanceMeters >= 1000f) {
+                                                String.format(Locale.US, "%.1f km", r.distanceMeters / 1000f)
                                             } else {
-                                                append("${p.totalStops} metro stops")
+                                                "${r.distanceMeters.toInt()} m"
                                             }
-                                            if (p.requiresLineChange) {
-                                                append(" • 🔄 Change at ${p.interchangeStations.joinToString { it.name }}")
-                                            }
-                                        }
-
-                                        if (p.exitWalkDistanceMeters > 50f) {
-                                            val exitRoad = exitRoadRoute
-                                            val ed = exitRoad?.distanceMeters ?: (p.exitWalkDistanceMeters * 1.28f)
-                                            val eMin = ((exitRoad?.durationSeconds ?: (ed / 8.33f)) / 60).toInt().coerceAtLeast(1)
-                                            val edText = if (ed >= 1000f) String.format(Locale.US, "%.1f km", ed / 1000f) else "${ed.toInt()}m"
-                                            append(" • ")
+                                            val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
                                             withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
-                                                append("🛣️ $edText (~$eMin min) to Point B")
+                                                append("🛣️ $dText by road • ~$minText min")
                                             }
                                         }
-                                    }
-                                    previewRoadRoute != null -> {
-                                        val r = previewRoadRoute!!
-                                        val dText = if (r.distanceMeters >= 1000f) {
-                                            String.format(Locale.US, "%.1f km", r.distanceMeters / 1000f)
-                                        } else {
-                                            "${r.distanceMeters.toInt()} m"
-                                        }
-                                        val minText = (r.durationSeconds / 60).toInt().coerceAtLeast(1)
-                                        withStyle(SpanStyle(color = orangeColor, fontWeight = FontWeight.Bold)) {
-                                            append("🛣️ $dText by road • ~$minText min")
-                                        }
-                                    }
-                                    else -> {
-                                        withStyle(SpanStyle(color = mutedColor)) {
-                                            append(String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude))
+                                        else -> {
+                                            withStyle(SpanStyle(color = mutedColor)) {
+                                                append(String.format("%.4f° N, %.4f° E", targetLocation.latitude, targetLocation.longitude))
+                                            }
                                         }
                                     }
                                 }
+                                Text(
+                                    text = annotatedSummary,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp
+                                )
+                            } else if (isLoadingPreviewRoute && metroJourneyPlan == null) {
+                                Text(
+                                    text = if (isBusMode) "Finding best BMTC routes & opposite-side poles..." else "Finding best Namma Metro route...",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontSize = 11.sp,
+                                    color = mutedColor
+                                )
                             }
-                            Text(
-                                text = annotatedSummary,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontSize = 11.sp
-                            )
                         }
                     }
 
-                    // Stop-to-Stop Boarding Selector Pill & Matching BMTC Bus Route Chips
+                    // Informative 3-Stage Stepper + Expandable Stops List + Matching BMTC Route Cards
                     if (isTransitMode && metroJourneyPlan != null) {
                         val p = metroJourneyPlan!!
                         val isCustomStart = if (isBusMode) customBoardingBusStop != null else customBoardingStation != null
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = "Board: ${p.boardingStation.name} ${if (!isCustomStart) "(Nearest)" else "(Custom)"}",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = p.legs.joinToString(" ➔ ") { "${it.lineName} (${it.stopsCount} stops)" },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    fontSize = 11.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            TextButton(onClick = { showBoardingStationPicker = true }) {
-                                Text("Change Start ▾", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
 
                         if (isBusMode && bmtcRouteOptions.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState()),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                bmtcRouteOptions.forEachIndexed { idx, opt ->
-                                    val isSel = idx == selectedBusRouteIndex
-                                    FilterChip(
-                                        selected = isSel,
-                                        onClick = { viewModel.selectBusRouteOption(idx) },
-                                        label = {
-                                            Text(
-                                                text = if (opt.isTransferRoute) "🔄 ${opt.routeTitle} (${opt.plan.totalStops})" else "🚌 ${opt.routeTitle} (${opt.plan.totalStops})",
-                                                fontSize = 11.sp,
-                                                fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium
-                                            )
-                                        }
-                                    )
+                            BmtcRouteOptionCards(
+                                options = bmtcRouteOptions,
+                                selectedIndex = selectedBusRouteIndex,
+                                onSelect = { idx ->
+                                    viewModel.selectBusRouteOption(idx)
+                                    bmtcRouteOptions.getOrNull(idx)?.let { opt ->
+                                        viewModel.setBusCategory(opt.category)
+                                    }
                                 }
-                            }
+                            )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                         }
+
+                        TransitThreeStageStepperCard(
+                            plan = p,
+                            boardingRoadRoute = boardingRoadRoute,
+                            exitRoadRoute = exitRoadRoute,
+                            stopsBeforeAlert = metroStopsBeforeAlert,
+                            isCustomStart = isCustomStart,
+                            isLoadingRoutes = isLoadingPreviewRoute,
+                            onOpenStartPicker = { showBoardingStationPicker = true }
+                        )
                     }
                 }
             }
@@ -623,63 +567,6 @@ fun WakeMeModeSelectionScreen(
                         Spacer(modifier = Modifier.height(4.dp))
                         Text("City Bus", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text("BMTC Routes", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-
-            // 3b. BMTC Bus 50/50 Livery Divisions (Dark Blue AC / Normal Blue Sarige / Light Blue EV)
-            AnimatedVisibility(visible = selectedVehicleMode == VehicleMode.BUS) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    Text(
-                        text = "BMTC BUS DIVISION (50/50 LIVERY)",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = selectedBusCategory.composeColor
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        BmtcBusCategory.values().forEach { cat ->
-                            val isSelected = selectedBusCategory == cat
-                            Surface(
-                                onClick = { viewModel.setBusCategory(cat) },
-                                modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) cat.composeColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
-                                border = BorderStroke(
-                                    if (isSelected) 2.dp else 1.dp,
-                                    if (isSelected) cat.composeColor else MaterialTheme.colorScheme.outlineVariant
-                                )
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    // 50/50 two-tone visual indicator dot
-                                    Box(
-                                        modifier = Modifier
-                                            .size(12.dp)
-                                            .clip(CircleShape)
-                                            .background(cat.composeColor)
-                                            .border(1.dp, Color.White, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = cat.shortCode,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) cat.composeColor else MaterialTheme.colorScheme.onSurface
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }

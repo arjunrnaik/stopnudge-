@@ -286,6 +286,16 @@ fun WakeMeActiveTripScreen(
                     val isBusJourney = selectedVehicleMode == VehicleMode.BUS || activeMetroPlan?.isBusJourney == true
                     val isMetroJourney = (selectedVehicleMode == VehicleMode.METRO || selectedVehicleMode == VehicleMode.BUS) && activeMetroPlan != null
                     val stopNoun = if (isBusJourney) "BUS STOP" else "METRO"
+
+                    if (isMetroJourney) {
+                        LiveStageStepperPill(
+                            stage = metroStage,
+                            isBus = isBusJourney,
+                            hasStage3 = (activeMetroPlan?.exitWalkDistanceMeters ?: 0f) > 50f
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
                     if (isMetroJourney && metroStage == MetroJourneyStage.TO_BOARDING_ROAD) {
                         val boardStationName = activeMetroPlan?.boardingStation?.name ?: "Nearest $stopNoun"
                         Surface(
@@ -353,15 +363,26 @@ fun WakeMeActiveTripScreen(
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
                             textAlign = TextAlign.Center
                         )
-                        val nextName = metroNextStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
-                        val alertAt = metroAlertStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
-                        Text(
-                            text = "NEXT: $nextName • ALERT AT: $alertAt",
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
-                            textAlign = TextAlign.Center
-                        )
+                        val activeLeg = activeMetroPlan?.legs?.getOrNull(currentMetroLegIndex)
+                        if (activeLeg != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LiveUpcomingStopsTimeline(
+                                leg = activeLeg,
+                                currentStationName = metroCurrentStationName,
+                                nextStationName = metroNextStationName,
+                                alertStationName = metroAlertStationName
+                            )
+                        } else {
+                            val nextName = metroNextStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
+                            val alertAt = metroAlertStationName ?: activeMetroPlan?.exitStation?.name ?: targetName
+                            Text(
+                                text = "NEXT: $nextName • ALERT AT: $alertAt",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
+                                textAlign = TextAlign.Center
+                            )
+                        }
                     } else {
                         val isOrangeRoadStage = isMetroJourney &&
                             (metroStage == MetroJourneyStage.TO_BOARDING_ROAD || metroStage == MetroJourneyStage.TO_FINAL_DESTINATION_ROAD)

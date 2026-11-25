@@ -122,6 +122,7 @@ fun WakeMeLandingScreen(
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
     var locationOverlayRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
     var currentMapCenter by remember { mutableStateOf(targetLocation) }
+    var currentMapZoom by remember { mutableStateOf(15.0) }
     var metroMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
     var metroPolylinesList by remember { mutableStateOf<List<Polyline>>(emptyList()) }
     var busMarkersList by remember { mutableStateOf<List<Marker>>(emptyList()) }
@@ -395,6 +396,7 @@ fun WakeMeLandingScreen(
                                 delay(200)
                                 val center = mapCenter as? GeoPoint ?: return@launch
                                 currentMapCenter = center
+                                currentMapZoom = zoomLevelDouble
                                 if (showBmtcOverlay) {
                                     val delta = 0.035
                                     viewModel.updateBmtcBoundingBox(
@@ -414,6 +416,7 @@ fun WakeMeLandingScreen(
                                 delay(200)
                                 val center = mapCenter as? GeoPoint ?: return@launch
                                 currentMapCenter = center
+                                currentMapZoom = zoomLevelDouble
                                 if (showBmtcOverlay) {
                                     val delta = 0.035
                                     viewModel.updateBmtcBoundingBox(
@@ -728,6 +731,13 @@ fun WakeMeLandingScreen(
                     }
                 }
             }
+
+            AnimatedVisibility(visible = showBmtcOverlay) {
+                BmtcMapLegendBanner(
+                    zoomLevel = currentMapZoom,
+                    stopCount = busStops.size
+                )
+            }
         }
 
         // 3. Right-Side 3-FAB Column (from sketch: Current location, Metro, BMTC (future))
@@ -1017,12 +1027,12 @@ fun WakeMeLandingScreen(
                                     Text(
                                         text = "🛣️ $formattedDist$durStr",
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.primary
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFE65100)
                                     )
                                 } else {
                                     Text(
-                                        text = "Active Namma Metro Station",
+                                        text = if (nearestMetro.isInterchange) "🔄 Interchange Station • Active Metro" else "✓ Active Namma Metro Station",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1163,13 +1173,16 @@ fun WakeMeLandingScreen(
                                         color = Color(0xFFE65100)
                                     )
                                 }
-                                Text(
-                                    text = selectedBus.routes?.let { "Routes: $it" } ?: "BMTC Transit Boarding Point",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                if (!selectedBus.routes.isNullOrBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    TransitRoutePillRow(routesCsv = selectedBus.routes, maxVisible = 8)
+                                } else {
+                                    Text(
+                                        text = "BMTC Transit Boarding Point",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                         IconButton(
