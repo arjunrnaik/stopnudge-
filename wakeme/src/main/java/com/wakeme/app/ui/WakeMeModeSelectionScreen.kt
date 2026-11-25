@@ -967,8 +967,8 @@ fun WakeMeModeSelectionScreen(
             } else {
                 allBusStopsList.filter {
                     it.name.contains(stationFilter, ignoreCase = true) ||
-                        it.ref.contains(stationFilter, ignoreCase = true) ||
-                        it.directionHint.contains(stationFilter, ignoreCase = true)
+                        it.ref?.contains(stationFilter, ignoreCase = true) == true ||
+                        it.directionHint?.contains(stationFilter, ignoreCase = true) == true
                 }.take(50)
             }
         }
@@ -1039,9 +1039,10 @@ fun WakeMeModeSelectionScreen(
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
-                                        if (stop.directionHint.isNotBlank()) {
+                                        val dirHint = stop.directionHint.orEmpty()
+                                        if (dirHint.isNotBlank()) {
                                             Text(
-                                                text = stop.directionHint,
+                                                text = dirHint,
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 maxLines = 1,
@@ -1051,7 +1052,7 @@ fun WakeMeModeSelectionScreen(
                                     }
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = stop.ref.split(',').take(3).joinToString(","),
+                                        text = stop.ref.orEmpty().split(',').take(3).joinToString(","),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = Color(0xFF1565C0),
                                         fontWeight = FontWeight.Bold,

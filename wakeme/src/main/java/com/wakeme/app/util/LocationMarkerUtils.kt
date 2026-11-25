@@ -1082,7 +1082,9 @@ object LocationMarkerUtils {
                 val isCurrentOrPreview = activeLegIndex < 0 || idx >= activeLegIndex
                 if (leg.isBusLeg && isCurrentOrPreview) {
                     val category = com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName(leg.lineName)
-                    map.overlays.addAll(createTwoToneBusPolylines(map, drawPoints, category, 9.5f))
+                    val (baseLine, stripeLine) = createTwoToneBusPolylines(map, drawPoints, category, 9.5f)
+                    map.overlays.add(baseLine)
+                    map.overlays.add(stripeLine)
                 } else {
                     map.overlays.add(Polyline(map).apply {
                         setPoints(drawPoints)

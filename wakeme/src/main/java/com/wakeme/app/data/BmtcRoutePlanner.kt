@@ -265,7 +265,7 @@ object BmtcRoutePlanner {
             val closestBoard = boardingCandidates.firstOrNull()
             val closestExit = exitCandidates.firstOrNull()
             if (closestBoard != null && closestExit != null && closestBoard.first.id != closestExit.first.id) {
-                val boardRouteTag = closestBoard.first.ref.split(',').firstOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: "BMTC"
+                val boardRouteTag = closestBoard.first.ref.orEmpty().split(',').firstOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: "BMTC"
                 val boardStation = closestBoard.first.toActiveStation(boardRouteTag)
                 val exitStation = closestExit.first.toActiveStation(boardRouteTag)
                 val leg = MetroLeg(
@@ -341,7 +341,7 @@ object BmtcRoutePlanner {
                     if (prevExact == null || cost < prevExact.costMeters) {
                         bestByStopId[tId] = candidate
                     }
-                    val gid = tStop.groupId.trim()
+                    val gid = tStop.groupId.orEmpty().trim()
                     if (gid.isNotEmpty()) {
                         val prevGroup = bestByGroupId[gid]
                         if (prevGroup == null || cost < prevGroup.costMeters) {
@@ -366,7 +366,7 @@ object BmtcRoutePlanner {
                     val t2Id = r2.stopIds[t2Pos]
                     val t2Stop = index.stopById[t2Id] ?: continue
                     val first = bestByStopId[t2Id]
-                        ?: t2Stop.groupId.trim().takeIf { it.isNotEmpty() }?.let { bestByGroupId[it] }
+                        ?: t2Stop.groupId.orEmpty().trim().takeIf { it.isNotEmpty() }?.let { bestByGroupId[it] }
                         ?: continue
 
                     if (first.route.routeNo.equals(r2.routeNo, ignoreCase = true)) continue
@@ -465,7 +465,7 @@ object BmtcRoutePlanner {
             // Also include opposite-side sibling pole at the same stop (<= 100m, same groupId or name)
             val siblings = index.allStops.mapNotNull { stop ->
                 if (stop.id == preferredStop.id) return@mapNotNull null
-                val sameGroup = preferredStop.groupId.isNotBlank() && stop.groupId == preferredStop.groupId
+                val sameGroup = !preferredStop.groupId.isNullOrBlank() && stop.groupId == preferredStop.groupId
                 val sameName = stop.name.equals(preferredStop.name, ignoreCase = true)
                 if (!sameGroup && !sameName) return@mapNotNull null
                 val between = RoadRoutingRepository.haversineDistanceMeters(

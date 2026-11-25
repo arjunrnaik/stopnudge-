@@ -298,14 +298,15 @@ fun WakeMeLandingScreen(
                             kotlin.math.abs(it.longitude - stop.longitude) < 1e-5
                     } == true
 
+                    val dirHint = stop.directionHint.orEmpty()
                     val marker = Marker(map).apply {
                         position = stopPoint
                         title = "${stop.name} Bus Stop"
-                        snippet = stop.directionHint.ifBlank { "BMTC Bus Stop" }
+                        snippet = dirHint.ifBlank { "BMTC Bus Stop" }
                         icon = LocationMarkerUtils.createBmtcCompactStopDrawable(
                             context = context,
                             stopName = stop.name,
-                            directionHint = stop.directionHint,
+                            directionHint = dirHint,
                             isSelected = isSel
                         )
                         setAnchor(Marker.ANCHOR_CENTER, anchorY)

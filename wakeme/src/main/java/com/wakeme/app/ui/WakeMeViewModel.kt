@@ -335,7 +335,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         val routes = transitDao.getAllBusRoutes()
         val built = BmtcRoutePlanner.buildIndex(stops, routes)
         _bmtcIndex.value = built
-        _allBusStopsList.value = stops.sortedByDescending { it.ref.length }
+        _allBusStopsList.value = stops.sortedByDescending { it.ref?.length ?: 0 }
         return built
     }
 
@@ -864,8 +864,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
                         name = stop.name,
                         latitude = stop.latitude,
                         longitude = stop.longitude,
-                        routes = stop.ref.takeIf { it.isNotBlank() },
-                        direction = stop.directionHint.takeIf { it.isNotBlank() }
+                        routes = stop.ref?.takeIf { it.isNotBlank() },
+                        direction = stop.directionHint?.takeIf { it.isNotBlank() }
                     )
                     _nearestBusRoadDistance.value = result.roadDistanceMeters
                     _nearestBusRoadDuration.value = result.durationSeconds
