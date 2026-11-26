@@ -48,7 +48,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DirectionsBus
-import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Notifications
@@ -126,6 +125,7 @@ fun WakeMeUiLabApp() {
 
     var modalKind by remember { mutableStateOf(ModalKind.NONE) }
     var focusedLegStage by remember { mutableStateOf<Int?>(null) }
+    var nearestFocus by remember { mutableStateOf<NearestStationFocus?>(null) }
 
     val savedScenarios = remember {
         mutableStateListOf(
@@ -153,9 +153,10 @@ fun WakeMeUiLabApp() {
         }
     }
 
-    BackHandler(enabled = modalKind != ModalKind.NONE || focusedLegStage != null || screen != PreviewScreen.LANDING) {
+    BackHandler(enabled = modalKind != ModalKind.NONE || focusedLegStage != null || nearestFocus != null || screen != PreviewScreen.LANDING) {
         when {
             modalKind != ModalKind.NONE -> modalKind = ModalKind.NONE
+            nearestFocus != null -> nearestFocus = null
             focusedLegStage != null -> focusedLegStage = null
             screen == PreviewScreen.ACTIVE -> screen = PreviewScreen.SETUP
             screen == PreviewScreen.SETUP -> screen = PreviewScreen.LANDING
@@ -177,7 +178,8 @@ fun WakeMeUiLabApp() {
             selectedBusIdx = selectedBusIdx,
             focusedLegStage = focusedLegStage,
             activeStageIdx = activeStageIdx,
-            activeTripProgress = activeTripProgress
+            activeTripProgress = activeTripProgress,
+            nearestFocus = nearestFocus
         )
 
         // 2. Top Safe-Area Controls (single AnimatedContent slot prevents Page 1 -> Page 2 jump)
@@ -234,24 +236,10 @@ fun WakeMeUiLabApp() {
                             }
                         }
 
-                        // Page 1 Quick Pills: Saved Places, History + Metro / Bus / Road
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
+                        // Page 1 Quick Pills: Saved Places & History
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             QuickPillChip("Saved", "${savedScenarios.size}", p) { modalKind = ModalKind.SAVED }
                             QuickPillChip("History", "${historyScenarios.size}", p) { modalKind = ModalKind.HISTORY }
-                            ModeQuickPill("Metro", Icons.Default.Subway, mode == TransitMode.METRO, p) {
-                                mode = TransitMode.METRO
-                            }
-                            ModeQuickPill("Bus", Icons.Default.DirectionsBus, mode == TransitMode.BUS, p) {
-                                mode = TransitMode.BUS
-                            }
-                            ModeQuickPill("Road", Icons.Default.DirectionsCar, mode == TransitMode.CAR, p) {
-                                mode = TransitMode.CAR
-                            }
                         }
                     }
                 } else {
@@ -306,6 +294,156 @@ fun WakeMeUiLabApp() {
                                     )
                                 }
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Right-edge Circular Metro & Bus Nearest-Station Buttons (Page 1, matching WakeMe app)
+        if (screen == PreviewScreen.LANDING) {
+            val metroPlan = scenario.metroPlan
+            val busOpt = scenario.busOptions.first()
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp, bottom = 72.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = if (nearestFocus?.isMetro == true) p.purple else p.surface.copy(alpha = 0.96f),
+                    border = BorderStroke(1.5.dp, if (nearestFocus?.isMetro == true) p.purple else p.hairline),
+                    shadowElevation = 6.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .combinedClickable(
+                                onClick = {
+                                    nearestFocus = if (metroPlan != null) {
+                                        NearestStationFocus(
+                                            isMetro = true,
+                                            stationName = "${metroPlan.boardStation.name} Metro",
+                                            distanceLabel = "${metroPlan.boardWalkMeters}m • ${metroPlan.boardWalkMins}m walk",
+                                            subtitle = "${metroPlan.legs.first().lineName} Line • Hold to navigate",
+                                            point = metroPlan.boardStation.geoPoint,
+                                            zoomToIt = false
+                                        )
+                                    } else {
+                                        NearestStationFocus(
+                                            isMetro = true,
+                                            stationName = "No Metro Nearby",
+                                            distanceLabel = "> 3 km away",
+                                            subtitle = "Try the Bus stop button below",
+                                            point = scenario.originPoint,
+                                            zoomToIt = false
+                                        )
+                                    }
+                                },
+                                onLongClick = {
+                                    if (metroPlan != null) {
+                                        nearestFocus = NearestStationFocus(
+                                            isMetro = true,
+                                            stationName = "${metroPlan.boardStation.name} Metro",
+                                            distanceLabel = "${metroPlan.boardWalkMeters}m • ${metroPlan.boardWalkMins}m walk",
+                                            subtitle = "Navigating to nearest Metro station",
+                                            point = metroPlan.boardStation.geoPoint,
+                                            zoomToIt = true
+                                        )
+                                    }
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Subway,
+                            contentDescription = "Nearest Metro",
+                            tint = if (nearestFocus?.isMetro == true) Color.White else p.purple,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (nearestFocus?.isMetro == false) p.blue else p.surface.copy(alpha = 0.96f),
+                    border = BorderStroke(1.5.dp, if (nearestFocus?.isMetro == false) p.blue else p.hairline),
+                    shadowElevation = 6.dp
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .combinedClickable(
+                                onClick = {
+                                    val stop = busOpt.stops.first()
+                                    nearestFocus = NearestStationFocus(
+                                        isMetro = false,
+                                        stationName = stop.name,
+                                        distanceLabel = "${busOpt.boardWalkMeters}m • ${busOpt.boardWalkMins}m walk",
+                                        subtitle = "${busOpt.leg1} • Hold to navigate",
+                                        point = stop.geoPoint,
+                                        zoomToIt = false
+                                    )
+                                },
+                                onLongClick = {
+                                    val stop = busOpt.stops.first()
+                                    nearestFocus = NearestStationFocus(
+                                        isMetro = false,
+                                        stationName = stop.name,
+                                        distanceLabel = "${busOpt.boardWalkMeters}m • ${busOpt.boardWalkMins}m walk",
+                                        subtitle = "Navigating to nearest Bus stop",
+                                        point = stop.geoPoint,
+                                        zoomToIt = true
+                                    )
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DirectionsBus,
+                            contentDescription = "Nearest Bus",
+                            tint = if (nearestFocus?.isMetro == false) p.badgeInk else p.blue,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
+
+            if (nearestFocus != null) {
+                val nf = nearestFocus!!
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 104.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = p.cueBg,
+                    border = BorderStroke(1.dp, p.hairline),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (nf.isMetro) Icons.Default.Subway else Icons.Default.DirectionsBus,
+                            contentDescription = null,
+                            tint = if (nf.isMetro) p.purple else p.blue,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("${nf.stationName} • ${nf.distanceLabel}", color = p.cueInk, fontSize = 13.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(nf.subtitle, color = p.cueInk.copy(alpha = 0.78f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        Surface(
+                            onClick = { nearestFocus = null },
+                            shape = RoundedCornerShape(999.dp),
+                            color = p.orange
+                        ) {
+                            Text("Clear", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
                         }
                     }
                 }

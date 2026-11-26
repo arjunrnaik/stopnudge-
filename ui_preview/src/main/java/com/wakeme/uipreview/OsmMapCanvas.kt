@@ -23,15 +23,35 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
+import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.TilesOverlay
 import kotlin.math.atan2
+
+data class NearestStationFocus(
+    val isMetro: Boolean,
+    val stationName: String,
+    val distanceLabel: String,
+    val subtitle: String,
+    val point: GeoPoint,
+    val zoomToIt: Boolean
+)
+
+private val CARTO_DARK_MATTER: OnlineTileSourceBase = XYTileSource(
+    "CartoDarkMatter",
+    0, 19, 256, ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/dark_all/",
+        "https://b.basemaps.cartocdn.com/dark_all/",
+        "https://c.basemaps.cartocdn.com/dark_all/"
+    )
+)
 
 @Composable
 fun OsmMapCanvas(
@@ -43,19 +63,20 @@ fun OsmMapCanvas(
     selectedBusIdx: Int,
     focusedLegStage: Int?,
     activeStageIdx: Int,
-    activeTripProgress: Float
+    activeTripProgress: Float,
+    nearestFocus: NearestStationFocus? = null
 ) {
     val context = LocalContext.current
     var currentZoom by remember { mutableDoubleStateOf(12.8) }
     var lastCameraKey by remember { mutableDoubleStateOf(0.0) }
-    val cameraSignature = remember(scenario.id, screen, mode, selectedBusIdx, focusedLegStage, activeStageIdx) {
-        "${scenario.id}|$screen|$mode|$selectedBusIdx|$focusedLegStage|$activeStageIdx".hashCode().toDouble()
+    val cameraSignature = remember(scenario.id, screen, mode, selectedBusIdx, focusedLegStage, activeStageIdx, nearestFocus?.stationName, nearestFocus?.zoomToIt) {
+        "${scenario.id}|$screen|$mode|$selectedBusIdx|$focusedLegStage|$activeStageIdx|${nearestFocus?.stationName}|${nearestFocus?.zoomToIt}".hashCode().toDouble()
     }
 
     val mapView = remember {
         Configuration.getInstance().userAgentValue = context.packageName
         MapView(context).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(if (isDark) CARTO_DARK_MATTER else TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             controller.setZoom(12.8)
@@ -79,10 +100,12 @@ fun OsmMapCanvas(
         modifier = Modifier.fillMaxSize(),
         factory = { mapView },
         update = { mv ->
-            // Dark mode tile inversion so OSM tiles blend cleanly with dark themes
-            mv.overlayManager.tilesOverlay.setColorFilter(
-                if (isDark) TilesOverlay.INVERT_COLORS else null
-            )
+            // Google Maps-style dark map via CartoDB Dark Matter tiles when in Dark Mode
+            val desiredSource = if (isDark) CARTO_DARK_MATTER else TileSourceFactory.MAPNIK
+            if (mv.tileProvider.tileSource.name() != desiredSource.name()) {
+                mv.setTileSource(desiredSource)
+            }
+            mv.overlayManager.tilesOverlay.setColorFilter(null)
 
             mv.overlays.clear()
 
@@ -97,15 +120,46 @@ fun OsmMapCanvas(
             val focusGeoPoints = mutableListOf<GeoPoint>()
 
             if (screen == PreviewScreen.LANDING) {
-                // Page 1: clean normal road route only
-                val roadLine = Polyline(mv).apply {
-                    setPoints(scenario.carPlan.roadPoints)
-                    outlinePaint.color = palette.blue.toArgb()
-                    outlinePaint.strokeWidth = 10f
-                    outlinePaint.strokeCap = Paint.Cap.ROUND
+                if (nearestFocus != null) {
+                    val walkPts = listOf(scenario.originPoint, nearestFocus.point)
+                    mv.overlays.add(Polyline(mv).apply {
+                        setPoints(walkPts)
+                        outlinePaint.color = (if (nearestFocus.isMetro) palette.purple else palette.blue).toArgb()
+                        outlinePaint.strokeWidth = 9f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                    })
+                    mv.overlays.add(Marker(mv).apply {
+                        position = interpolateGeo(walkPts, 0.5f)
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = arrowDrawable(context, scenario.originPoint, nearestFocus.point, palette.orange.toArgb())
+                    })
+                    mv.overlays.add(Marker(mv).apply {
+                        position = nearestFocus.point
+                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                        icon = stopDotDrawable(
+                            context,
+                            (if (nearestFocus.isMetro) palette.purple else palette.blue).toArgb(),
+                            nearestFocus.stationName,
+                            palette.ink.toArgb(),
+                            radiusPx = 14f
+                        )
+                    })
+                    if (nearestFocus.zoomToIt) {
+                        focusGeoPoints.addAll(walkPts)
+                    } else {
+                        focusGeoPoints.addAll(scenario.carPlan.roadPoints)
+                    }
+                } else {
+                    // Page 1: clean normal road route only
+                    val roadLine = Polyline(mv).apply {
+                        setPoints(scenario.carPlan.roadPoints)
+                        outlinePaint.color = palette.blue.toArgb()
+                        outlinePaint.strokeWidth = 10f
+                        outlinePaint.strokeCap = Paint.Cap.ROUND
+                    }
+                    mv.overlays.add(roadLine)
+                    focusGeoPoints.addAll(scenario.carPlan.roadPoints)
                 }
-                mv.overlays.add(roadLine)
-                focusGeoPoints.addAll(scenario.carPlan.roadPoints)
             } else {
                 when (mode) {
                     TransitMode.METRO -> {
@@ -170,10 +224,11 @@ fun OsmMapCanvas(
                             if (screen == PreviewScreen.ACTIVE && activeStageIdx == 1) {
                                 val allPts = metro.allStops.map { it.geoPoint }
                                 val vehPos = interpolateGeo(allPts, activeTripProgress)
+                                val nextPos = interpolateGeo(allPts, (activeTripProgress + 0.04f).coerceAtMost(1f))
                                 mv.overlays.add(Marker(mv).apply {
                                     position = vehPos
                                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                    icon = vehicleHeadDrawable(context, TransitMode.METRO, palette.purple.toArgb())
+                                    icon = vehicleHeadDrawable(context, TransitMode.METRO, bearingDeg(vehPos, nextPos))
                                 })
                             }
                         } else {
@@ -244,10 +299,12 @@ fun OsmMapCanvas(
                         }
                         if (screen == PreviewScreen.ACTIVE && activeStageIdx == 1) {
                             val busPts = busOpt.stops.map { it.geoPoint }
+                            val vehPos = interpolateGeo(busPts, activeTripProgress)
+                            val nextPos = interpolateGeo(busPts, (activeTripProgress + 0.04f).coerceAtMost(1f))
                             mv.overlays.add(Marker(mv).apply {
-                                position = interpolateGeo(busPts, activeTripProgress)
+                                position = vehPos
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                icon = vehicleHeadDrawable(context, TransitMode.BUS, palette.blue.toArgb())
+                                icon = vehicleHeadDrawable(context, TransitMode.BUS, bearingDeg(vehPos, nextPos))
                             })
                         }
                     }
@@ -261,10 +318,12 @@ fun OsmMapCanvas(
                         })
                         focusGeoPoints.addAll(scenario.carPlan.roadPoints)
                         if (screen == PreviewScreen.ACTIVE) {
+                            val vehPos = interpolateGeo(scenario.carPlan.roadPoints, activeTripProgress)
+                            val nextPos = interpolateGeo(scenario.carPlan.roadPoints, (activeTripProgress + 0.04f).coerceAtMost(1f))
                             mv.overlays.add(Marker(mv).apply {
-                                position = interpolateGeo(scenario.carPlan.roadPoints, activeTripProgress)
+                                position = vehPos
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                icon = vehicleHeadDrawable(context, TransitMode.CAR, palette.orange.toArgb())
+                                icon = vehicleHeadDrawable(context, TransitMode.CAR, bearingDeg(vehPos, nextPos))
                             })
                         }
                     }
@@ -395,53 +454,103 @@ private fun arrowDrawable(context: Context, start: GeoPoint, end: GeoPoint, colo
     return BitmapDrawable(context.resources, bmp)
 }
 
-private fun vehicleHeadDrawable(context: Context, mode: TransitMode, accentColor: Int): BitmapDrawable {
-    val size = 64
+private fun bearingDeg(start: GeoPoint, end: GeoPoint): Float =
+    Math.toDegrees(atan2(-(end.latitude - start.latitude), end.longitude - start.longitude)).toFloat() + 90f
+
+private fun vehicleHeadDrawable(context: Context, mode: TransitMode, angleDeg: Float): BitmapDrawable {
+    val size = 84
     val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val c = Canvas(bmp)
     val cx = size / 2f
     val cy = size / 2f
     val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    p.color = android.graphics.Color.WHITE
-    c.drawCircle(cx, cy, 24f, p)
-    p.color = accentColor
-    p.style = Paint.Style.STROKE
-    p.strokeWidth = 4.5f
-    c.drawCircle(cx, cy, 24f, p)
-    p.style = Paint.Style.FILL
+    val silverBody = android.graphics.Color.parseColor("#C9CED4")
+    val silverTrim = android.graphics.Color.parseColor("#9BA0A6")
+    val darkGlass = android.graphics.Color.parseColor("#101820")
+    val blackTrim = android.graphics.Color.parseColor("#17191C")
+    val headlamp = android.graphics.Color.parseColor("#FFF6D5")
+    val tailRed = android.graphics.Color.parseColor("#D71920")
+    val amberLed = android.graphics.Color.parseColor("#FF9D1E")
 
-    val dark = android.graphics.Color.parseColor("#0F172A")
+    c.save()
+    c.rotate(angleDeg, cx, cy)
+
+    // Soft 3D drop shadow
+    p.color = android.graphics.Color.argb(90, 0, 0, 0)
+    c.drawOval(RectF(cx - 17f, cy - 26f, cx + 17f, cy + 28f), p)
+
     when (mode) {
         TransitMode.METRO -> {
-            p.color = dark
-            c.drawRoundRect(RectF(cx - 10f, cy - 14f, cx + 10f, cy + 12f), 8f, 8f, p)
-            p.color = accentColor
-            p.strokeWidth = 3f
-            c.drawLine(cx - 6f, cy - 16f, cx + 6f, cy - 16f, p)
-            p.color = android.graphics.Color.parseColor("#38BDF8")
-            c.drawRoundRect(RectF(cx - 7f, cy - 9f, cx + 7f, cy - 1f), 3f, 3f, p)
-            p.color = android.graphics.Color.parseColor("#FACC15")
-            c.drawCircle(cx - 5f, cy + 6f, 2.5f, p)
-            c.drawCircle(cx + 5f, cy + 6f, 2.5f, p)
+            // Sleek Silver Namma Metro Head Car (top-down / 3Q perspective)
+            p.color = silverBody
+            c.drawRoundRect(RectF(cx - 13f, cy - 26f, cx + 13f, cy + 25f), 11f, 11f, p)
+            // Roof AC pods
+            p.color = silverTrim
+            c.drawRoundRect(RectF(cx - 8f, cy + 2f, cx + 8f, cy + 18f), 4f, 4f, p)
+            // Wraparound dark windshield & cab glass
+            p.color = blackTrim
+            c.drawRoundRect(RectF(cx - 11f, cy - 22f, cx + 11f, cy - 6f), 7f, 7f, p)
+            p.color = darkGlass
+            c.drawRoundRect(RectF(cx - 9.5f, cy - 20f, cx + 9.5f, cy - 8f), 6f, 6f, p)
+            // Amber LED destination board
+            p.color = amberLed
+            c.drawRoundRect(RectF(cx - 5.5f, cy - 11f, cx + 5.5f, cy - 8.5f), 1.5f, 1.5f, p)
+            // Dual glowing headlights & red marker lights
+            p.color = headlamp
+            c.drawCircle(cx - 8f, cy - 23f, 2.3f, p)
+            c.drawCircle(cx + 8f, cy - 23f, 2.3f, p)
+            p.color = tailRed
+            c.drawCircle(cx - 4.5f, cy - 23.5f, 1.5f, p)
+            c.drawCircle(cx + 4.5f, cy - 23.5f, 1.5f, p)
         }
         TransitMode.BUS -> {
-            p.color = dark
-            c.drawRoundRect(RectF(cx - 11f, cy - 13f, cx + 11f, cy + 12f), 5f, 5f, p)
-            p.color = accentColor
-            c.drawRect(RectF(cx - 7f, cy - 10.5f, cx + 7f, cy - 7.5f), p)
-            p.color = android.graphics.Color.parseColor("#93C5FD")
-            c.drawRect(RectF(cx - 8f, cy - 5.5f, cx + 8f, cy + 3f), p)
-            p.color = android.graphics.Color.parseColor("#FACC15")
-            c.drawCircle(cx - 6f, cy + 7.5f, 2.3f, p)
-            c.drawCircle(cx + 6f, cy + 7.5f, 2.3f, p)
+            // Silver BMTC Bus (top-down / 3Q perspective)
+            p.color = silverBody
+            c.drawRoundRect(RectF(cx - 13.5f, cy - 25f, cx + 13.5f, cy + 25f), 6f, 6f, p)
+            // Roof AC strip
+            p.color = silverTrim
+            c.drawRoundRect(RectF(cx - 8f, cy - 4f, cx + 8f, cy + 17f), 3f, 3f, p)
+            // Side mirrors
+            p.color = blackTrim
+            c.drawRect(RectF(cx - 16.5f, cy - 21f, cx - 13f, cy - 17f), p)
+            c.drawRect(RectF(cx + 13f, cy - 21f, cx + 16.5f, cy - 17f), p)
+            // Split dark windshield
+            p.color = darkGlass
+            c.drawRoundRect(RectF(cx - 10.5f, cy - 22f, cx - 1f, cy - 12f), 3f, 3f, p)
+            c.drawRoundRect(RectF(cx + 1f, cy - 22f, cx + 10.5f, cy - 12f), 3f, 3f, p)
+            // Amber route board
+            p.color = amberLed
+            c.drawRoundRect(RectF(cx - 7f, cy - 15f, cx + 7f, cy - 12.5f), 1.5f, 1.5f, p)
+            // Dual headlights & rear tail lights
+            p.color = headlamp
+            c.drawCircle(cx - 8.5f, cy - 23.5f, 2.2f, p)
+            c.drawCircle(cx + 8.5f, cy - 23.5f, 2.2f, p)
+            p.color = tailRed
+            c.drawRect(RectF(cx - 10f, cy + 23f, cx - 6f, cy + 25f), p)
+            c.drawRect(RectF(cx + 6f, cy + 23f, cx + 10f, cy + 25f), p)
         }
         TransitMode.CAR -> {
-            p.color = dark
-            c.drawRoundRect(RectF(cx - 12f, cy - 7f, cx + 12f, cy + 6f), 5f, 5f, p)
-            c.drawCircle(cx - 6.5f, cy + 7.5f, 3.2f, p)
-            c.drawCircle(cx + 6.5f, cy + 7.5f, 3.2f, p)
+            // Silver Sports Sedan (top-down / 3Q perspective)
+            p.color = silverBody
+            c.drawRoundRect(RectF(cx - 11.5f, cy - 21f, cx + 11.5f, cy + 21f), 8f, 8f, p)
+            // Side mirrors
+            p.color = silverBody
+            c.drawRect(RectF(cx - 14f, cy - 5f, cx - 11f, cy - 2f), p)
+            c.drawRect(RectF(cx + 11f, cy - 5f, cx + 14f, cy - 2f), p)
+            // Dark glass cabin (windshield + panoramic roof + rear glass)
+            p.color = darkGlass
+            c.drawRoundRect(RectF(cx - 8.5f, cy - 9f, cx + 8.5f, cy + 12f), 5f, 5f, p)
+            p.color = silverBody
+            c.drawRoundRect(RectF(cx - 7f, cy - 1f, cx + 7f, cy + 5f), 2f, 2f, p)
+            // Headlights & full-width rear tail light bar
+            p.color = headlamp
+            c.drawCircle(cx - 7.5f, cy - 19f, 2f, p)
+            c.drawCircle(cx + 7.5f, cy - 19f, 2f, p)
+            p.color = tailRed
+            c.drawRoundRect(RectF(cx - 8.5f, cy + 19f, cx + 8.5f, cy + 20.8f), 1f, 1f, p)
         }
     }
+    c.restore()
     return BitmapDrawable(context.resources, bmp)
 }
