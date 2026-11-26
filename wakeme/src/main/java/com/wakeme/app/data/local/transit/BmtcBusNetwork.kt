@@ -52,13 +52,13 @@ enum class BmtcBusCategory(
     companion object {
         fun fromRouteOrName(text: String?): BmtcBusCategory {
             if (text.isNullOrBlank()) return NORMAL_SARIGE
-            val upper = text.uppercase()
+            val upper = text.trim().uppercase()
             return when {
                 upper.contains("KIA") || upper.contains("VAJRA") || upper.contains("VAYU") ||
                 upper.contains("V-") || upper.contains("AIRPORT") || upper.contains("AC ") -> AC_VOLVO
 
                 upper.contains("EV") || upper.contains("ASTRA") || upper.contains("ELECTRIC") ||
-                upper.contains("E-") -> ELECTRIC_EV
+                upper.startsWith("E-") -> ELECTRIC_EV
 
                 else -> NORMAL_SARIGE
             }

@@ -61,9 +61,26 @@ data class RouteResult(
 
 object RoadRoutingRepository {
 
+    private const val ROUTE_CACHE_TTL_MS = 120_000L
+    private data class CachedRoute(val result: RouteResult, val timestampMs: Long)
+    private val routeCache = java.util.Collections.synchronizedMap(
+        object : LinkedHashMap<String, CachedRoute>(32, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, CachedRoute>?): Boolean = size > 48
+        }
+    )
+
+    private fun routeCacheKey(startLat: Double, startLon: Double, destLat: Double, destLon: Double): String {
+        val sLat = (startLat * 2000).toInt()
+        val sLon = (startLon * 2000).toInt()
+        val dLat = (destLat * 2000).toInt()
+        val dLon = (destLon * 2000).toInt()
+        return "$sLat,$sLon->$dLat,$dLon"
+    }
+
     /**
      * Fetches real road driving distance and route polyline coordinates via OSRM.
      * Evaluates multiple candidate alternatives and selects the earliest arrival (fastest) route.
+     * Caches recent routes (~50m grid, 2-min TTL) and retries once on transient failure.
      * If offline or request fails, seamlessly falls back to road-curvature estimation.
      */
     suspend fun getRoute(
@@ -72,81 +89,91 @@ object RoadRoutingRepository {
         destLat: Double,
         destLon: Double
     ): RouteResult = withContext(Dispatchers.IO) {
+        val cacheKey = routeCacheKey(startLat, startLon, destLat, destLon)
+        val cached = routeCache[cacheKey]
+        if (cached != null && (System.currentTimeMillis() - cached.timestampMs) < ROUTE_CACHE_TTL_MS) {
+            return@withContext cached.result
+        }
+
         val straightLineMeters = haversineDistanceMeters(startLat, startLon, destLat, destLon).toFloat()
 
-        try {
-            val urlString = String.format(
-                Locale.US,
-                "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&alternatives=true",
-                startLon, startLat, destLon, destLat
-            )
-            val url = URL(urlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 3000
-                readTimeout = 3000
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "WakeMe-App/2.0")
-            }
+        val urlString = String.format(
+            Locale.US,
+            "https://router.project-osrm.org/route/v1/driving/%.6f,%.6f;%.6f,%.6f?overview=full&geometries=geojson&alternatives=true",
+            startLon, startLat, destLon, destLat
+        )
 
-            if (connection.responseCode == 200) {
-                val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseText)
-                if (json.optString("code") == "Ok") {
-                    val routes = json.getJSONArray("routes")
-                    if (routes.length() > 0) {
-                        val candidates = mutableListOf<RouteCandidate>()
+        for (attempt in 0..1) {
+            try {
+                val url = URL(urlString)
+                val connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                    requestMethod = "GET"
+                    setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; contact: wakeme-app@users.noreply.github.com)")
+                }
 
-                        for (i in 0 until routes.length()) {
-                            val routeObj = routes.getJSONObject(i)
-                            val roadDistance = routeObj.getDouble("distance").toFloat()
-                            val duration = routeObj.getDouble("duration").toFloat()
+                if (connection.responseCode == 200) {
+                    val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(responseText)
+                    if (json.optString("code") == "Ok") {
+                        val routes = json.getJSONArray("routes")
+                        if (routes.length() > 0) {
+                            val candidates = mutableListOf<RouteCandidate>()
 
-                            val geometry = routeObj.getJSONObject("geometry")
-                            val coords = geometry.getJSONArray("coordinates")
-                            val polylinePoints = mutableListOf<GeoPoint>()
+                            for (i in 0 until routes.length()) {
+                                val routeObj = routes.getJSONObject(i)
+                                val roadDistance = routeObj.getDouble("distance").toFloat()
+                                val duration = routeObj.getDouble("duration").toFloat()
 
-                            for (j in 0 until coords.length()) {
-                                val coordPair = coords.getJSONArray(j)
-                                val lon = coordPair.getDouble(0)
-                                val lat = coordPair.getDouble(1)
-                                polylinePoints.add(GeoPoint(lat, lon))
+                                val geometry = routeObj.getJSONObject("geometry")
+                                val coords = geometry.getJSONArray("coordinates")
+                                val polylinePoints = mutableListOf<GeoPoint>()
+
+                                for (j in 0 until coords.length()) {
+                                    val coordPair = coords.getJSONArray(j)
+                                    val lon = coordPair.getDouble(0)
+                                    val lat = coordPair.getDouble(1)
+                                    polylinePoints.add(GeoPoint(lat, lon))
+                                }
+
+                                candidates.add(
+                                    RouteCandidate(
+                                        id = "route_$i",
+                                        distanceMeters = roadDistance,
+                                        durationSeconds = duration,
+                                        points = polylinePoints
+                                    )
+                                )
                             }
 
-                            candidates.add(
-                                RouteCandidate(
-                                    id = "route_$i",
-                                    distanceMeters = roadDistance,
-                                    durationSeconds = duration,
-                                    points = polylinePoints
-                                )
+                            val sorted = candidates.sortedBy { it.durationSeconds }
+                            val fastest = sorted.first().copy(
+                                id = "fastest",
+                                isFastest = true,
+                                summary = "Fastest (${(sorted.first().durationSeconds / 60).toInt().coerceAtLeast(1)}m)"
                             )
+
+                            val alternatives = sorted.drop(1).mapIndexed { idx, route ->
+                                val deltaSec = route.durationSeconds - fastest.durationSeconds
+                                val deltaMin = (deltaSec / 60).toInt()
+                                val summaryStr = if (deltaMin > 0) "+$deltaMin min" else "Alt ${idx + 1}"
+                                route.copy(id = "alt_$idx", summary = summaryStr)
+                            }
+
+                            val result = RouteResult(
+                                fastestRoute = fastest,
+                                alternativeRoutes = alternatives,
+                                isRoadRoute = true
+                            )
+                            routeCache[cacheKey] = CachedRoute(result, System.currentTimeMillis())
+                            return@withContext result
                         }
-
-                        // Sort by duration ascending: earliest arrival time comes first!
-                        val sorted = candidates.sortedBy { it.durationSeconds }
-                        val fastest = sorted.first().copy(
-                            id = "fastest",
-                            isFastest = true,
-                            summary = "⚡ Fastest (${(sorted.first().durationSeconds / 60).toInt().coerceAtLeast(1)}m)"
-                        )
-
-                        val alternatives = sorted.drop(1).mapIndexed { idx, route ->
-                            val deltaSec = route.durationSeconds - fastest.durationSeconds
-                            val deltaMin = (deltaSec / 60).toInt()
-                            val summaryStr = if (deltaMin > 0) "+$deltaMin min" else "Alt ${idx + 1}"
-                            route.copy(id = "alt_$idx", summary = summaryStr)
-                        }
-
-                        return@withContext RouteResult(
-                            fastestRoute = fastest,
-                            alternativeRoutes = alternatives,
-                            isRoadRoute = true
-                        )
                     }
                 }
+            } catch (_: Exception) {
+                if (attempt == 0) kotlinx.coroutines.delay(250L)
             }
-        } catch (_: Exception) {
-            // Network failure or offline
         }
 
         // Fallback: Road winding curvature index (1.28x straight line for Indian urban roads)
@@ -480,7 +507,8 @@ object RoadRoutingRepository {
         lat1: Double, lon1: Double,
         lat2: Double, lon2: Double
     ): Pair<Double, Double> {
-        val cosLat = Math.cos(Math.toRadians(lat1))
+        val midLat = (lat1 + lat2) * 0.5
+        val cosLat = kotlin.math.cos(Math.toRadians(midLat))
         val mPerDegLat = 111320.0
         val mPerDegLon = 111320.0 * cosLat
 
@@ -491,23 +519,25 @@ object RoadRoutingRepository {
 
         val segLenSq = dx * dx + dy * dy
         if (segLenSq < 1e-6) {
-            return Pair(Math.hypot(x, y), 0.0)
+            return Pair(kotlin.math.hypot(x, y), 0.0)
         }
 
         val t = ((x * dx + y * dy) / segLenSq).coerceIn(0.0, 1.0)
         val projX = t * dx
         val projY = t * dy
-        return Pair(Math.hypot(x - projX, y - projY), t)
+        return Pair(kotlin.math.hypot(x - projX, y - projY), t)
     }
 
     fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val r = 6371000.0 // Earth radius in meters
         val dLat = Math.toRadians(lat2 - lat1)
         val dLon = Math.toRadians(lon2 - lon1)
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        val sinDLat = kotlin.math.sin(dLat / 2)
+        val sinDLon = kotlin.math.sin(dLon / 2)
+        val a = sinDLat * sinDLat +
+                kotlin.math.cos(Math.toRadians(lat1)) * kotlin.math.cos(Math.toRadians(lat2)) *
+                sinDLon * sinDLon
+        val c = 2 * kotlin.math.atan2(kotlin.math.sqrt(a), kotlin.math.sqrt(1 - a))
         return r * c
     }
 }

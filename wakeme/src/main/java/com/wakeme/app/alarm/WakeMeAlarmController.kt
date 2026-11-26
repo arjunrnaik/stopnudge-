@@ -2,6 +2,7 @@ package com.wakeme.app.alarm
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -17,6 +18,7 @@ import com.wakeme.app.model.DestinationConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,7 @@ object WakeMeAlarmController {
     private var wakeLock: PowerManager.WakeLock? = null
     private var isPlaying = false
     private var lastConfig: DestinationConfig? = null
+    private val alarmScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var snoozeJob: Job? = null
 
     private val _isSnoozed = MutableStateFlow(false)
@@ -64,27 +67,14 @@ object WakeMeAlarmController {
                 context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
             }
 
-            // Start Vibration Pattern
+            // Start Vibration Pattern (minSdk >= 29, VibrationEffect always supported)
             try {
                 if (config.alertMode == AlertMode.WAKEUP_ALARM) {
                     val pattern = longArrayOf(0, 1000, 500, 1000, 500)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        val effect = VibrationEffect.createWaveform(pattern, 0) // Repeat from index 0
-                        vibrator?.vibrate(effect)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        vibrator?.vibrate(pattern, 0)
-                    }
+                    vibrator?.vibrate(VibrationEffect.createWaveform(pattern, 0))
                 } else {
-                    // Gentle reminder: single short vibration pulse
                     val pattern = longArrayOf(0, 350)
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        val effect = VibrationEffect.createWaveform(pattern, -1) // No repeat
-                        vibrator?.vibrate(effect)
-                    } else {
-                        @Suppress("DEPRECATION")
-                        vibrator?.vibrate(pattern, -1)
-                    }
+                    vibrator?.vibrate(VibrationEffect.createWaveform(pattern, -1))
                 }
             } catch (_: Exception) {}
         }
@@ -125,15 +115,44 @@ object WakeMeAlarmController {
                 // Handle Audio Routing Preference
                 when (config.audioRouting) {
                     AudioRouting.SPEAKER_ONLY -> {
-                        @Suppress("DEPRECATION")
-                        audioManager.isSpeakerphoneOn = true
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            val speaker = audioManager.availableCommunicationDevices
+                                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+                            if (speaker != null) {
+                                audioManager.setCommunicationDevice(speaker)
+                            }
+                        } else {
+                            @Suppress("DEPRECATION")
+                            audioManager.isSpeakerphoneOn = true
+                        }
                     }
                     AudioRouting.HEADPHONES_ONLY -> {
-                        @Suppress("DEPRECATION")
-                        audioManager.isSpeakerphoneOn = false
+                        val hasHeadset = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
+                            it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                                it.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES ||
+                                it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
+                                it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                        }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            if (hasHeadset) {
+                                val headset = audioManager.availableCommunicationDevices.firstOrNull {
+                                    it.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                                        it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                                }
+                                if (headset != null) audioManager.setCommunicationDevice(headset)
+                            } else {
+                                audioManager.clearCommunicationDevice()
+                            }
+                        } else if (hasHeadset) {
+                            @Suppress("DEPRECATION")
+                            audioManager.isSpeakerphoneOn = false
+                        }
                     }
                     AudioRouting.BOTH -> {
-                        // Default system routing
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            audioManager.clearCommunicationDevice()
+                        }
                     }
                 }
 
@@ -150,15 +169,17 @@ object WakeMeAlarmController {
      * then automatically sounds the alert again.
      */
     fun snoozeAlert(context: Context, durationMs: Long = 120_000L, onSnoozeFired: (() -> Unit)? = null) {
+        val appContext = context.applicationContext
         val configToResume = lastConfig
-        stopAlert(context)
+        stopAlert(appContext)
+        snoozeJob?.cancel()
         _isSnoozed.value = true
 
-        snoozeJob = CoroutineScope(Dispatchers.Main).launch {
+        snoozeJob = alarmScope.launch {
             delay(durationMs)
             _isSnoozed.value = false
             if (configToResume != null) {
-                triggerAlert(context, configToResume)
+                triggerAlert(appContext, configToResume)
                 onSnoozeFired?.invoke()
             }
         }

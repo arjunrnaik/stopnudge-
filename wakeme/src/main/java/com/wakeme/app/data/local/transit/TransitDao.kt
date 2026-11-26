@@ -56,10 +56,4 @@ interface TransitDao {
 
     @Query("SELECT * FROM bus_stops WHERE group_id = :groupId")
     suspend fun getBusStopsByGroup(groupId: String): List<BusStopEntity>
-
-    @Query("SELECT count(*) FROM metro_stations")
-    suspend fun getMetroCount(): Int
-
-    @Query("SELECT count(*) FROM bus_stops")
-    suspend fun getBusCount(): Int
 }

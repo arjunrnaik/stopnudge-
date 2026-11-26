@@ -12,8 +12,6 @@ data class DestinationConfig(
     val alertMode: AlertMode = AlertMode.WAKEUP_ALARM,
     val audioRouting: AudioRouting = AudioRouting.BOTH,
     val reminderNote: String = "",
-    val isTransitStop: Boolean = false,
-    val transitType: String? = null,
     val vibrate: Boolean = true,
     val metroStopsBeforeAlert: Int = 1,
     val metroBoardingLat: Double? = null,

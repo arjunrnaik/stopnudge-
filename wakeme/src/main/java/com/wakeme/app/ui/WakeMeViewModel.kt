@@ -198,6 +198,7 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     val customBoardingBusStop: StateFlow<BusStopEntity?> = _customBoardingBusStop.asStateFlow()
 
     private val _preferredSearchedBusRouteNo = MutableStateFlow<String?>(null)
+    val preferredSearchedBusRouteNo: StateFlow<String?> = _preferredSearchedBusRouteNo.asStateFlow()
 
     private val _isTrackingActive = MutableStateFlow(false)
     val isTrackingActive: StateFlow<Boolean> = _isTrackingActive.asStateFlow()
@@ -595,9 +596,16 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
 
     fun saveCurrentAsFavorite(customName: String, category: String = "CUSTOM", location: GeoPoint? = null) {
         val target = location ?: _targetLocation.value
+        val resolvedName = customName.ifBlank { _targetName.value }
+        val alreadySaved = _favorites.value.any {
+            it.name.equals(resolvedName, ignoreCase = true) &&
+                RoadRoutingRepository.haversineDistanceMeters(it.latitude, it.longitude, target.latitude, target.longitude) < 50.0
+        }
+        if (alreadySaved) return
+
         viewModelScope.launch(Dispatchers.IO) {
             val fav = FavoritePlaceEntity(
-                name = customName.ifBlank { _targetName.value },
+                name = resolvedName,
                 category = category,
                 latitude = target.latitude,
                 longitude = target.longitude,
@@ -618,6 +626,12 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         radiusMeters: Float = 500f,
         reminderNote: String = ""
     ) {
+        val alreadySaved = _favorites.value.any {
+            it.name.equals(name, ignoreCase = true) &&
+                RoadRoutingRepository.haversineDistanceMeters(it.latitude, it.longitude, latitude, longitude) < 50.0
+        }
+        if (alreadySaved) return
+
         viewModelScope.launch(Dispatchers.IO) {
             val fav = FavoritePlaceEntity(
                 name = name,

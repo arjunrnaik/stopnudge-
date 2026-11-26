@@ -1,5 +1,6 @@
 package com.wakeme.app.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationManager
@@ -7,12 +8,16 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.location.Location
 import android.os.Build
+import android.os.HandlerThread
 import android.os.IBinder
-import android.os.Looper
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,6 +51,7 @@ enum class MetroJourneyStage {
 class WakeMeTrackingService : Service() {
 
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val locationThread = HandlerThread("WakeMeLocationThread")
     private lateinit var fusedLocationClient: FusedLocationProviderClient
     private var locationCallback: LocationCallback? = null
 
@@ -55,6 +61,7 @@ class WakeMeTrackingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        locationThread.start()
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
     }
 
@@ -95,8 +102,8 @@ class WakeMeTrackingService : Service() {
                     metroBoardingLon = if (boardingLon.isNaN()) null else boardingLon,
                     metroBoardingName = boardingName
                 )
-                hasAlertFired = false
-                hasInterchangeAlertFiredForLeg = -1
+                hasAlertFired.set(false)
+                hasInterchangeAlertFiredForLeg.set(-1)
                 isTracking.value = true
                 activeConfig.value = destinationConfig
                 initialDistanceMeters.value = null
@@ -199,6 +206,15 @@ class WakeMeTrackingService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startLocationUpdates() {
+        val hasFine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (!hasFine && !hasCoarse) {
+            updateNotification("Location permission missing — tracking stopped")
+            stopTracking()
+            stopSelf()
+            return
+        }
+
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2500L)
             .setMinUpdateIntervalMillis(1500L)
             .setMinUpdateDistanceMeters(3f)
@@ -215,8 +231,12 @@ class WakeMeTrackingService : Service() {
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
                 locationCallback!!,
-                Looper.getMainLooper()
+                locationThread.looper
             )
+        } catch (_: SecurityException) {
+            updateNotification("Location permission revoked — tracking stopped")
+            stopTracking()
+            stopSelf()
         } catch (_: Exception) {}
     }
 
@@ -262,8 +282,7 @@ class WakeMeTrackingService : Service() {
         )
 
         if (triggerDecision.shouldTrigger) {
-            if (!hasAlertFired) {
-                hasAlertFired = true
+            if (hasAlertFired.compareAndSet(false, true)) {
                 triggerArrivalAlert(config, triggerDecision.effectiveDistanceMeters)
             }
         } else {
@@ -525,7 +544,7 @@ class WakeMeTrackingService : Service() {
                     // Auto-advance once user departs interchange platform/stop along the next leg
                     if (distInterchange > 150.0 && distNext < distInterchange) {
                         WakeMeAlarmController.stopAlert(this)
-                        hasAlertFired = false
+                        hasAlertFired.set(false)
                         metroInterchangePrompt.value = null
                         enterMetroRideStage(plan, nextIdx)
                     }
@@ -570,8 +589,8 @@ class WakeMeTrackingService : Service() {
                 if (progress.shouldTriggerStopAlert) {
                     if (isInterchangeLeg) {
                         val nextLeg = plan.legs[legIdx + 1]
-                        if (hasInterchangeAlertFiredForLeg != legIdx) {
-                            hasInterchangeAlertFiredForLeg = legIdx
+                        val prevLeg = hasInterchangeAlertFiredForLeg.get()
+                        if (prevLeg != legIdx && hasInterchangeAlertFiredForLeg.compareAndSet(prevLeg, legIdx)) {
                             val interchangeName = leg.alightingStation.name
                             val nextLegDesc = if (nextLeg.isBusLeg) "Bus ${nextLeg.lineName}" else "${nextLeg.lineName} Line"
                             val prompt = "Change at $interchangeName ➔ $nextLegDesc (${nextLeg.directionLabel})"
@@ -582,8 +601,7 @@ class WakeMeTrackingService : Service() {
                             metroStage.value = MetroJourneyStage.INTERCHANGE_WAIT
                         }
                     } else {
-                        if (!hasAlertFired) {
-                            hasAlertFired = true
+                        if (hasAlertFired.compareAndSet(false, true)) {
                             val targetLabel = if (effectiveStopsBefore == 0) {
                                 "${leg.alightingStation.name} $transitLabel"
                             } else {
@@ -598,7 +616,7 @@ class WakeMeTrackingService : Service() {
                             currentLocation.latitude, currentLocation.longitude,
                             config.latitude, config.longitude
                         ).toFloat()
-                        if (hasAlertFired && hasFinalRoadLeg &&
+                        if (hasAlertFired.get() && hasFinalRoadLeg &&
                             (progress.distanceToEndMeters <= 70f ||
                                 (progress.distanceToEndMeters > 100f && distToFinalDest < plan.exitWalkDistanceMeters))
                         ) {
@@ -633,8 +651,7 @@ class WakeMeTrackingService : Service() {
                 )
 
                 if (finalRoadDecision.shouldTrigger) {
-                    if (!hasAlertFired) {
-                        hasAlertFired = true
+                    if (hasAlertFired.compareAndSet(false, true)) {
                         triggerArrivalAlert(
                             config.copy(
                                 alertMode = AlertMode.GENTLE_REMINDER,
@@ -697,26 +714,63 @@ class WakeMeTrackingService : Service() {
     }
 
     private fun triggerArrivalAlert(config: DestinationConfig, finalDistance: Float) {
+        val safeName = config.name.take(120)
+        val safeNote = config.reminderNote.take(240)
+        val safeConfig = config.copy(name = safeName, reminderNote = safeNote)
+
         // 1. Trigger audio & vibration engine
-        WakeMeAlarmController.triggerAlert(applicationContext, config)
+        WakeMeAlarmController.triggerAlert(applicationContext, safeConfig)
 
         // 2. Alert mode dispatch
-        if (config.alertMode == AlertMode.WAKEUP_ALARM) {
-            // Launch full-screen wake-lock activity over lock screen
+        if (safeConfig.alertMode == AlertMode.WAKEUP_ALARM) {
             val dismissIntent = Intent(this, AlarmDismissActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                putExtra(AlarmDismissActivity.EXTRA_DESTINATION_NAME, config.name)
-                putExtra(AlarmDismissActivity.EXTRA_REMINDER_NOTE, config.reminderNote)
-                putExtra(AlarmDismissActivity.EXTRA_RADIUS_METERS, config.radiusMeters)
+                putExtra(AlarmDismissActivity.EXTRA_DESTINATION_NAME, safeName)
+                putExtra(AlarmDismissActivity.EXTRA_REMINDER_NOTE, safeNote)
+                putExtra(AlarmDismissActivity.EXTRA_RADIUS_METERS, safeConfig.radiusMeters)
+                putExtra(AlarmDismissActivity.EXTRA_IS_INTERCHANGE, false)
             }
-            startActivity(dismissIntent)
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val canUseFullScreen = Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+                notificationManager.canUseFullScreenIntent()
+
+            if (canUseFullScreen) {
+                try {
+                    startActivity(dismissIntent)
+                } catch (_: Exception) {
+                    postAlarmFallbackNotification(safeConfig, dismissIntent)
+                }
+            } else {
+                postAlarmFallbackNotification(safeConfig, dismissIntent)
+            }
         } else {
             // Gentle Reminder: Post heads-up notification
-            postGentleReminderNotification(config)
+            postGentleReminderNotification(safeConfig)
         }
 
-        val distUnit = if (config.vehicleMode.usesRoadDistanceTrigger) "m along road" else "m"
+        val distUnit = if (safeConfig.vehicleMode.usesRoadDistanceTrigger) "m along road" else "m"
         updateNotification("Arrived at destination (${finalDistance.toInt()}$distUnit)")
+    }
+
+    private fun postAlarmFallbackNotification(config: DestinationConfig, dismissIntent: Intent) {
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            2,
+            dismissIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notif = NotificationCompat.Builder(this, WakeMeApp.ALARM_CHANNEL_ID)
+            .setContentTitle("Wake Up! Approaching ${config.name}")
+            .setContentText(config.reminderNote.ifBlank { "Tap to dismiss your destination alarm." })
+            .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setFullScreenIntent(pendingIntent, true)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+        notificationManager.notify(NOTIFICATION_ARRIVAL_ID, notif)
     }
 
     private fun postGentleReminderNotification(config: DestinationConfig) {
@@ -743,7 +797,8 @@ class WakeMeTrackingService : Service() {
         locationCallback = null
         WakeMeAlarmController.cancelSnooze()
         WakeMeAlarmController.stopAlert(this)
-        hasAlertFired = false
+        hasAlertFired.set(false)
+        hasInterchangeAlertFiredForLeg.set(-1)
         isTracking.value = false
         liveDistanceMeters.value = null
         straightLineDistanceMeters.value = null
@@ -784,6 +839,7 @@ class WakeMeTrackingService : Service() {
     override fun onDestroy() {
         stopTracking()
         serviceScope.cancel()
+        locationThread.quitSafely()
         super.onDestroy()
     }
 
@@ -847,10 +903,8 @@ class WakeMeTrackingService : Service() {
         private var matchedPolylineSegmentIndex = 0
         @Volatile
         private var matchedMetroStationIndex = 0
-        @Volatile
-        private var hasAlertFired = false
-        @Volatile
-        private var hasInterchangeAlertFiredForLeg = -1
+        private val hasAlertFired = AtomicBoolean(false)
+        private val hasInterchangeAlertFiredForLeg = AtomicInteger(-1)
         @Volatile
         private var lastRouteFetchTime = 0L
         @Volatile
@@ -889,7 +943,8 @@ class WakeMeTrackingService : Service() {
             val leg = plan.legs.getOrNull(legIndex) ?: return
             currentMetroLegIndex.value = legIndex
             matchedMetroStationIndex = 0
-            hasAlertFired = false
+            hasAlertFired.set(false)
+        hasInterchangeAlertFiredForLeg.set(-1)
             metroStage.value = MetroJourneyStage.ON_METRO_LEG
             val legRoadPts = preloadedBusLegRoadPoints.value[legIndex]
             routePolyline.value = if (!legRoadPts.isNullOrEmpty()) legRoadPts else leg.trackPoints
@@ -910,7 +965,8 @@ class WakeMeTrackingService : Service() {
 
         fun enterFinalDestinationRoadStage() {
             metroStage.value = MetroJourneyStage.TO_FINAL_DESTINATION_ROAD
-            hasAlertFired = false
+            hasAlertFired.set(false)
+        hasInterchangeAlertFiredForLeg.set(-1)
             matchedPolylineSegmentIndex = 0
             lastRouteFetchTime = 0L
             routePolyline.value = emptyList()
@@ -966,10 +1022,7 @@ class WakeMeTrackingService : Service() {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, WakeMeTrackingService::class.java).apply {
-                action = ACTION_STOP_TRACKING
-            }
-            context.startService(intent)
+            context.stopService(Intent(context, WakeMeTrackingService::class.java))
         }
 
         fun selectRoute(routeId: String) {
@@ -1022,7 +1075,8 @@ class WakeMeTrackingService : Service() {
             lat1: Double, lon1: Double,
             lat2: Double, lon2: Double
         ): Double {
-            val cosLat = Math.cos(Math.toRadians(lat1))
+            val midLat = (lat1 + lat2) * 0.5
+            val cosLat = kotlin.math.cos(Math.toRadians(midLat))
             val mPerDegLat = 111320.0
             val mPerDegLon = 111320.0 * cosLat
 
@@ -1033,28 +1087,19 @@ class WakeMeTrackingService : Service() {
 
             val segLenSq = dx * dx + dy * dy
             if (segLenSq < 1e-6) {
-                return Math.hypot(x, y)
+                return kotlin.math.hypot(x, y)
             }
 
             val t = ((x * dx + y * dy) / segLenSq).coerceIn(0.0, 1.0)
             val projX = t * dx
             val projY = t * dy
-            return Math.hypot(x - projX, y - projY)
+            return kotlin.math.hypot(x - projX, y - projY)
         }
 
         /**
-         * Pure offline CPU Haversine geodesic calculation.
-         * Requires 0 network bytes.
+         * Delegates to [RoadRoutingRepository.haversineDistanceMeters] to avoid duplicate math.
          */
-        fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-            val r = 6371000.0 // Earth radius in meters
-            val dLat = Math.toRadians(lat2 - lat1)
-            val dLon = Math.toRadians(lon2 - lon1)
-            val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                    Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                    Math.sin(dLon / 2) * Math.sin(dLon / 2)
-            val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-            return r * c
-        }
+        fun haversineDistanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double =
+            RoadRoutingRepository.haversineDistanceMeters(lat1, lon1, lat2, lon2)
     }
 }

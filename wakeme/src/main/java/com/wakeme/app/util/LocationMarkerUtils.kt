@@ -229,7 +229,14 @@ object LocationMarkerUtils {
         return bitmap
     }
 
-    private val stationBitmapCache = java.util.concurrent.ConcurrentHashMap<String, Bitmap>()
+    private val stationBitmapCache = android.util.LruCache<String, Bitmap>(200)
+
+    private inline fun getOrCreateStationBitmap(key: String, create: () -> Bitmap): Bitmap {
+        stationBitmapCache.get(key)?.let { return it }
+        val bmp = create()
+        stationBitmapCache.put(key, bmp)
+        return bmp
+    }
 
     fun createStationMarkerDrawable(
         context: Context,
@@ -238,7 +245,7 @@ object LocationMarkerUtils {
         isInterchange: Boolean = false
     ): Drawable {
         val key = "$stationName|$lineColor|$isInterchange"
-        val bmp = stationBitmapCache.getOrPut(key) {
+        val bmp = getOrCreateStationBitmap(key) {
             createStationMarkerBitmap(context, stationName, lineColor, isInterchange)
         }
         val drawable = BitmapDrawable(context.resources, bmp)
@@ -449,7 +456,7 @@ object LocationMarkerUtils {
         tealColorHex: String = "#00838F"
     ): Drawable {
         val key = "bus|$stopName|$tealColorHex"
-        val bmp = stationBitmapCache.getOrPut(key) {
+        val bmp = getOrCreateStationBitmap(key) {
             createBmtcBusStopMarkerBitmap(context, stopName, tealColorHex)
         }
         val drawable = BitmapDrawable(context.resources, bmp)
@@ -470,7 +477,7 @@ object LocationMarkerUtils {
             stopName
         }
         val key = "bmtc_compact|$label|$isSelected"
-        val bmp = stationBitmapCache.getOrPut(key) {
+        val bmp = getOrCreateStationBitmap(key) {
             createBmtcBusStopMarkerBitmap(
                 context = context,
                 stopName = label,

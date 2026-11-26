@@ -3,9 +3,7 @@ package com.wakeme.app.alarm
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
-import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
@@ -38,25 +36,16 @@ class AlarmDismissActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Ensure activity wakes the device and displays over lock screen
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
-            setShowWhenLocked(true)
-            setTurnScreenOn(true)
-            val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-            keyguardManager.requestDismissKeyguard(this, null)
-        } else {
-            @Suppress("DEPRECATION")
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
-                WindowManager.LayoutParams.FLAG_DISMISS_KEYGUARD or
-                WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
-                WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
-            )
-        }
+        // Ensure activity wakes the device and displays over lock screen (minSdk >= 29)
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
+        keyguardManager.requestDismissKeyguard(this, null)
 
         val destinationName = intent.getStringExtra(EXTRA_DESTINATION_NAME) ?: "Destination"
         val reminderNote = intent.getStringExtra(EXTRA_REMINDER_NOTE)
         val radiusMeters = intent.getFloatExtra(EXTRA_RADIUS_METERS, 500f)
+        val isInterchange = intent.getBooleanExtra(EXTRA_IS_INTERCHANGE, false)
 
         setContent {
             WakeMeTheme {
@@ -67,10 +56,9 @@ class AlarmDismissActivity : ComponentActivity() {
                     onDismiss = {
                         WakeMeAlarmController.cancelSnooze()
                         WakeMeAlarmController.stopAlert(this)
-                        val stopIntent = Intent(this, WakeMeTrackingService::class.java).apply {
-                            action = WakeMeTrackingService.ACTION_STOP_TRACKING
+                        if (!isInterchange) {
+                            WakeMeTrackingService.stop(this)
                         }
-                        startService(stopIntent)
                         finish()
                     },
                     onSnooze = {
@@ -86,6 +74,7 @@ class AlarmDismissActivity : ComponentActivity() {
         const val EXTRA_DESTINATION_NAME = "extra_destination_name"
         const val EXTRA_REMINDER_NOTE = "extra_reminder_note"
         const val EXTRA_RADIUS_METERS = "extra_radius_meters"
+        const val EXTRA_IS_INTERCHANGE = "extra_is_interchange"
     }
 }
 

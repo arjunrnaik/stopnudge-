@@ -56,7 +56,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Handle Android Back Navigation gracefully across the 3 screens
-                BackHandler(enabled = currentScreen == WakeMeScreen.MODE_SELECTION) {
+                BackHandler(enabled = currentScreen == WakeMeScreen.MODE_SELECTION || currentScreen == WakeMeScreen.ACTIVE_TRIP) {
                     viewModel.navigateTo(WakeMeScreen.SEARCH_LANDING)
                 }
 

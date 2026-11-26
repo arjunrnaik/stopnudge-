@@ -137,12 +137,16 @@ object BmtcRoutePlanner {
         )
     }
 
+    /**
+     * Penalty in equivalent meters based on daily trip frequency; unknown (0) is penalized
+     * higher than rare known routes so unverified/seasonal routes don't outrank active corridors.
+     */
     private fun frequencyPenaltyMeters(dailyTrips: Int): Float = when {
         dailyTrips >= 60 -> 0f
         dailyTrips >= 20 -> 180f
         dailyTrips >= 5 -> 480f
         dailyTrips in 1..4 -> 1150f
-        else -> 300f
+        else -> 1400f
     }
 
     private fun buildFrequencySummary(freqLabel: String, dailyTrips: Int, firstBus: String, lastBus: String): String {
@@ -276,7 +280,7 @@ object BmtcRoutePlanner {
         }
 
         // 1. Direct route search (deduplicated by base route number, e.g. "500-D")
-        val bestDirectByRouteNo = LinkedHashMap<String, BmtcRouteOption>()
+        val bestDirectByRouteNo = HashMap<String, BmtcRouteOption>()
 
         for ((bStop, walkToBoard) in boardingCandidates) {
             val routeIndices = index.stopToRouteIndices[bStop.id] ?: continue

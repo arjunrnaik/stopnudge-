@@ -24,6 +24,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -94,9 +99,24 @@ fun WakeMeModeSelectionScreen(
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
     var showBoardingStationPicker by remember { mutableStateOf(false) }
+    var modeMapViewRef by remember { mutableStateOf<MapView?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
 
-    LaunchedEffect(targetLocation, selectedVehicleMode) {
-        viewModel.refreshPreviewRoadRoute()
+    DisposableEffect(lifecycleOwner, modeMapViewRef) {
+        val map = modeMapViewRef
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> map?.onResume()
+                Lifecycle.Event.ON_PAUSE -> map?.onPause()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            map?.onPause()
+            map?.onDetach()
+        }
     }
 
     Scaffold(
@@ -349,6 +369,7 @@ fun WakeMeModeSelectionScreen(
                             setMultiTouchControls(true)
                             controller.setZoom(14.5)
                             controller.setCenter(targetLocation)
+                            modeMapViewRef = this
                         }
                     },
                     update = { map ->
@@ -826,15 +847,18 @@ fun WakeMeModeSelectionScreen(
                 }
             }
         }
-        val filteredBusStops = remember(stationFilter, allBusStopsList) {
-            if (stationFilter.isBlank()) {
-                allBusStopsList.take(50)
-            } else {
-                allBusStopsList.filter {
-                    it.name.contains(stationFilter, ignoreCase = true) ||
-                        it.ref?.contains(stationFilter, ignoreCase = true) == true ||
-                        it.directionHint?.contains(stationFilter, ignoreCase = true) == true
-                }.take(50)
+        var filteredBusStops by remember { mutableStateOf(allBusStopsList.take(50)) }
+        LaunchedEffect(stationFilter, allBusStopsList) {
+            filteredBusStops = withContext(Dispatchers.Default) {
+                if (stationFilter.isBlank()) {
+                    allBusStopsList.take(50)
+                } else {
+                    allBusStopsList.filter {
+                        it.name.contains(stationFilter, ignoreCase = true) ||
+                            it.ref?.contains(stationFilter, ignoreCase = true) == true ||
+                            it.directionHint?.contains(stationFilter, ignoreCase = true) == true
+                    }.take(50)
+                }
             }
         }
 

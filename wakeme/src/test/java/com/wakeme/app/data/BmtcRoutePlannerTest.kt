@@ -211,4 +211,28 @@ class BmtcRoutePlannerTest {
         val sliced = top.legShapePoints[0]
         assertTrue("Expected offline sliced corridor >= 3 points", (sliced?.size ?: 0) >= 3)
     }
+
+    @Test
+    fun bmtcBusCategory_distinguishesExpressFromElectricAndAc() {
+        assertEquals(
+            com.wakeme.app.data.local.transit.BmtcBusCategory.NORMAL_SARIGE,
+            com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName("335-E")
+        )
+        assertEquals(
+            com.wakeme.app.data.local.transit.BmtcBusCategory.ELECTRIC_EV,
+            com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName("E-9")
+        )
+        assertEquals(
+            com.wakeme.app.data.local.transit.BmtcBusCategory.ELECTRIC_EV,
+            com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName("Astra EV 500")
+        )
+        assertEquals(
+            com.wakeme.app.data.local.transit.BmtcBusCategory.AC_VOLVO,
+            com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName("V-500CA")
+        )
+        assertEquals(
+            com.wakeme.app.data.local.transit.BmtcBusCategory.AC_VOLVO,
+            com.wakeme.app.data.local.transit.BmtcBusCategory.fromRouteOrName("KIA-9")
+        )
+    }
 }

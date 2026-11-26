@@ -37,7 +37,7 @@ class WakeMeApp : Application() {
             config.osmdroidTileCache = osmTiles
             config.tileFileSystemCacheMaxBytes = 150L * 1024L * 1024L
             config.tileFileSystemCacheTrimBytes = 120L * 1024L * 1024L
-            config.tileDownloadThreads = 6
+            config.tileDownloadThreads = 3
             config.tileFileSystemThreads = 4
             config.cacheMapTileCount = 48
         } catch (e: Exception) {

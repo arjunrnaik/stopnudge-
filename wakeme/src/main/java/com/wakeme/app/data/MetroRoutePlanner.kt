@@ -75,11 +75,16 @@ object MetroRoutePlanner {
     }
 
     private fun mapTrackToStations(track: List<GeoPoint>): List<NammaMetroNetwork.ActiveStation> {
-        return track.map { pt ->
-            NammaMetroNetwork.ACTIVE_STATIONS.minBy { st ->
+        val mapped = ArrayList<NammaMetroNetwork.ActiveStation>(track.size)
+        for (pt in track) {
+            val nearest = NammaMetroNetwork.ACTIVE_STATIONS.minBy { st ->
                 RoadRoutingRepository.haversineDistanceMeters(pt.latitude, pt.longitude, st.latitude, st.longitude)
             }
+            if (mapped.lastOrNull()?.id != nearest.id) {
+                mapped.add(nearest)
+            }
         }
+        return mapped
     }
 
     /**
@@ -219,12 +224,25 @@ object MetroRoutePlanner {
         }
 
         val totalStops = legs.sumOf { it.stopsCount }
+        val safeLegs = if (legs.isNotEmpty()) {
+            legs
+        } else {
+            val fallbackLine = primaryLineName(boardingStation)
+            listOf(
+                MetroLeg(
+                    lineName = fallbackLine,
+                    lineColorInt = NammaMetroNetwork.getLineColor(fallbackLine),
+                    stations = listOf(boardingStation, exitStation),
+                    directionLabel = "Towards ${exitStation.name}"
+                )
+            )
+        }
         return MetroJourneyPlan(
             boardingStation = boardingStation,
             exitStation = exitStation,
-            legs = legs,
-            totalStops = totalStops,
-            requiresLineChange = legs.size > 1,
+            legs = safeLegs,
+            totalStops = if (legs.isNotEmpty()) totalStops else 1,
+            requiresLineChange = safeLegs.size > 1,
             interchangeStations = interchanges,
             destinationPinName = destinationPinName,
             destinationPinPoint = destinationPinPoint,

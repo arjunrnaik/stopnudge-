@@ -21,6 +21,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +107,33 @@ fun WakeMeActiveTripScreen(
     var isMapExpanded by remember { mutableStateOf(false) }
     var isHeadingUp by remember { mutableStateOf(true) }
     var showEndCommuteConfirmation by remember { mutableStateOf(false) }
+    var inlineMapViewRef by remember { mutableStateOf<MapView?>(null) }
+    var inlineLocOverlayRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner, inlineMapViewRef) {
+        val map = inlineMapViewRef
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    map?.onResume()
+                    inlineLocOverlayRef?.enableMyLocation()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    inlineLocOverlayRef?.disableMyLocation()
+                    map?.onPause()
+                }
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            inlineLocOverlayRef?.disableMyLocation()
+            map?.onPause()
+            map?.onDetach()
+        }
+    }
 
     // Calculate journey progress percentage (0.0 to 1.0)
     val progress = remember(liveDistance, initialDist) {
@@ -590,8 +620,10 @@ fun WakeMeActiveTripScreen(
                                     enableMyLocation()
                                     enableFollowLocation()
                                 }
+                                inlineLocOverlayRef = myLocOverlay
                                 LocationMarkerUtils.applyModernLocationOverlay(ctx, myLocOverlay)
                                 overlays.add(myLocOverlay)
+                                inlineMapViewRef = this
 
                                 val isBus = selectedVehicleMode == VehicleMode.BUS
                                 val isMetro = selectedVehicleMode == VehicleMode.METRO
@@ -815,6 +847,19 @@ fun WakeMeActiveTripScreen(
             onDismissRequest = { isMapExpanded = false },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
+            var expandedMapRef by remember { mutableStateOf<MapView?>(null) }
+            var expandedLocRef by remember { mutableStateOf<MyLocationNewOverlay?>(null) }
+
+            DisposableEffect(expandedMapRef) {
+                val map = expandedMapRef
+                map?.onResume()
+                onDispose {
+                    expandedLocRef?.disableMyLocation()
+                    map?.onPause()
+                    map?.onDetach()
+                }
+            }
+
             Box(modifier = Modifier.fillMaxSize()) {
                 AndroidView(
                     factory = { ctx ->
@@ -832,6 +877,7 @@ fun WakeMeActiveTripScreen(
                                 enableMyLocation()
                                 enableFollowLocation()
                             }
+                            expandedLocRef = myLocOverlay
                             LocationMarkerUtils.applyModernLocationOverlay(ctx, myLocOverlay)
                             overlays.add(myLocOverlay)
 
@@ -842,6 +888,7 @@ fun WakeMeActiveTripScreen(
                                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
                             }
                             overlays.add(destMarker)
+                            expandedMapRef = this
                         }
                     },
                     update = { map ->

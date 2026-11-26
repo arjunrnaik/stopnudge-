@@ -4,6 +4,8 @@ import android.content.Context
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.data.local.transit.TransitDatabase
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -103,99 +105,19 @@ class SearchRepository(context: Context) {
             }
         } catch (_: Exception) {}
 
-        // 3. Online Geocoding via Nominatim (rich street, tech park, and landmark data in India)
+        // 3 & 4. Parallel Online Geocoding via Nominatim & Photon
         if (trimmed.length >= 3) {
-            try {
-                val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-                val urlString = "https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&addressdetails=1"
-                val url = URL(urlString)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 3500
-                    readTimeout = 3500
-                    setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; Commute Alarm)")
+            val onlineItems = coroutineScope {
+                val nominatimDeferred = async { fetchNominatim(trimmed) }
+                val photonDeferred = async { fetchPhoton(trimmed, centerLat, centerLon) }
+                nominatimDeferred.await() + photonDeferred.await()
+            }
+            for (item in onlineItems) {
+                val isDup = results.any {
+                    abs(it.latitude - item.latitude) < 0.0008 && abs(it.longitude - item.longitude) < 0.0008
                 }
-
-                if (conn.responseCode == 200) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val array = JSONArray(body)
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-                        val lat = obj.optDouble("lat", 0.0)
-                        val lon = obj.optDouble("lon", 0.0)
-                        val displayName = obj.optString("display_name", "")
-                        val name = obj.optString("name", displayName.substringBefore(","))
-                        val parts = displayName.split(",").map { it.trim() }
-                        val subtitle = if (parts.size > 1) parts.drop(1).take(3).joinToString(", ") else "Landmark / Area"
-
-                        if (lat != 0.0 && lon != 0.0) {
-                            val isDup = results.any {
-                                abs(it.latitude - lat) < 0.0008 && abs(it.longitude - lon) < 0.0008
-                            }
-                            if (!isDup) {
-                                results.add(
-                                    SearchResultItem(
-                                        title = name.ifBlank { displayName.substringBefore(",") },
-                                        subtitle = subtitle,
-                                        latitude = lat,
-                                        longitude = lon,
-                                        type = SearchResultType.ONLINE_PLACE
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
-        }
-
-        // 4. Online Geocoding via Photon (fuzzy search with dynamic GPS viewport bias)
-        if (trimmed.length >= 3) {
-            try {
-                val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-                val urlString = "https://photon.komoot.io/api/?q=$encodedQuery&lat=$centerLat&lon=$centerLon&limit=4"
-                val url = URL(urlString)
-                val conn = (url.openConnection() as HttpURLConnection).apply {
-                    connectTimeout = 3000
-                    readTimeout = 3000
-                    setRequestProperty("User-Agent", "WakeMe-App/2.0")
-                }
-
-                if (conn.responseCode == 200) {
-                    val body = conn.inputStream.bufferedReader().use { it.readText() }
-                    val json = JSONObject(body)
-                    val features = json.optJSONArray("features")
-                    if (features != null) {
-                        for (i in 0 until features.length()) {
-                            val feature = features.getJSONObject(i)
-                            val props = feature.getJSONObject("properties")
-                            val geom = feature.getJSONObject("geometry")
-                            val coords = geom.getJSONArray("coordinates")
-                            val lon = coords.getDouble(0)
-                            val lat = coords.getDouble(1)
-
-                            val name = props.optString("name", "Unknown Location")
-                            val city = props.optString("city", props.optString("state", ""))
-                            val street = props.optString("street", "")
-                            val subtitle = listOf(street, city).filter { it.isNotEmpty() }.joinToString(", ")
-
-                            val isDup = results.any {
-                                abs(it.latitude - lat) < 0.0008 && abs(it.longitude - lon) < 0.0008
-                            }
-                            if (!isDup) {
-                                results.add(
-                                    SearchResultItem(
-                                        title = name,
-                                        subtitle = if (subtitle.isNotEmpty()) subtitle else "OpenStreetMap Result",
-                                        latitude = lat,
-                                        longitude = lon,
-                                        type = SearchResultType.ONLINE_PLACE
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (_: Exception) {}
+                if (!isDup) results.add(item)
+            }
         }
 
         // 5. 1-Tap Google Maps Direct Search Shortcut
@@ -212,5 +134,82 @@ class SearchRepository(context: Context) {
         }
 
         results
+    }
+
+    private fun fetchNominatim(trimmed: String): List<SearchResultItem> {
+        val out = mutableListOf<SearchResultItem>()
+        try {
+            val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
+            val urlString = "https://nominatim.openstreetmap.org/search?q=$encodedQuery&format=json&limit=5&addressdetails=1"
+            val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 3500
+                readTimeout = 3500
+                setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; contact: wakeme-app@users.noreply.github.com)")
+            }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val array = JSONArray(body)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    val lat = obj.optDouble("lat", 0.0)
+                    val lon = obj.optDouble("lon", 0.0)
+                    val displayName = obj.optString("display_name", "")
+                    val name = obj.optString("name", displayName.substringBefore(","))
+                    val parts = displayName.split(",").map { it.trim() }
+                    val subtitle = if (parts.size > 1) parts.drop(1).take(3).joinToString(", ") else "Landmark / Area"
+                    if (lat != 0.0 && lon != 0.0) {
+                        out.add(
+                            SearchResultItem(
+                                title = name.ifBlank { displayName.substringBefore(",") },
+                                subtitle = subtitle,
+                                latitude = lat,
+                                longitude = lon,
+                                type = SearchResultType.ONLINE_PLACE
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+        return out
+    }
+
+    private fun fetchPhoton(trimmed: String, centerLat: Double, centerLon: Double): List<SearchResultItem> {
+        val out = mutableListOf<SearchResultItem>()
+        try {
+            val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
+            val urlString = "https://photon.komoot.io/api/?q=$encodedQuery&lat=$centerLat&lon=$centerLon&limit=4"
+            val conn = (URL(urlString).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 3000
+                readTimeout = 3000
+                setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; contact: wakeme-app@users.noreply.github.com)")
+            }
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = JSONObject(body)
+                val features = json.optJSONArray("features") ?: return out
+                for (i in 0 until features.length()) {
+                    val feature = features.getJSONObject(i)
+                    val props = feature.getJSONObject("properties")
+                    val coords = feature.getJSONObject("geometry").getJSONArray("coordinates")
+                    val lon = coords.getDouble(0)
+                    val lat = coords.getDouble(1)
+                    val name = props.optString("name", "Unknown Location")
+                    val city = props.optString("city", props.optString("state", ""))
+                    val street = props.optString("street", "")
+                    val subtitle = listOf(street, city).filter { it.isNotEmpty() }.joinToString(", ")
+                    out.add(
+                        SearchResultItem(
+                            title = name,
+                            subtitle = if (subtitle.isNotEmpty()) subtitle else "OpenStreetMap Result",
+                            latitude = lat,
+                            longitude = lon,
+                            type = SearchResultType.ONLINE_PLACE
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+        return out
     }
 }
