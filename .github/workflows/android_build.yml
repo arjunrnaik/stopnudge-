@@ -2,9 +2,9 @@ name: WakeMe Android Build
 
 on:
   push:
-    branches: [ v2 ]
+    branches: [ v2, ui-preview ]
   pull_request:
-    branches: [ v2 ]
+    branches: [ v2, ui-preview ]
   workflow_dispatch:
 
 permissions:
@@ -43,17 +43,28 @@ jobs:
           fi
 
       - name: Compile & Run Unit Tests
+        if: github.ref_name != 'ui-preview'
         run: ./gradlew :wakeme:testDebugUnitTest --stacktrace
 
       - name: Assemble WakeMe Debug APK
+        if: github.ref_name != 'ui-preview'
         run: ./gradlew :wakeme:assembleDebug --stacktrace
 
+      - name: Assemble WakeMe UI Lab APK
+        if: github.ref_name == 'ui-preview'
+        run: ./gradlew :ui_preview:assembleDebug --stacktrace
+
       - name: List Generated APK
-        run: ls -lh wakeme/build/outputs/apk/debug/wakeme-debug.apk
+        run: |
+          if [ "${{ github.ref_name }}" = "ui-preview" ]; then
+            ls -lh ui_preview/build/outputs/apk/debug/ui_preview-debug.apk
+          else
+            ls -lh wakeme/build/outputs/apk/debug/wakeme-debug.apk
+          fi
 
       - name: Upload WakeMe Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: wakeme-debug-apk
-          path: wakeme/build/outputs/apk/debug/wakeme-debug.apk
+          name: ${{ github.ref_name == 'ui-preview' && 'ui-preview-debug-apk' || 'wakeme-debug-apk' }}
+          path: ${{ github.ref_name == 'ui-preview' && 'ui_preview/build/outputs/apk/debug/ui_preview-debug.apk' || 'wakeme/build/outputs/apk/debug/wakeme-debug.apk' }}
           retention-days: 14

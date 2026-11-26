@@ -21,3 +21,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "WakeMe"
 include(":wakeme")
+include(":ui_preview")
