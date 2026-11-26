@@ -3,6 +3,8 @@ package com.wakeme.uipreview
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path as AndroidPath
 import android.graphics.RectF
@@ -23,9 +25,7 @@ import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
 import org.osmdroid.events.ZoomEvent
-import org.osmdroid.tileprovider.tilesource.OnlineTileSourceBase
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
-import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
@@ -43,15 +43,46 @@ data class NearestStationFocus(
     val zoomToIt: Boolean
 )
 
-private val CARTO_DARK_MATTER: OnlineTileSourceBase = XYTileSource(
-    "CartoDarkMatter",
-    0, 19, 256, ".png",
-    arrayOf(
-        "https://a.basemaps.cartocdn.com/dark_all/",
-        "https://b.basemaps.cartocdn.com/dark_all/",
-        "https://c.basemaps.cartocdn.com/dark_all/"
+/**
+ * Google Maps-inspired Dark Mode filter for standard OpenStreetMap (MAPNIK) tiles:
+ * 1. Inverts luminance so bright land/roads become dark charcoal/slate and dark labels become light grey.
+ * 2. Rotates hue 180 deg around the luma axis so cyan water stays deep navy blue and green parks stay dark forest green.
+ * 3. Desaturates & adds a cool slate tint (#1D222B) to match Google Maps Dark Mode.
+ */
+private val GOOGLE_DARK_MAP_FILTER: ColorMatrixColorFilter by lazy {
+    val invert = ColorMatrix(
+        floatArrayOf(
+            -1f, 0f, 0f, 0f, 255f,
+            0f, -1f, 0f, 0f, 255f,
+            0f, 0f, -1f, 0f, 255f,
+            0f, 0f, 0f, 1f, 0f
+        )
     )
-)
+    // 180-degree hue rotation matrix (preserves luminance weights 0.213, 0.715, 0.072)
+    val hue180 = ColorMatrix(
+        floatArrayOf(
+            -0.574f, 1.430f, 0.144f, 0f, 0f,
+            0.426f, 0.430f, 0.144f, 0f, 0f,
+            0.426f, 1.430f, -0.856f, 0f, 0f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+    val desaturate = ColorMatrix().apply { setSaturation(0.52f) }
+    val slateTone = ColorMatrix(
+        floatArrayOf(
+            0.78f, 0f, 0f, 0f, 16f,
+            0f, 0.80f, 0f, 0f, 20f,
+            0f, 0f, 0.84f, 0f, 28f,
+            0f, 0f, 0f, 1f, 0f
+        )
+    )
+    val combined = ColorMatrix()
+    combined.postConcat(invert)
+    combined.postConcat(hue180)
+    combined.postConcat(desaturate)
+    combined.postConcat(slateTone)
+    ColorMatrixColorFilter(combined)
+}
 
 @Composable
 fun OsmMapCanvas(
@@ -76,7 +107,7 @@ fun OsmMapCanvas(
     val mapView = remember {
         Configuration.getInstance().userAgentValue = context.packageName
         MapView(context).apply {
-            setTileSource(if (isDark) CARTO_DARK_MATTER else TileSourceFactory.MAPNIK)
+            setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
             controller.setZoom(12.8)
@@ -100,12 +131,10 @@ fun OsmMapCanvas(
         modifier = Modifier.fillMaxSize(),
         factory = { mapView },
         update = { mv ->
-            // Google Maps-style dark map via CartoDB Dark Matter tiles when in Dark Mode
-            val desiredSource = if (isDark) CARTO_DARK_MATTER else TileSourceFactory.MAPNIK
-            if (mv.tileProvider.tileSource.name() != desiredSource.name()) {
-                mv.setTileSource(desiredSource)
-            }
-            mv.overlayManager.tilesOverlay.setColorFilter(null)
+            // Apply Google Maps-style dark slate ColorMatrix on standard OSM MAPNIK tiles (no API key needed)
+            mv.overlayManager.tilesOverlay.setColorFilter(
+                if (isDark) GOOGLE_DARK_MAP_FILTER else null
+            )
 
             mv.overlays.clear()
 
