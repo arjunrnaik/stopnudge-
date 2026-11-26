@@ -100,6 +100,7 @@ class MainActivity : ComponentActivity() {
 
 private enum class ModalKind { NONE, SAVED, HISTORY, SCENARIOS, SETTINGS, REMINDER }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun WakeMeUiLabApp() {
     var screen by remember { mutableStateOf(PreviewScreen.LANDING) }
