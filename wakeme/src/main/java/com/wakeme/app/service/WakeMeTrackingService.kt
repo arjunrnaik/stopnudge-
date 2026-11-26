@@ -34,6 +34,7 @@ import com.wakeme.app.data.MetroJourneyPlan
 import com.wakeme.app.data.MetroRoutePlanner
 import com.wakeme.app.data.RoadRoutingRepository
 import com.wakeme.app.data.RouteCandidate
+import com.wakeme.app.data.TransitTrackingRepository
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
@@ -865,39 +866,38 @@ class WakeMeTrackingService : Service() {
         const val EXTRA_METRO_BOARDING_LON = "extra_metro_boarding_lon"
         const val EXTRA_METRO_BOARDING_NAME = "extra_metro_boarding_name"
 
-        val liveDistanceMeters = MutableStateFlow<Float?>(null) // Real Road Driving Distance
-        val straightLineDistanceMeters = MutableStateFlow<Float?>(null) // Geodesic straight-line
-        val currentSpeedKmh = MutableStateFlow<Float?>(null)
-        val estimatedEtaMinutes = MutableStateFlow<Int?>(null)
-        val initialDistanceMeters = MutableStateFlow<Float?>(null)
-        val routePolyline = MutableStateFlow<List<GeoPoint>>(emptyList())
-        val alternativeRoutes = MutableStateFlow<List<RouteCandidate>>(emptyList())
-        val allCandidateRoutes = MutableStateFlow<List<RouteCandidate>>(emptyList())
-        val selectedRouteId = MutableStateFlow<String?>("fastest")
-        val isRerouting = MutableStateFlow(false)
-        val isRoadRouteActive = MutableStateFlow(false)
-        val currentBearing = MutableStateFlow<Float?>(null)
-        val currentLocationPoint = MutableStateFlow<GeoPoint?>(null)
-        val isTracking = MutableStateFlow(false)
-        val activeConfig = MutableStateFlow<DestinationConfig?>(null)
+        val liveDistanceMeters get() = TransitTrackingRepository.liveDistanceMeters
+        val straightLineDistanceMeters get() = TransitTrackingRepository.straightLineDistanceMeters
+        val currentSpeedKmh get() = TransitTrackingRepository.currentSpeedKmh
+        val estimatedEtaMinutes get() = TransitTrackingRepository.estimatedEtaMinutes
+        val initialDistanceMeters get() = TransitTrackingRepository.initialDistanceMeters
+        val routePolyline get() = TransitTrackingRepository.routePolyline
+        val alternativeRoutes get() = TransitTrackingRepository.alternativeRoutes
+        val allCandidateRoutes get() = TransitTrackingRepository.allCandidateRoutes
+        val selectedRouteId get() = TransitTrackingRepository.selectedRouteId
+        val isRerouting get() = TransitTrackingRepository.isRerouting
+        val isRoadRouteActive get() = TransitTrackingRepository.isRoadRouteActive
+        val currentBearing get() = TransitTrackingRepository.currentBearing
+        val currentLocationPoint get() = TransitTrackingRepository.currentLocationPoint
+        val isTracking get() = TransitTrackingRepository.isTracking
+        val activeConfig get() = TransitTrackingRepository.activeConfig
 
-        // 2-Stage Stop-to-Stop Metro StateFlows
-        val metroStage = MutableStateFlow(MetroJourneyStage.NONE)
-        val activeMetroPlan = MutableStateFlow<MetroJourneyPlan?>(null)
-        val currentMetroLegIndex = MutableStateFlow(0)
-        val metroStopsRemaining = MutableStateFlow<Int?>(null)
-        val metroCurrentStationName = MutableStateFlow<String?>(null)
-        val metroNextStationName = MutableStateFlow<String?>(null)
-        val metroAlertStationName = MutableStateFlow<String?>(null)
-        val metroInterchangePrompt = MutableStateFlow<String?>(null)
-        val preloadedBoardingRoadPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
-        val preloadedExitRoadPoints = MutableStateFlow<List<GeoPoint>>(emptyList())
-        val preloadedRoadRoutePoints = MutableStateFlow<List<GeoPoint>>(emptyList())
-        val preloadedBoardingRoadDistanceMeters = MutableStateFlow<Float?>(null)
-        val preloadedBoardingRoadDurationSeconds = MutableStateFlow<Float?>(null)
-        val preloadedExitRoadDistanceMeters = MutableStateFlow<Float?>(null)
-        val preloadedExitRoadDurationSeconds = MutableStateFlow<Float?>(null)
-        val preloadedBusLegRoadPoints = MutableStateFlow<Map<Int, List<GeoPoint>>>(emptyMap())
+        val metroStage get() = TransitTrackingRepository.metroStage
+        val activeMetroPlan get() = TransitTrackingRepository.activeMetroPlan
+        val currentMetroLegIndex get() = TransitTrackingRepository.currentMetroLegIndex
+        val metroStopsRemaining get() = TransitTrackingRepository.metroStopsRemaining
+        val metroCurrentStationName get() = TransitTrackingRepository.metroCurrentStationName
+        val metroNextStationName get() = TransitTrackingRepository.metroNextStationName
+        val metroAlertStationName get() = TransitTrackingRepository.metroAlertStationName
+        val metroInterchangePrompt get() = TransitTrackingRepository.metroInterchangePrompt
+        val preloadedBoardingRoadPoints get() = TransitTrackingRepository.preloadedBoardingRoadPoints
+        val preloadedExitRoadPoints get() = TransitTrackingRepository.preloadedExitRoadPoints
+        val preloadedRoadRoutePoints get() = TransitTrackingRepository.preloadedRoadRoutePoints
+        val preloadedBoardingRoadDistanceMeters get() = TransitTrackingRepository.preloadedBoardingRoadDistanceMeters
+        val preloadedBoardingRoadDurationSeconds get() = TransitTrackingRepository.preloadedBoardingRoadDurationSeconds
+        val preloadedExitRoadDistanceMeters get() = TransitTrackingRepository.preloadedExitRoadDistanceMeters
+        val preloadedExitRoadDurationSeconds get() = TransitTrackingRepository.preloadedExitRoadDurationSeconds
+        val preloadedBusLegRoadPoints get() = TransitTrackingRepository.preloadedBusLegRoadPoints
 
         @Volatile
         private var matchedPolylineSegmentIndex = 0

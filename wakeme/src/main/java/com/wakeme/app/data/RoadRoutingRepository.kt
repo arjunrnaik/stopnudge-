@@ -317,42 +317,48 @@ object RoadRoutingRepository {
 
             val tableUrlString = "https://router.project-osrm.org/table/v1/driving/$coordsStr?sources=0&annotations=distance,duration"
             val url = URL(tableUrlString)
-            val connection = (url.openConnection() as HttpURLConnection).apply {
-                connectTimeout = 3500
-                readTimeout = 3500
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", "WakeMe-App/2.0")
-            }
+            for (attempt in 0..1) {
+                try {
+                    val connection = (url.openConnection() as HttpURLConnection).apply {
+                        connectTimeout = 4000
+                        readTimeout = 4000
+                        requestMethod = "GET"
+                        setRequestProperty("User-Agent", "WakeMe-App/2.0 (Android; contact: wakeme-app@users.noreply.github.com)")
+                    }
 
-            if (connection.responseCode == 200) {
-                val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(responseText)
-                if (json.optString("code") == "Ok") {
-                    val distancesArray = json.optJSONArray("distances")?.optJSONArray(0)
-                    val durationsArray = json.optJSONArray("durations")?.optJSONArray(0)
+                    if (connection.responseCode == 200) {
+                        val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                        val json = JSONObject(responseText)
+                        if (json.optString("code") == "Ok") {
+                            val distancesArray = json.optJSONArray("distances")?.optJSONArray(0)
+                            val durationsArray = json.optJSONArray("durations")?.optJSONArray(0)
 
-                    if (distancesArray != null && durationsArray != null && distancesArray.length() > 1) {
-                        var bestIndex = -1
-                        var minRoadDistance = Float.MAX_VALUE
-                        var bestDuration = 0f
+                            if (distancesArray != null && durationsArray != null && distancesArray.length() > 1) {
+                                var bestIndex = -1
+                                var minRoadDistance = Float.MAX_VALUE
+                                var bestDuration = 0f
 
-                        for (i in points.indices) {
-                            val arrayIndex = i + 1
-                            if (!distancesArray.isNull(arrayIndex)) {
-                                val dist = distancesArray.getDouble(arrayIndex).toFloat()
-                                val dur = if (!durationsArray.isNull(arrayIndex)) durationsArray.getDouble(arrayIndex).toFloat() else 0f
-                                if (dist < minRoadDistance) {
-                                    minRoadDistance = dist
-                                    bestDuration = dur
-                                    bestIndex = i
+                                for (i in points.indices) {
+                                    val arrayIndex = i + 1
+                                    if (!distancesArray.isNull(arrayIndex)) {
+                                        val dist = distancesArray.getDouble(arrayIndex).toFloat()
+                                        val dur = if (!durationsArray.isNull(arrayIndex)) durationsArray.getDouble(arrayIndex).toFloat() else 0f
+                                        if (dist < minRoadDistance) {
+                                            minRoadDistance = dist
+                                            bestDuration = dur
+                                            bestIndex = i
+                                        }
+                                    }
+                                }
+
+                                if (bestIndex >= 0) {
+                                    return Triple(bestIndex, minRoadDistance, bestDuration)
                                 }
                             }
                         }
-
-                        if (bestIndex >= 0) {
-                            return Triple(bestIndex, minRoadDistance, bestDuration)
-                        }
                     }
+                } catch (_: Exception) {
+                    if (attempt == 0) Thread.sleep(200L)
                 }
             }
         } catch (_: Exception) {

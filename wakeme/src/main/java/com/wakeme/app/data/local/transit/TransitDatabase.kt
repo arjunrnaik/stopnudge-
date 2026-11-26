@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [MetroStationEntity::class, BusStopEntity::class, BusRouteEntity::class],
     version = 9,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class TransitDatabase : RoomDatabase() {
 
@@ -23,11 +23,6 @@ abstract class TransitDatabase : RoomDatabase() {
 
         fun getInstance(context: Context): TransitDatabase {
             return INSTANCE ?: synchronized(this) {
-                val dbFile = context.applicationContext.getDatabasePath(DB_NAME)
-                if (dbFile.exists() && dbFile.length() < 100_000L) {
-                    dbFile.delete()
-                }
-
                 // Clean up legacy v1 through v8 db files so v9 BMTC + Metro DB loads cleanly
                 for (legacyName in listOf(
                     "transit_stops.db",

@@ -32,6 +32,7 @@ import com.wakeme.app.data.local.transit.TransitDatabase
 import com.wakeme.app.model.AlertMode
 import com.wakeme.app.model.AudioRouting
 import com.wakeme.app.model.DestinationConfig
+import com.wakeme.app.model.SelectedBusStop
 import com.wakeme.app.model.VehicleMode
 import com.wakeme.app.service.WakeMeTrackingService
 import com.wakeme.app.util.GoogleMapsUrlParser
@@ -49,14 +50,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import org.osmdroid.util.GeoPoint
-
-data class SelectedBusStop(
-    val name: String,
-    val latitude: Double,
-    val longitude: Double,
-    val routes: String? = null,
-    val direction: String? = null
-)
 
 class WakeMeViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -822,6 +815,8 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             try {
                 val result = RoadRoutingRepository.findNearestMetroStationByRoad(origin)
+                _selectedBusStop.value = null
+                _nearestBusRoutePoints.value = emptyList()
                 _nearestMetroStation.value = result.station
                 _nearestMetroRoadDistance.value = result.roadDistanceMeters
                 _nearestMetroRoadDuration.value = result.durationSeconds

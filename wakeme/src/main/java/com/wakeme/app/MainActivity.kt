@@ -15,11 +15,18 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.wakeme.app.ui.WakeMeActiveTripScreen
 import com.wakeme.app.ui.WakeMeLandingScreen
@@ -47,11 +54,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             WakeMeTheme {
                 val currentScreen by viewModel.currentScreen.collectAsState()
+                val snackbarHostState = remember { SnackbarHostState() }
 
-                // Display user feedback toasts reactively
+                // Display accessible, dismissible user feedback via SnackBar
                 LaunchedEffect(viewModel) {
                     viewModel.userMessage.collect { msg ->
-                        Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        snackbarHostState.showSnackbar(
+                            message = msg,
+                            duration = SnackbarDuration.Short
+                        )
                     }
                 }
 
@@ -64,22 +76,31 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    AnimatedContent(
-                        targetState = currentScreen,
-                        transitionSpec = { fadeIn() togetherWith fadeOut() },
-                        label = "WakeMeScreenTransition"
-                    ) { screen ->
-                        when (screen) {
-                            WakeMeScreen.SEARCH_LANDING -> {
-                                WakeMeLandingScreen(viewModel = viewModel)
-                            }
-                            WakeMeScreen.MODE_SELECTION -> {
-                                WakeMeModeSelectionScreen(viewModel = viewModel)
-                            }
-                            WakeMeScreen.ACTIVE_TRIP -> {
-                                WakeMeActiveTripScreen(viewModel = viewModel)
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        AnimatedContent(
+                            targetState = currentScreen,
+                            transitionSpec = { fadeIn() togetherWith fadeOut() },
+                            label = "WakeMeScreenTransition"
+                        ) { screen ->
+                            when (screen) {
+                                WakeMeScreen.SEARCH_LANDING -> {
+                                    WakeMeLandingScreen(viewModel = viewModel)
+                                }
+                                WakeMeScreen.MODE_SELECTION -> {
+                                    WakeMeModeSelectionScreen(viewModel = viewModel)
+                                }
+                                WakeMeScreen.ACTIVE_TRIP -> {
+                                    WakeMeActiveTripScreen(viewModel = viewModel)
+                                }
                             }
                         }
+
+                        SnackbarHost(
+                            hostState = snackbarHostState,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 16.dp)
+                        )
                     }
                 }
             }
