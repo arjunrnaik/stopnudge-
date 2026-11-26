@@ -6,6 +6,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntOffset
 
 enum class PreviewScreen { LANDING, SETUP, ACTIVE }
 enum class TransitMode(val label: String) { METRO("Namma Metro"), BUS("City Bus"), CAR("Direct Road") }
@@ -129,30 +130,47 @@ fun paletteFor(scheme: ColorSchemePreset, dark: Boolean): WakeMePalette = when (
     )
 }
 
+fun motionDurationMs(preset: MotionPreset): Int = when (preset) {
+    MotionPreset.EMIL -> 340
+    MotionPreset.SNAPPY -> 110
+    MotionPreset.ELASTIC -> 480
+    MotionPreset.EDITORIAL -> 620
+    MotionPreset.REDUCED -> 0
+}
+
 fun motionSpecFor(preset: MotionPreset): FiniteAnimationSpec<Float> = when (preset) {
-    MotionPreset.EMIL -> tween(durationMillis = 380, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
-    MotionPreset.SNAPPY -> tween(durationMillis = 150, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
-    MotionPreset.ELASTIC -> spring(dampingRatio = 0.68f, stiffness = Spring.StiffnessMediumLow)
-    MotionPreset.EDITORIAL -> tween(durationMillis = 500, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f))
+    MotionPreset.EMIL -> tween(durationMillis = 360, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
+    MotionPreset.SNAPPY -> tween(durationMillis = 110, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+    MotionPreset.ELASTIC -> spring(dampingRatio = 0.56f, stiffness = Spring.StiffnessMediumLow)
+    MotionPreset.EDITORIAL -> tween(durationMillis = 620, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f))
+    MotionPreset.REDUCED -> tween(durationMillis = 0)
+}
+
+fun motionOffsetSpecFor(preset: MotionPreset): FiniteAnimationSpec<IntOffset> = when (preset) {
+    MotionPreset.EMIL -> tween(durationMillis = 340, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f))
+    MotionPreset.SNAPPY -> tween(durationMillis = 110, easing = CubicBezierEasing(0.2f, 0f, 0f, 1f))
+    MotionPreset.ELASTIC -> spring(dampingRatio = 0.60f, stiffness = Spring.StiffnessMediumLow)
+    MotionPreset.EDITORIAL -> tween(durationMillis = 600, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f))
     MotionPreset.REDUCED -> tween(durationMillis = 0)
 }
 
 fun pressScaleFor(preset: MotionPreset): Float = when (preset) {
-    MotionPreset.ELASTIC -> 0.95f
+    MotionPreset.ELASTIC -> 0.93f
     MotionPreset.REDUCED -> 1f
-    else -> 0.97f
+    MotionPreset.SNAPPY -> 0.98f
+    else -> 0.96f
 }
 
 data class BusRouteCardData(
-    val title: String,
-    val via: String,
-    val stops: String,
-    val freq: String,
     val leg1: String,
     val leg2: String,
+    val via: String,
+    val stopsSummary: String,
+    val freq: String,
     val hub: String,
     val leg1Stops: Int,
-    val leg2Stops: Int
+    val leg2Stops: Int,
+    val stopNames: List<String>
 )
 
 data class PlaceListItem(
@@ -161,25 +179,70 @@ data class PlaceListItem(
     val title: String,
     val subtitle: String,
     val tag: String,
-    val mode: TransitMode
+    val mode: TransitMode,
+    val isNamedPlace: Boolean = true,
+    val coordsLabel: String = "13.0846° N, 77.4847° E",
+    val distanceLabel: String = "25.0 km"
 )
 
 object PreviewFixtures {
+    val metroStopsSample = listOf(
+        "Singayyanapalya (Board)",
+        "KR Pura",
+        "Benniganahalli",
+        "Baiyappanahalli",
+        "Swami Vivekananda Rd",
+        "Indiranagar",
+        "Halasuru",
+        "Trinity",
+        "MG Road",
+        "Cubbon Park",
+        "Vidhana Soudha",
+        "Central College",
+        "Majestic (Change to Green Line)",
+        "Mantri Square Sampige Rd",
+        "Srirampura",
+        "Rajajinagar",
+        "Mahalakshmi",
+        "Sandal Soap Factory",
+        "Yeshwanthpur",
+        "Goraguntepalya",
+        "Peenya",
+        "Peenya Industry",
+        "Jalahalli",
+        "Dasarahalli",
+        "Nagasandra",
+        "Chikkabidarakallu (Alert Stop)",
+        "Madavara (Exit)"
+    )
+
     val busOptions = listOf(
-        BusRouteCardData("507-B ➔ V-KBS-AIT", "Change at CMTI", "27 + 9 = 36 stops", "every ~73m • AC Volvo Leg 2", "507-B", "V-KBS-AIT", "CMTI", 27, 9),
-        BusRouteCardData("507-B ➔ 250-DT", "Change at CMTI", "27 + 15 = 42 stops", "every ~73m • Sarige", "507-B", "250-DT", "CMTI", 27, 15),
-        BusRouteCardData("KDG-HBL-YBS ➔ V-KBS-AIT", "Change at Yeshwanthpur", "28 + 14 = 42 stops", "1 trip/day", "KDG-HBL-YBS", "V-KBS-AIT", "Yeshwanthapura BS", 28, 14)
+        BusRouteCardData(
+            leg1 = "KBS-12HK", leg2 = "253-J", via = "Via Majestic", stopsSummary = "34 stops",
+            freq = "Every ~9m • High Freq", hub = "Majestic KBS", leg1Stops = 18, leg2Stops = 16,
+            stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura Railway Stn", "Tin Factory", "Indiranagar", "Ulsoor", "MG Road", "Corporation", "Majestic KBS (Transfer to 253-J)", "Yeshwanthpur TTMC", "Jalahalli Cross", "Peenya 2nd Stage", "Thammenahalli Cross (Alert)", "Acharya Institute (Exit)")
+        ),
+        BusRouteCardData(
+            leg1 = "507-B", leg2 = "250-B", via = "Via CMTI", stopsSummary = "42 stops",
+            freq = "Every ~25m • Sarige", hub = "CMTI", leg1Stops = 27, leg2Stops = 15,
+            stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura", "Hebbal Flyover", "BEL Circle", "CMTI (Transfer to 250-B)", "Jalahalli Cross", "Achyuthanagara Gate (Alert)", "Acharya Institute (Exit)")
+        ),
+        BusRouteCardData(
+            leg1 = "507-B", leg2 = "V-KBS-AIT", via = "Via CMTI", stopsSummary = "36 stops",
+            freq = "AC Vajra Leg 2", hub = "CMTI", leg1Stops = 27, leg2Stops = 9,
+            stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura", "Hebbal", "CMTI (Transfer to V-KBS-AIT)", "Peenya", "Achyuthanagara Gate (Alert)", "Acharya Institute (Exit)")
+        )
     )
 
     val savedPlaces = listOf(
-        PlaceListItem("C", true, "Acharya College, Soladevanahalli", "Metro • 1 stop before exit", "25.0 km", TransitMode.METRO),
-        PlaceListItem("H", false, "Home • Phoenix Marketcity", "Whitefield Main Rd • 500m radius", "Saved", TransitMode.BUS),
-        PlaceListItem("W", false, "Bagmane Tech Park, CV Raman Nagar", "Direct Road • 1 km alert", "6.8 km", TransitMode.CAR)
+        PlaceListItem("C", true, "Acharya College, Soladevanahalli", "Metro • 1 stop before exit", "25.0 km", TransitMode.METRO, true, "13.0846° N, 77.4847° E", "25.0 km"),
+        PlaceListItem("P", false, "12.9970° N, 77.6970° E", "Unnamed Map Pin • Whitefield", "0.4 km", TransitMode.BUS, false, "12.9970° N, 77.6970° E", "0.4 km"),
+        PlaceListItem("W", false, "Bagmane Tech Park, CV Raman Nagar", "Direct Road • 1 km alert", "6.8 km", TransitMode.CAR, true, "12.9806° N, 77.6612° E", "6.8 km")
     )
 
     val historyItems = listOf(
-        PlaceListItem("M", false, "Acharya Institute of Technology", "Namma Metro • 27 stops (Purple ➔ Green)", "Today", TransitMode.METRO),
-        PlaceListItem("B", false, "Kempegowda Int’l Airport (KIA)", "BMTC KIA-8 • Singaianapalya Phoenix", "Yesterday", TransitMode.BUS),
-        PlaceListItem("R", true, "Indiranagar 100 Ft Rd", "Direct Road • 1 km reminder", "2d ago", TransitMode.CAR)
+        PlaceListItem("M", false, "Acharya Institute of Technology", "Namma Metro • 27 stops (Purple ➔ Green)", "Today", TransitMode.METRO, true, "13.0846° N, 77.4847° E", "25.0 km"),
+        PlaceListItem("B", false, "Kempegowda Int’l Airport (KIA)", "BMTC KIA-8 • Singaianapalya Phoenix", "Yesterday", TransitMode.BUS, true, "13.1986° N, 77.7066° E", "34.2 km"),
+        PlaceListItem("R", true, "Indiranagar 100 Ft Rd", "Direct Road • 1 km reminder", "2d ago", TransitMode.CAR, true, "12.9784° N, 77.6408° E", "7.4 km")
     )
 }
