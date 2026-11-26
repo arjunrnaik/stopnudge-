@@ -11,6 +11,12 @@ import androidx.compose.ui.unit.IntOffset
 enum class PreviewScreen { LANDING, SETUP, ACTIVE }
 enum class TransitMode(val label: String) { METRO("Namma Metro"), BUS("City Bus"), CAR("Direct Road") }
 enum class ThemePreference(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
+enum class RingStyle(val label: String) {
+    RING_VIBRATE("Ring + Vibrate"),
+    GENTLE_CHIME("Gentle Chime"),
+    VIBRATE_ONLY("Vibrate Only"),
+    HEADPHONES("Headphones Only")
+}
 
 enum class ColorSchemePreset(val label: String) {
     SIGNAL("1. Signal Ink"),
@@ -162,17 +168,28 @@ fun pressScaleFor(preset: MotionPreset): Float = when (preset) {
     else -> 0.96f
 }
 
+data class BusLegInfo(
+    val primaryRoute: String,
+    val sharedRoutes: List<String> = emptyList(),
+    val stopsCount: Int,
+    val boardStop: String,
+    val exitStop: String
+)
+
 data class BusRouteCardData(
-    val leg1: String,
-    val leg2: String,
+    val legs: List<BusLegInfo>,
     val via: String,
     val stopsSummary: String,
     val freq: String,
     val hub: String,
-    val leg1Stops: Int,
-    val leg2Stops: Int,
     val stopNames: List<String>
-)
+) {
+    val leg1: String get() = legs.first().primaryRoute
+    val leg2: String get() = legs.last().primaryRoute
+    val leg1Stops: Int get() = legs.first().stopsCount
+    val leg2Stops: Int get() = legs.last().stopsCount
+    val chainSummary: String get() = legs.joinToString(" › ") { it.primaryRoute }
+}
 
 data class PlaceListItem(
     val badge: String,
@@ -219,19 +236,49 @@ object PreviewFixtures {
 
     val busOptions = listOf(
         BusRouteCardData(
-            leg1 = "KBS-12HK", leg2 = "253-J", via = "Via Majestic", stopsSummary = "34 stops",
-            freq = "Every ~9m • High Freq", hub = "Majestic KBS", leg1Stops = 18, leg2Stops = 16,
+            legs = listOf(
+                BusLegInfo("KBS-12HK", listOf("500-D", "500-CA"), 18, "Singaianapalya Phoenix", "Majestic KBS"),
+                BusLegInfo("253-J", listOf("253-K"), 16, "Majestic KBS", "Acharya Institute")
+            ),
+            via = "Via Majestic KBS",
+            stopsSummary = "34 stops",
+            freq = "Every ~9m",
+            hub = "Majestic KBS",
             stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura Railway Stn", "Tin Factory", "Indiranagar", "Ulsoor", "MG Road", "Corporation", "Majestic KBS (Transfer to 253-J)", "Yeshwanthpur TTMC", "Jalahalli Cross", "Peenya 2nd Stage", "Thammenahalli Cross (Alert)", "Acharya Institute (Exit)")
         ),
         BusRouteCardData(
-            leg1 = "507-B", leg2 = "250-B", via = "Via CMTI", stopsSummary = "42 stops",
-            freq = "Every ~25m • Sarige", hub = "CMTI", leg1Stops = 27, leg2Stops = 15,
+            legs = listOf(
+                BusLegInfo("507-B", listOf("507-C"), 27, "Singaianapalya Phoenix", "CMTI"),
+                BusLegInfo("250-B", emptyList(), 15, "CMTI", "Acharya Institute")
+            ),
+            via = "Via CMTI",
+            stopsSummary = "42 stops",
+            freq = "Every ~25m",
+            hub = "CMTI",
             stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura", "Hebbal Flyover", "BEL Circle", "CMTI (Transfer to 250-B)", "Jalahalli Cross", "Achyuthanagara Gate (Alert)", "Acharya Institute (Exit)")
         ),
         BusRouteCardData(
-            leg1 = "507-B", leg2 = "V-KBS-AIT", via = "Via CMTI", stopsSummary = "36 stops",
-            freq = "AC Vajra Leg 2", hub = "CMTI", leg1Stops = 27, leg2Stops = 9,
-            stopNames = listOf("Singaianapalya Phoenix (Board)", "KR Pura", "Hebbal", "CMTI (Transfer to V-KBS-AIT)", "Peenya", "Achyuthanagara Gate (Alert)", "Acharya Institute (Exit)")
+            legs = listOf(
+                BusLegInfo("500-D", listOf("500-K", "500-CA"), 12, "Singaianapalya Phoenix", "Hebbal"),
+                BusLegInfo("276", listOf("276-E"), 10, "Hebbal", "BEL Circle"),
+                BusLegInfo("250-P", emptyList(), 9, "BEL Circle", "Jalahalli Cross"),
+                BusLegInfo("253-J", listOf("253-A"), 8, "Jalahalli Cross", "Acharya Institute")
+            ),
+            via = "Via Hebbal › BEL › Jalahalli",
+            stopsSummary = "39 stops",
+            freq = "4-Bus Chain",
+            hub = "Hebbal • BEL • Jalahalli",
+            stopNames = listOf(
+                "Singaianapalya Phoenix (Board 500-D)",
+                "KR Pura",
+                "Tin Factory",
+                "Hebbal Flyover (Transfer to 276)",
+                "BEL Circle (Transfer to 250-P)",
+                "Jalahalli Cross (Transfer to 253-J)",
+                "Peenya 2nd Stage",
+                "Thammenahalli Cross (Alert)",
+                "Acharya Institute (Exit)"
+            )
         )
     )
 

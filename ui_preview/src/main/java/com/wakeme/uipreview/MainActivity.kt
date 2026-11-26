@@ -56,16 +56,17 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -112,7 +113,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class ModalKind { NONE, SAVED, HISTORY, SETTINGS }
+private enum class ModalKind { NONE, SAVED, HISTORY, SETTINGS, REMINDER }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -129,6 +130,10 @@ fun WakeMeUiLabApp() {
     }
     var selectedBusIdx by remember { mutableIntStateOf(0) }
     var activeStageIdx by remember { mutableIntStateOf(0) }
+    var activeTripProgress by remember { mutableFloatStateOf(0.32f) }
+    var transitLeadStops by remember { mutableIntStateOf(1) }
+    var roadLeadMeters by remember { mutableIntStateOf(1000) }
+    var ringStyle by remember { mutableStateOf(RingStyle.RING_VIBRATE) }
     var modalKind by remember { mutableStateOf(ModalKind.NONE) }
     var focusedLegStage by remember { mutableStateOf<Int?>(null) } // Tap 0, 1, or 2
     var userZoom by remember { mutableFloatStateOf(1.15f) }
@@ -153,7 +158,7 @@ fun WakeMeUiLabApp() {
             .fillMaxSize()
             .background(p.mapBg)
     ) {
-        // 1. Single Persistent Interactive Vector Map Canvas (supports Pinch Zoom + LOD + Long-Press Leg Focus + Moving Vehicle)
+        // 1. Single Persistent Interactive Vector Map Canvas (supports Pinch Zoom + LOD + Stage Focus + Live Vehicle)
         PersistentVectorMapCanvas(
             palette = p,
             screen = screen,
@@ -161,6 +166,7 @@ fun WakeMeUiLabApp() {
             motion = motion,
             focusedLegStage = focusedLegStage,
             activeStageIdx = activeStageIdx,
+            activeTripProgress = activeTripProgress,
             userZoom = userZoom,
             onZoomChange = { delta -> userZoom = (userZoom * delta).coerceIn(0.65f, 2.4f) },
             animSpec = animSpec
@@ -356,6 +362,9 @@ fun WakeMeUiLabApp() {
                             motion = motion,
                             selectedBusIdx = selectedBusIdx,
                             focusedLegStage = focusedLegStage,
+                            transitLeadStops = transitLeadStops,
+                            roadLeadMeters = roadLeadMeters,
+                            ringStyle = ringStyle,
                             onSelectMode = {
                                 mode = it
                                 activeStageIdx = 0
@@ -365,9 +374,11 @@ fun WakeMeUiLabApp() {
                             onLongPressLeg = { stage ->
                                 focusedLegStage = if (focusedLegStage == stage) null else stage
                             },
+                            onOpenReminder = { modalKind = ModalKind.REMINDER },
                             onStart = {
                                 focusedLegStage = null
                                 activeStageIdx = 0
+                                activeTripProgress = 0.25f
                                 screen = PreviewScreen.ACTIVE
                             }
                         )
@@ -376,8 +387,13 @@ fun WakeMeUiLabApp() {
                             mode = mode,
                             motion = motion,
                             activeStageIdx = activeStageIdx,
+                            activeTripProgress = activeTripProgress,
                             selectedBusIdx = selectedBusIdx,
-                            onSelectStage = { activeStageIdx = it },
+                            onSelectStage = {
+                                activeStageIdx = it
+                                activeTripProgress = 0.25f
+                            },
+                            onProgressChange = { activeTripProgress = it },
                             onEnd = {
                                 focusedLegStage = null
                                 screen = PreviewScreen.LANDING
@@ -434,6 +450,7 @@ fun WakeMeUiLabApp() {
                                 ModalKind.SAVED -> "Saved Places"
                                 ModalKind.HISTORY -> "Recent Commutes"
                                 ModalKind.SETTINGS -> "Appearance & Theme"
+                                ModalKind.REMINDER -> "Reminder & Ring Style"
                                 ModalKind.NONE -> ""
                             },
                             color = p.ink,
@@ -536,6 +553,83 @@ fun WakeMeUiLabApp() {
                             }
                             if (idx < ColorSchemePreset.values().lastIndex) HorizontalDivider(color = p.hairline)
                         }
+                    } else if (modalKind == ModalKind.REMINDER) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            text = if (mode == TransitMode.CAR) "Alert Distance Before Destination" else "Alert Stops Before Exit / Transfer",
+                            color = p.muted,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(13.dp))
+                                .background(p.bg)
+                                .padding(4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (mode == TransitMode.CAR) {
+                                listOf(500 to "500 m", 1000 to "1 km", 2000 to "2 km").forEach { (meters, label) ->
+                                    val selected = roadLeadMeters == meters
+                                    Surface(
+                                        onClick = { roadLeadMeters = meters },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (selected) p.surface else Color.Transparent,
+                                        shadowElevation = if (selected) 2.dp else 0.dp
+                                    ) {
+                                        Box(Modifier.fillMaxWidth().heightIn(min = 36.dp), contentAlignment = Alignment.Center) {
+                                            Text(label, color = if (selected) p.ink else p.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            } else {
+                                listOf(1 to "1 stop", 2 to "2 stops", 3 to "3 stops").forEach { (stops, label) ->
+                                    val selected = transitLeadStops == stops
+                                    Surface(
+                                        onClick = { transitLeadStops = stops },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (selected) p.surface else Color.Transparent,
+                                        shadowElevation = if (selected) 2.dp else 0.dp
+                                    ) {
+                                        Box(Modifier.fillMaxWidth().heightIn(min = 36.dp), contentAlignment = Alignment.Center) {
+                                            Text(label, color = if (selected) p.ink else p.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(14.dp))
+                        Text("How It Rings", color = p.muted, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(6.dp))
+                        RingStyle.values().forEachIndexed { idx, style ->
+                            val selected = style == ringStyle
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { ringStyle = style }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Icon(Icons.Default.Notifications, contentDescription = null, tint = if (selected) p.orange else p.muted, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = style.label,
+                                    color = p.ink,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (selected) {
+                                    Icon(Icons.Default.Check, contentDescription = "Selected", tint = p.blue, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            if (idx < RingStyle.values().lastIndex) HorizontalDivider(color = p.hairline)
+                        }
                     } else {
                         val items = if (modalKind == ModalKind.SAVED) PreviewFixtures.savedPlaces else PreviewFixtures.historyItems
                         items.forEachIndexed { idx, item ->
@@ -621,17 +715,20 @@ private fun PersistentVectorMapCanvas(
     motion: MotionPreset,
     focusedLegStage: Int?,
     activeStageIdx: Int,
+    activeTripProgress: Float,
     userZoom: Float,
     onZoomChange: (Float) -> Unit,
     animSpec: androidx.compose.animation.core.FiniteAnimationSpec<Float>
 ) {
+    val effectiveFocusedStage = if (screen == PreviewScreen.ACTIVE && mode != TransitMode.CAR) activeStageIdx else focusedLegStage
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val canvasW = constraints.maxWidth.toFloat().coerceAtLeast(1f)
         val canvasH = constraints.maxHeight.toFloat().coerceAtLeast(1f)
 
         // Compute normalized bounding box & center for the selected stage so it fills the visible map viewport above the bottom sheet
         val isMetro = mode == TransitMode.METRO
-        val (focusCx, focusCy, focusScale) = when (focusedLegStage) {
+        val (focusCx, focusCy, focusScale) = when (effectiveFocusedStage) {
             0 -> {
                 val tx = if (isMetro) 0.76f else 0.79f
                 val ty = if (isMetro) 0.42f else 0.41f
@@ -657,18 +754,18 @@ private fun PersistentVectorMapCanvas(
         }
 
         val targetScale = when {
-            focusedLegStage != null -> focusScale
+            effectiveFocusedStage != null -> focusScale
             screen == PreviewScreen.LANDING -> 1f
             screen == PreviewScreen.SETUP -> 1.08f
             else -> 1.15f
         } * userZoom
 
-        val targetShiftX = if (focusedLegStage != null) {
+        val targetShiftX = if (effectiveFocusedStage != null) {
             (0.50f - focusCx) * canvasW * targetScale
         } else 0f
 
         val targetShiftY = when {
-            focusedLegStage != null -> ((0.50f - focusCy) * targetScale - 0.20f) * canvasH
+            effectiveFocusedStage != null -> ((0.50f - focusCy) * targetScale - 0.20f) * canvasH
             screen == PreviewScreen.LANDING -> 0f
             screen == PreviewScreen.SETUP -> -80f
             else -> -110f
@@ -676,7 +773,7 @@ private fun PersistentVectorMapCanvas(
 
         val mapScale by animateFloatAsState(targetScale, animationSpec = animSpec, label = "mapScale")
         val mapRotation by animateFloatAsState(
-            targetValue = if (screen == PreviewScreen.ACTIVE && focusedLegStage == null) -10f else 0f,
+            targetValue = if (screen == PreviewScreen.ACTIVE && effectiveFocusedStage == null) -10f else 0f,
             animationSpec = animSpec,
             label = "mapRot"
         )
@@ -691,14 +788,13 @@ private fun PersistentVectorMapCanvas(
             animationSpec = animSpec,
             label = "coneAngle"
         )
+        val smoothProgress by animateFloatAsState(
+            targetValue = activeTripProgress.coerceIn(0.02f, 0.98f),
+            animationSpec = animSpec,
+            label = "tripProg"
+        )
 
         val vehicleTransition = rememberInfiniteTransition(label = "vehicle")
-        val vehicleProgress by vehicleTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing), RepeatMode.Restart),
-            label = "vehProg"
-        )
         val pulseRadius by vehicleTransition.animateFloat(
             initialValue = 10f,
             targetValue = 28f,
@@ -742,9 +838,9 @@ private fun PersistentVectorMapCanvas(
             val madavaraPt = Offset(px(0.21f), py(0.19f))
             val destPt = Offset(px(0.14f), py(0.14f))
 
-            val showStage1 = focusedLegStage == null || focusedLegStage == 0
-            val showStage2 = focusedLegStage == null || focusedLegStage == 1
-            val showStage3 = focusedLegStage == null || focusedLegStage == 2
+            val showStage1 = effectiveFocusedStage == null || effectiveFocusedStage == 0
+            val showStage2 = effectiveFocusedStage == null || effectiveFocusedStage == 1
+            val showStage3 = effectiveFocusedStage == null || effectiveFocusedStage == 2
 
             val showMetro = mode == TransitMode.METRO
             val metroAlpha = if (showMetro) 1f else 0.16f
@@ -774,17 +870,19 @@ private fun PersistentVectorMapCanvas(
                     drawPath(greenPath, palette.green.copy(alpha = metroAlpha), style = Stroke(12f, cap = StrokeCap.Round, join = StrokeJoin.Round))
                 }
 
-                // Stage 1 & Stage 3 orange paths + directional triangular arrows
+                // Stage 1 & Stage 3 orange paths + directional triangular arrows (animated with progress in ACTIVE mode)
                 if (showMetro || mode == TransitMode.BUS) {
                     val boardTarget = if (showMetro) boardMetroPt else Offset(px(0.79f), py(0.41f))
                     val exitSource = if (showMetro) madavaraPt else Offset(px(0.17f), py(0.16f))
                     if (showStage1) {
+                        val arrowT = if (screen == PreviewScreen.ACTIVE && activeStageIdx == 0) smoothProgress else 0.5f
                         drawLine(palette.orange, originPt, boardTarget, strokeWidth = 8f, cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f)))
-                        drawPathArrow(originPt, boardTarget, 0.5f, palette.orange)
+                        drawPathArrow(originPt, boardTarget, arrowT, palette.orange)
                     }
                     if (showStage3) {
+                        val arrowT = if (screen == PreviewScreen.ACTIVE && activeStageIdx == 2) smoothProgress else 0.5f
                         drawLine(palette.orange, exitSource, destPt, strokeWidth = 8f, cap = StrokeCap.Round)
-                        drawPathArrow(exitSource, destPt, 0.5f, palette.orange)
+                        drawPathArrow(exitSource, destPt, arrowT, palette.orange)
                     }
                 }
 
@@ -815,15 +913,19 @@ private fun PersistentVectorMapCanvas(
 
             val metroNodes = listOf(
                 Triple(boardMetroPt, palette.purple, "Singayyanapalya"),
+                Triple(Offset(px(0.64f), py(0.42f)), palette.purple, "KR Pura"),
+                Triple(Offset(px(0.52f), py(0.42f)), palette.purple, "Indiranagar"),
                 Triple(majesticPt, palette.blue, "Majestic"),
+                Triple(Offset(px(0.30f), py(0.28f)), palette.green, "Yeshwanthpur"),
+                Triple(Offset(px(0.25f), py(0.23f)), palette.green, "Peenya"),
                 Triple(madavaraPt, palette.green, "Madavara")
             )
             if (screen != PreviewScreen.LANDING && showDots && showStage2) {
                 metroNodes.forEach { (pt, col, name) ->
-                    drawCircle(Color.White, 10f, pt)
-                    drawCircle(col, 6.5f, pt)
-                    if (showNames) {
-                        drawContext.canvas.nativeCanvas.drawText(name, pt.x + 14f, pt.y + 6f, labelPaint)
+                    drawCircle(Color.White, 9f, pt)
+                    drawCircle(col, 6f, pt)
+                    if (showNames && (name == "Singayyanapalya" || name == "Majestic" || name == "Madavara" || mapScale >= 1.6f)) {
+                        drawContext.canvas.nativeCanvas.drawText(name, pt.x + 12f, pt.y + 6f, labelPaint)
                     }
                 }
             }
@@ -835,25 +937,25 @@ private fun PersistentVectorMapCanvas(
                 }
             }
 
-            // Live Moving White Vehicle Icon during Active Trip
+            // Live Moving Vehicle Head during Active Trip (driven by smoothProgress so it moves stop-to-stop & in between)
             if (screen == PreviewScreen.ACTIVE) {
                 val vehPos = when {
                     mode == TransitMode.METRO && activeStageIdx == 1 -> interpolatePolyline(
                         listOf(boardMetroPt, Offset(px(0.52f), py(0.42f)), majesticPt, Offset(px(0.30f), py(0.28f)), madavaraPt),
-                        vehicleProgress
+                        smoothProgress
                     )
                     mode == TransitMode.BUS && activeStageIdx == 1 -> interpolatePolyline(
                         listOf(Offset(px(0.79f), py(0.41f)), Offset(px(0.66f), py(0.34f)), Offset(px(0.42f), py(0.28f)), Offset(px(0.26f), py(0.21f)), Offset(px(0.17f), py(0.16f))),
-                        vehicleProgress
+                        smoothProgress
                     )
                     mode == TransitMode.CAR -> interpolatePolyline(
                         listOf(originPt, Offset(px(0.66f), py(0.34f)), Offset(px(0.42f), py(0.28f)), Offset(px(0.26f), py(0.21f)), destPt),
-                        vehicleProgress
+                        smoothProgress
                     )
                     else -> null
                 }
                 if (vehPos != null) {
-                    drawWhiteVehicleBadge(vehPos, mode)
+                    drawWhiteVehicleBadge(vehPos, mode, palette)
                 }
             }
 
@@ -901,26 +1003,60 @@ private fun DrawScope.drawPathArrow(start: Offset, end: Offset, t: Float, color:
     }
 }
 
-private fun DrawScope.drawWhiteVehicleBadge(pos: Offset, mode: TransitMode) {
-    // Soft dark halo so white vehicle stays crisp in both Light and Dark modes
-    drawCircle(Color(0x550F172A), radius = 18f, center = pos)
-    drawCircle(Color.White, radius = 14f, center = pos)
-    drawCircle(Color(0xFF0F172A), radius = 14f, center = pos, style = Stroke(2.5f))
-    // Inner glyph silhouette (Metro / Bus / Car)
-    val glyphColor = Color(0xFF0F172A)
+private fun DrawScope.drawWhiteVehicleBadge(pos: Offset, mode: TransitMode, palette: WakeMePalette) {
+    // Crisp halo + circular carrier so the Metro Head / Bus Front / Car stands out cleanly
+    val accent = when (mode) {
+        TransitMode.METRO -> palette.purple
+        TransitMode.BUS -> palette.blue
+        TransitMode.CAR -> palette.orange
+    }
+    drawCircle(accent.copy(alpha = 0.24f), radius = 22f, center = pos)
+    drawCircle(Color.White, radius = 16f, center = pos)
+    drawCircle(accent, radius = 16f, center = pos, style = Stroke(3f))
+
+    val darkBody = Color(0xFF0F172A)
     when (mode) {
         TransitMode.METRO -> {
-            drawRoundRect(glyphColor, topLeft = Offset(pos.x - 5.5f, pos.y - 7f), size = Size(11f, 12f), cornerRadius = CornerRadius(3f, 3f))
-            drawRect(Color.White, topLeft = Offset(pos.x - 3.5f, pos.y - 4.5f), size = Size(7f, 4f))
+            // Sleek Metro train front head with curved nose, wide windshield & dual headlights
+            drawRoundRect(
+                darkBody,
+                topLeft = Offset(pos.x - 6.5f, pos.y - 9f),
+                size = Size(13f, 16f),
+                cornerRadius = CornerRadius(5f, 5f)
+            )
+            // Roof pantograph / rail bar
+            drawLine(accent, Offset(pos.x - 3.5f, pos.y - 10.5f), Offset(pos.x + 3.5f, pos.y - 10.5f), strokeWidth = 2f, cap = StrokeCap.Round)
+            // Panoramic front windshield
+            drawRoundRect(
+                Color(0xFF38BDF8),
+                topLeft = Offset(pos.x - 4.5f, pos.y - 5.5f),
+                size = Size(9f, 5f),
+                cornerRadius = CornerRadius(2f, 2f)
+            )
+            // Dual glowing headlights
+            drawCircle(Color(0xFFFACC15), radius = 1.6f, center = Offset(pos.x - 3.4f, pos.y + 3.5f))
+            drawCircle(Color(0xFFFACC15), radius = 1.6f, center = Offset(pos.x + 3.4f, pos.y + 3.5f))
         }
         TransitMode.BUS -> {
-            drawRoundRect(glyphColor, topLeft = Offset(pos.x - 6f, pos.y - 6.5f), size = Size(12f, 12f), cornerRadius = CornerRadius(2.5f, 2.5f))
-            drawRect(Color.White, topLeft = Offset(pos.x - 4f, pos.y - 4f), size = Size(8f, 4f))
+            // Bus front head with destination header, tall windshield & headlights
+            drawRoundRect(
+                darkBody,
+                topLeft = Offset(pos.x - 7f, pos.y - 8f),
+                size = Size(14f, 15f),
+                cornerRadius = CornerRadius(3f, 3f)
+            )
+            // Route header bar
+            drawRect(accent, topLeft = Offset(pos.x - 4.5f, pos.y - 6.5f), size = Size(9f, 2f))
+            // Tall windshield
+            drawRect(Color(0xFF93C5FD), topLeft = Offset(pos.x - 5f, pos.y - 3.5f), size = Size(10f, 5.5f))
+            // Dual headlights
+            drawCircle(Color(0xFFFACC15), radius = 1.5f, center = Offset(pos.x - 4f, pos.y + 4.2f))
+            drawCircle(Color(0xFFFACC15), radius = 1.5f, center = Offset(pos.x + 4f, pos.y + 4.2f))
         }
         TransitMode.CAR -> {
-            drawRoundRect(glyphColor, topLeft = Offset(pos.x - 7f, pos.y - 4f), size = Size(14f, 8f), cornerRadius = CornerRadius(3f, 3f))
-            drawCircle(glyphColor, radius = 2.2f, center = Offset(pos.x - 4f, pos.y + 4.5f))
-            drawCircle(glyphColor, radius = 2.2f, center = Offset(pos.x + 4f, pos.y + 4.5f))
+            drawRoundRect(darkBody, topLeft = Offset(pos.x - 7.5f, pos.y - 4.5f), size = Size(15f, 8.5f), cornerRadius = CornerRadius(3f, 3f))
+            drawCircle(darkBody, radius = 2.2f, center = Offset(pos.x - 4f, pos.y + 4.8f))
+            drawCircle(darkBody, radius = 2.2f, center = Offset(pos.x + 4f, pos.y + 4.8f))
         }
     }
 }
@@ -1021,22 +1157,26 @@ private fun SetupSheetContent(
     motion: MotionPreset,
     selectedBusIdx: Int,
     focusedLegStage: Int?,
+    transitLeadStops: Int,
+    roadLeadMeters: Int,
+    ringStyle: RingStyle,
     onSelectMode: (TransitMode) -> Unit,
     onSelectBus: (Int) -> Unit,
     onLongPressLeg: (Int) -> Unit,
+    onOpenReminder: () -> Unit,
     onStart: () -> Unit
 ) {
     var stopsExpanded by remember(mode, selectedBusIdx) { mutableStateOf(false) }
     val busOpt = PreviewFixtures.busOptions[selectedBusIdx]
     val title = when (mode) {
         TransitMode.METRO -> "Acharya College • 27 Metro Stops"
-        TransitMode.BUS -> "Acharya College • ${busOpt.leg1} ➔ ${busOpt.leg2}"
+        TransitMode.BUS -> "Acharya College • ${busOpt.chainSummary}"
         TransitMode.CAR -> "Acharya College • Direct Road"
     }
     val durMs = motionDurationMs(motion)
 
     Column {
-        Text("Phoenix Marketcity → Acharya Institute • Tap any step to isolate on map", color = palette.muted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text("Phoenix Marketcity", color = palette.muted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(title, color = palette.ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
 
         // Segmented Mode Switcher
@@ -1076,62 +1216,91 @@ private fun SetupSheetContent(
             }
         }
 
-        // Uniform BMTC Route Cards (tucked when a stage is isolated to maximize visible map area)
+        // Clean BMTC Route Cards (supports 2 to 4+ bus legs & shared-corridor badges)
         AnimatedVisibility(
             visible = mode == TransitMode.BUS && focusedLegStage == null,
             enter = expandVertically(tween(durMs)) + fadeIn(tween(durMs)),
             exit = shrinkVertically(tween(durMs)) + fadeOut(tween(durMs))
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                PreviewFixtures.busOptions.forEachIndexed { idx, opt ->
-                    val sel = idx == selectedBusIdx
-                    Surface(
-                        onClick = { onSelectBus(idx) },
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (sel) palette.blue.copy(alpha = 0.12f) else palette.bg,
-                        border = BorderStroke(if (sel) 1.5.dp else 1.dp, if (sel) palette.blue else palette.hairline)
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .width(184.dp)
-                                .padding(horizontal = 10.dp, vertical = 8.dp)
+            Column(modifier = Modifier.padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    PreviewFixtures.busOptions.forEachIndexed { idx, opt ->
+                        val sel = idx == selectedBusIdx
+                        Surface(
+                            onClick = { onSelectBus(idx) },
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (sel) palette.blue.copy(alpha = 0.12f) else palette.bg,
+                            border = BorderStroke(if (sel) 1.5.dp else 1.dp, if (sel) palette.blue else palette.hairline)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                            Column(
+                                modifier = Modifier
+                                    .width(216.dp)
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(5.dp)
                             ) {
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(5.dp))
-                                            .background(palette.blue)
-                                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(opt.leg1, color = palette.badgeInk, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                                    }
-                                    Text("➔", color = palette.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(5.dp))
-                                            .background(palette.blue)
-                                            .padding(horizontal = 5.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(opt.leg2, color = palette.badgeInk, fontSize = 10.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    opt.legs.forEachIndexed { legIdx, leg ->
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(5.dp))
+                                                .background(palette.blue)
+                                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = if (leg.sharedRoutes.isNotEmpty()) "${leg.primaryRoute} (+${leg.sharedRoutes.size})" else leg.primaryRoute,
+                                                color = palette.badgeInk,
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1
+                                            )
+                                        }
+                                        if (legIdx < opt.legs.lastIndex) {
+                                            Text("›", color = palette.muted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 }
-                                Text(opt.stopsSummary, color = palette.ink, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "${opt.legs.size} ${if (opt.legs.size == 1) "bus" else "buses"} • ${opt.stopsSummary}",
+                                        color = palette.ink,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = opt.freq,
+                                        color = palette.muted,
+                                        fontSize = 10.5.sp
+                                    )
+                                }
                             }
-                            Spacer(Modifier.height(4.dp))
-                            Text("${opt.via} • ${opt.freq}", color = palette.muted, fontSize = 10.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
+                }
+                val sharedSummary = busOpt.legs
+                    .filter { it.sharedRoutes.isNotEmpty() }
+                    .joinToString(" • ") { "${it.primaryRoute} = ${it.sharedRoutes.joinToString("/")}" }
+                if (sharedSummary.isNotEmpty()) {
+                    Text(
+                        text = "Same corridor: $sharedSummary",
+                        color = palette.blue,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         }
@@ -1167,7 +1336,7 @@ private fun SetupSheetContent(
                     enter = expandVertically(tween(durMs)) + fadeIn(tween(durMs)),
                     exit = shrinkVertically(tween(durMs)) + fadeOut(tween(durMs))
                 ) {
-                    InlineStopList(PreviewFixtures.metroStopsSample, palette, palette.purple)
+                    InlineStopList(PreviewFixtures.metroStopsSample, palette, palette.purple, isMetro = true)
                 }
                 HorizontalDivider(color = palette.hairline)
                 InteractiveTimelineRow(
@@ -1198,7 +1367,7 @@ private fun SetupSheetContent(
                 InteractiveTimelineRow(
                     palette = palette,
                     dotColor = palette.blue,
-                    title = "2. ${busOpt.leg1} ➔ ${busOpt.leg2}",
+                    title = "2. ${busOpt.chainSummary}",
                     subtitle = if (stopsExpanded) "Tap for map • Hold to hide stops" else "Tap for map • Hold for stops • ${busOpt.via}",
                     value = busOpt.stopsSummary,
                     isOrange = false,
@@ -1235,21 +1404,59 @@ private fun SetupSheetContent(
         }
 
         Spacer(Modifier.height(10.dp))
-        val ctaText = when (mode) {
-            TransitMode.METRO -> "Start Metro Journey (1 stop before)"
-            TransitMode.BUS -> "Start Bus Journey (1 stop before)"
-            TransitMode.CAR -> "Start Road Alarm (1 km)"
+        val leadLabel = if (mode == TransitMode.CAR) {
+            if (roadLeadMeters >= 1000) "${roadLeadMeters / 1000} km" else "${roadLeadMeters}m"
+        } else {
+            "$transitLeadStops ${if (transitLeadStops == 1) "stop" else "stops"}"
         }
-        TactileCtaButton(ctaText, palette.ctaBg, palette.ctaInk, motion, onStart)
+        val ctaText = when (mode) {
+            TransitMode.METRO -> "Start Metro ($leadLabel before)"
+            TransitMode.BUS -> "Start Bus ($leadLabel before)"
+            TransitMode.CAR -> "Start Road Alarm ($leadLabel)"
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                onClick = onOpenReminder,
+                shape = RoundedCornerShape(14.dp),
+                color = palette.bg,
+                border = BorderStroke(1.dp, palette.hairline)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Icon(Icons.Default.Notifications, contentDescription = "Alert settings", tint = palette.orange, modifier = Modifier.size(17.dp))
+                    Text(leadLabel, color = palette.ink, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Box(modifier = Modifier.weight(1f)) {
+                TactileCtaButton(ctaText, palette.ctaBg, palette.ctaInk, motion, onStart)
+            }
+        }
     }
 }
 
 @Composable
-private fun InlineStopList(stops: List<String>, palette: WakeMePalette, lineColor: Color) {
+private fun InlineStopList(
+    stops: List<String>,
+    palette: WakeMePalette,
+    lineColor: Color,
+    isMetro: Boolean = false,
+    activeStopIdx: Int? = null,
+    vehicleStamp: String? = null
+) {
+    val majesticIdx = stops.indexOfFirst { it.contains("Majestic", ignoreCase = true) }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 148.dp)
+            .heightIn(max = 152.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(palette.bg)
             .verticalScroll(rememberScrollState())
@@ -1258,21 +1465,53 @@ private fun InlineStopList(stops: List<String>, palette: WakeMePalette, lineColo
     ) {
         stops.forEachIndexed { idx, name ->
             val isKey = idx == 0 || idx == stops.lastIndex || name.contains("Change", true) || name.contains("Transfer", true) || name.contains("Alert", true)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(if (isKey) 8.dp else 5.dp)
-                        .clip(CircleShape)
-                        .background(if (name.contains("Alert", true)) palette.red else lineColor)
-                )
+            val isCurrent = activeStopIdx == idx
+            val stopColor = when {
+                name.contains("Alert", true) -> palette.red
+                isMetro && majesticIdx >= 0 && idx < majesticIdx -> palette.purple
+                isMetro && majesticIdx >= 0 && idx == majesticIdx -> palette.blue
+                isMetro && majesticIdx >= 0 && idx > majesticIdx -> palette.green
+                else -> lineColor
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (isCurrent) stopColor.copy(alpha = 0.14f) else Color.Transparent)
+                    .padding(horizontal = if (isCurrent) 6.dp else 0.dp, vertical = if (isCurrent) 3.dp else 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (isCurrent && vehicleStamp != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(stopColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(vehicleStamp, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.ExtraBold)
+                    }
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(if (isKey) 8.dp else 5.5.dp)
+                            .clip(CircleShape)
+                            .background(stopColor)
+                    )
+                }
                 Text(
                     text = name,
-                    color = if (isKey) palette.ink else palette.muted,
+                    color = if (isCurrent || isKey) palette.ink else palette.muted,
                     fontSize = 11.5.sp,
-                    fontWeight = if (isKey) FontWeight.Bold else FontWeight.Normal,
+                    fontWeight = if (isCurrent || isKey) FontWeight.Bold else FontWeight.Normal,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
                 )
+                if (isCurrent) {
+                    Text("LIVE", color = stopColor, fontSize = 9.5.sp, fontWeight = FontWeight.ExtraBold)
+                }
             }
         }
     }
@@ -1328,13 +1567,19 @@ private fun ActiveSheetContent(
     mode: TransitMode,
     motion: MotionPreset,
     activeStageIdx: Int,
+    activeTripProgress: Float,
     selectedBusIdx: Int,
     onSelectStage: (Int) -> Unit,
+    onProgressChange: (Float) -> Unit,
     onEnd: () -> Unit
 ) {
     val stages = activeStagesFor(mode, selectedBusIdx, palette)
     val safeIdx = activeStageIdx.coerceIn(0, stages.lastIndex)
     val st = stages[safeIdx]
+    val busOpt = PreviewFixtures.busOptions[selectedBusIdx]
+    val isTransitStage2 = mode != TransitMode.CAR && safeIdx == 1
+    val stops = if (mode == TransitMode.METRO) PreviewFixtures.metroStopsSample else busOpt.stopNames
+    val currentStopIdx = (activeTripProgress * stops.lastIndex).toInt().coerceIn(0, stops.lastIndex)
 
     Column {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1375,43 +1620,73 @@ private fun ActiveSheetContent(
             verticalAlignment = Alignment.Bottom
         ) {
             Text(
-                text = st.hero,
+                text = if (isTransitStage2) "${stops.size - currentStopIdx} stops" else st.hero,
                 color = palette.ink,
-                fontSize = 38.sp,
+                fontSize = 34.sp,
                 fontWeight = FontWeight.ExtraBold,
                 style = TextStyle(fontFeatureSettings = "tnum")
             )
             Text(
-                text = st.eta,
+                text = if (isTransitStage2) stops[currentStopIdx] else st.eta,
                 color = palette.muted,
-                fontSize = 12.5.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                style = TextStyle(fontFeatureSettings = "tnum")
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 8.dp)
             )
         }
-        Spacer(Modifier.height(8.dp))
-        val animatedProgress by animateFloatAsState(
-            targetValue = st.progress,
-            animationSpec = motionSpecFor(motion),
-            label = "railProg"
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(palette.bg)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(animatedProgress)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(st.accentColor)
+            Slider(
+                value = activeTripProgress,
+                onValueChange = onProgressChange,
+                valueRange = 0f..1f,
+                modifier = Modifier.weight(1f).height(26.dp),
+                colors = SliderDefaults.colors(
+                    thumbColor = st.accentColor,
+                    activeTrackColor = st.accentColor,
+                    inactiveTrackColor = palette.bg
+                )
             )
+            if (isTransitStage2) {
+                Surface(
+                    onClick = {
+                        val nextIdx = (currentStopIdx + 1).coerceAtMost(stops.lastIndex)
+                        onProgressChange(nextIdx.toFloat() / stops.lastIndex.coerceAtLeast(1))
+                    },
+                    shape = RoundedCornerShape(999.dp),
+                    color = palette.bg,
+                    border = BorderStroke(1.dp, palette.hairline)
+                ) {
+                    Text(
+                        "Next Stop",
+                        color = palette.ink,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
         }
-        Spacer(Modifier.height(6.dp))
-        TimelineRow(palette, st.accentColor, st.nextTitle, st.nextSub, "", false)
+        if (isTransitStage2) {
+            Spacer(Modifier.height(6.dp))
+            InlineStopList(
+                stops = stops,
+                palette = palette,
+                lineColor = if (mode == TransitMode.METRO) palette.purple else palette.blue,
+                isMetro = mode == TransitMode.METRO,
+                activeStopIdx = currentStopIdx,
+                vehicleStamp = if (mode == TransitMode.METRO) "M" else "B"
+            )
+        } else {
+            Spacer(Modifier.height(4.dp))
+            TimelineRow(palette, st.accentColor, st.nextTitle, st.nextSub, "", false)
+        }
         Spacer(Modifier.height(10.dp))
         TactileCtaButton("End Commute", palette.red, Color.White, motion, onEnd)
     }
