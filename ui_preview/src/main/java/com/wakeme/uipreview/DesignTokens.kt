@@ -10,6 +10,7 @@ import androidx.compose.ui.unit.IntOffset
 
 enum class PreviewScreen { LANDING, SETUP, ACTIVE }
 enum class TransitMode(val label: String) { METRO("Namma Metro"), BUS("City Bus"), CAR("Direct Road") }
+enum class ThemePreference(val label: String) { SYSTEM("System"), LIGHT("Light"), DARK("Dark") }
 
 enum class ColorSchemePreset(val label: String) {
     SIGNAL("1. Signal Ink"),
