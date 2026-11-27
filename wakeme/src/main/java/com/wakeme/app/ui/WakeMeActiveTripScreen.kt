@@ -357,7 +357,8 @@ fun WakeMeActiveTripScreen(
                 } else distLabel
 
                 val speedEtaText = buildString {
-                    if (currentSpeed > 1f) append("${currentSpeed.toInt()} km/h")
+                    val spd = currentSpeed
+                    if (spd != null && spd > 1f) append("${spd.toInt()} km/h")
                     if (estimatedEta != null && estimatedEta!! > 0) {
                         if (isNotEmpty()) append(" • ")
                         append("~${estimatedEta}m")
