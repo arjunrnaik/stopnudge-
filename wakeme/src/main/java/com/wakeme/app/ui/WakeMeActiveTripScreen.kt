@@ -41,6 +41,7 @@ import com.wakeme.app.data.RouteCandidate
 import com.wakeme.app.data.local.transit.BmtcBusCategory
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
 import com.wakeme.app.model.VehicleMode
+import com.wakeme.app.ui.theme.LocalWakeMeIsDark
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -102,6 +103,7 @@ fun WakeMeActiveTripScreen(
     val preloadedBusLegRoadPoints by WakeMeTrackingService.preloadedBusLegRoadPoints.collectAsState()
     val currentLiveLoc by WakeMeTrackingService.currentLocationPoint.collectAsState()
     val currentOriginLoc by viewModel.currentOriginLocation.collectAsState()
+    val isDark = LocalWakeMeIsDark.current
 
     var isTestingAlert by remember { mutableStateOf(false) }
     var isMapExpanded by remember { mutableStateOf(false) }
@@ -645,6 +647,7 @@ fun WakeMeActiveTripScreen(
                         update = { map ->
                             applyActiveTripMapOverlays(
                                 map = map,
+                                isDark = isDark,
                                 selectedVehicleMode = selectedVehicleMode,
                                 targetLocation = targetLocation,
                                 targetName = targetName,
@@ -659,7 +662,8 @@ fun WakeMeActiveTripScreen(
                                 preloadedExitRoadPoints = preloadedExitRoadPoints,
                                 busLegRoadPoints = preloadedBusLegRoadPoints,
                                 isHeadingUp = isHeadingUp,
-                                currentBearing = currentBearing
+                                currentBearing = currentBearing,
+                                currentLiveLoc = currentLiveLoc
                             )
                         },
                         modifier = Modifier.fillMaxSize()
@@ -894,6 +898,7 @@ fun WakeMeActiveTripScreen(
                     update = { map ->
                         applyActiveTripMapOverlays(
                             map = map,
+                            isDark = isDark,
                             selectedVehicleMode = selectedVehicleMode,
                             targetLocation = targetLocation,
                             targetName = targetName,
@@ -908,7 +913,8 @@ fun WakeMeActiveTripScreen(
                             preloadedExitRoadPoints = preloadedExitRoadPoints,
                             busLegRoadPoints = preloadedBusLegRoadPoints,
                             isHeadingUp = false,
-                            currentBearing = null
+                            currentBearing = currentBearing,
+                            currentLiveLoc = currentLiveLoc
                         )
                     },
                     modifier = Modifier.fillMaxSize()
@@ -933,6 +939,7 @@ fun WakeMeActiveTripScreen(
 
 private fun applyActiveTripMapOverlays(
     map: MapView,
+    isDark: Boolean,
     selectedVehicleMode: VehicleMode,
     targetLocation: GeoPoint,
     targetName: String,
@@ -947,12 +954,36 @@ private fun applyActiveTripMapOverlays(
     preloadedExitRoadPoints: List<GeoPoint>,
     busLegRoadPoints: Map<Int, List<GeoPoint>>,
     isHeadingUp: Boolean,
-    currentBearing: Float?
+    currentBearing: Float?,
+    currentLiveLoc: GeoPoint?
 ) {
+    LocationMarkerUtils.applyDarkMapFilter(map, isDark)
     val desiredOrientation = if (isHeadingUp && currentBearing != null) -currentBearing else 0f
     val orientationChanged = kotlin.math.abs(map.mapOrientation - desiredOrientation) > 1f
     if (orientationChanged) {
         map.mapOrientation = desiredOrientation
+    }
+
+    // Update or add silver 3D-styled vehicle marker at live GPS position
+    val showSilverVehicle = currentLiveLoc != null && (
+        selectedVehicleMode.usesRoadDistanceTrigger || metroStage == MetroJourneyStage.ON_METRO_LEG
+    )
+    val existingVeh = map.overlays.filterIsInstance<Marker>().firstOrNull { it.title == "WakeMeLiveVehicle" }
+    if (showSilverVehicle && currentLiveLoc != null) {
+        val vehIcon = LocationMarkerUtils.createSilverVehicleDrawable(map.context, selectedVehicleMode, currentBearing ?: 0f)
+        if (existingVeh != null) {
+            existingVeh.position = currentLiveLoc
+            existingVeh.icon = vehIcon
+        } else {
+            map.overlays.add(Marker(map).apply {
+                position = currentLiveLoc
+                title = "WakeMeLiveVehicle"
+                icon = vehIcon
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            })
+        }
+    } else if (existingVeh != null) {
+        map.overlays.remove(existingVeh)
     }
 
     val renderKey = listOf(
@@ -971,7 +1002,7 @@ private fun applyActiveTripMapOverlays(
     ).joinToString("|")
 
     if (map.tag == renderKey) {
-        if (orientationChanged) map.invalidate()
+        map.invalidate()
         return
     }
     map.tag = renderKey

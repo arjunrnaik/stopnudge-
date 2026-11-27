@@ -15,6 +15,8 @@ import org.osmdroid.views.overlay.Polyline
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -1142,5 +1144,128 @@ object LocationMarkerUtils {
         }
 
         return allPoints
+    }
+
+    private val GOOGLE_DARK_MAP_FILTER: ColorMatrixColorFilter by lazy {
+        val invert = ColorMatrix(
+            floatArrayOf(
+                -1f, 0f, 0f, 0f, 255f,
+                0f, -1f, 0f, 0f, 255f,
+                0f, 0f, -1f, 0f, 255f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        val hue180 = ColorMatrix(
+            floatArrayOf(
+                -0.574f, 1.430f, 0.144f, 0f, 0f,
+                0.426f, 0.430f, 0.144f, 0f, 0f,
+                0.426f, 1.430f, -0.856f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        val desaturate = ColorMatrix().apply { setSaturation(0.52f) }
+        val slateTone = ColorMatrix(
+            floatArrayOf(
+                0.78f, 0f, 0f, 0f, 16f,
+                0f, 0.80f, 0f, 0f, 20f,
+                0f, 0f, 0.84f, 0f, 28f,
+                0f, 0f, 0f, 1f, 0f
+            )
+        )
+        val combined = ColorMatrix()
+        combined.postConcat(invert)
+        combined.postConcat(hue180)
+        combined.postConcat(desaturate)
+        combined.postConcat(slateTone)
+        ColorMatrixColorFilter(combined)
+    }
+
+    fun applyDarkMapFilter(map: MapView, isDark: Boolean) {
+        map.overlayManager.tilesOverlay.setColorFilter(if (isDark) GOOGLE_DARK_MAP_FILTER else null)
+    }
+
+    fun createSilverVehicleDrawable(context: Context, mode: VehicleMode, angleDeg: Float): Drawable {
+        val density = context.resources.displayMetrics.density
+        val sizePx = (36 * density).toInt().coerceAtLeast(48)
+        val bmp = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val cx = sizePx / 2f
+        val cy = sizePx / 2f
+        val s = sizePx / 84f
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val silverBody = Color.parseColor("#C9CED4")
+        val silverTrim = Color.parseColor("#9BA0A6")
+        val darkGlass = Color.parseColor("#101820")
+        val blackTrim = Color.parseColor("#17191C")
+        val headlamp = Color.parseColor("#FFF6D5")
+        val tailRed = Color.parseColor("#D71920")
+        val amberLed = Color.parseColor("#FF9D1E")
+
+        c.save()
+        c.rotate(angleDeg, cx, cy)
+        c.scale(s, s, cx, cy)
+
+        p.color = Color.argb(90, 0, 0, 0)
+        c.drawOval(RectF(cx - 17f, cy - 26f, cx + 17f, cy + 28f), p)
+
+        when (mode) {
+            VehicleMode.METRO -> {
+                p.color = silverBody
+                c.drawRoundRect(RectF(cx - 13f, cy - 26f, cx + 13f, cy + 25f), 11f, 11f, p)
+                p.color = silverTrim
+                c.drawRoundRect(RectF(cx - 8f, cy + 2f, cx + 8f, cy + 18f), 4f, 4f, p)
+                p.color = blackTrim
+                c.drawRoundRect(RectF(cx - 11f, cy - 22f, cx + 11f, cy - 6f), 7f, 7f, p)
+                p.color = darkGlass
+                c.drawRoundRect(RectF(cx - 9.5f, cy - 20f, cx + 9.5f, cy - 8f), 6f, 6f, p)
+                p.color = amberLed
+                c.drawRoundRect(RectF(cx - 5.5f, cy - 11f, cx + 5.5f, cy - 8.5f), 1.5f, 1.5f, p)
+                p.color = headlamp
+                c.drawCircle(cx - 8f, cy - 23f, 2.3f, p)
+                c.drawCircle(cx + 8f, cy - 23f, 2.3f, p)
+                p.color = tailRed
+                c.drawCircle(cx - 4.5f, cy - 23.5f, 1.5f, p)
+                c.drawCircle(cx + 4.5f, cy - 23.5f, 1.5f, p)
+            }
+            VehicleMode.BUS -> {
+                p.color = silverBody
+                c.drawRoundRect(RectF(cx - 13.5f, cy - 25f, cx + 13.5f, cy + 25f), 6f, 6f, p)
+                p.color = silverTrim
+                c.drawRoundRect(RectF(cx - 8f, cy - 4f, cx + 8f, cy + 17f), 3f, 3f, p)
+                p.color = blackTrim
+                c.drawRect(RectF(cx - 16.5f, cy - 21f, cx - 13f, cy - 17f), p)
+                c.drawRect(RectF(cx + 13f, cy - 21f, cx + 16.5f, cy - 17f), p)
+                p.color = darkGlass
+                c.drawRoundRect(RectF(cx - 10.5f, cy - 22f, cx - 1f, cy - 12f), 3f, 3f, p)
+                c.drawRoundRect(RectF(cx + 1f, cy - 22f, cx + 10.5f, cy - 12f), 3f, 3f, p)
+                p.color = amberLed
+                c.drawRoundRect(RectF(cx - 7f, cy - 15f, cx + 7f, cy - 12.5f), 1.5f, 1.5f, p)
+                p.color = headlamp
+                c.drawCircle(cx - 8.5f, cy - 23.5f, 2.2f, p)
+                c.drawCircle(cx + 8.5f, cy - 23.5f, 2.2f, p)
+                p.color = tailRed
+                c.drawRect(RectF(cx - 10f, cy + 23f, cx - 6f, cy + 25f), p)
+                c.drawRect(RectF(cx + 6f, cy + 23f, cx + 10f, cy + 25f), p)
+            }
+            else -> {
+                p.color = silverBody
+                c.drawRoundRect(RectF(cx - 11.5f, cy - 21f, cx + 11.5f, cy + 21f), 8f, 8f, p)
+                p.color = silverBody
+                c.drawRect(RectF(cx - 14f, cy - 5f, cx - 11f, cy - 2f), p)
+                c.drawRect(RectF(cx + 11f, cy - 5f, cx + 14f, cy - 2f), p)
+                p.color = darkGlass
+                c.drawRoundRect(RectF(cx - 8.5f, cy - 9f, cx + 8.5f, cy + 12f), 5f, 5f, p)
+                p.color = silverBody
+                c.drawRoundRect(RectF(cx - 7f, cy - 1f, cx + 7f, cy + 5f), 2f, 2f, p)
+                p.color = headlamp
+                c.drawCircle(cx - 7.5f, cy - 19f, 2f, p)
+                c.drawCircle(cx + 7.5f, cy - 19f, 2f, p)
+                p.color = tailRed
+                c.drawRoundRect(RectF(cx - 8.5f, cy + 19f, cx + 8.5f, cy + 20.8f), 1f, 1f, p)
+            }
+        }
+        c.restore()
+        return BitmapDrawable(context.resources, bmp)
     }
 }

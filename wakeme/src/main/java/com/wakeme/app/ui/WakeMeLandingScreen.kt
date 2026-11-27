@@ -16,6 +16,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -60,6 +61,11 @@ import com.wakeme.app.data.SearchResultItem
 import com.wakeme.app.data.SearchResultType
 import com.wakeme.app.data.local.favorites.FavoritePlaceEntity
 import com.wakeme.app.data.local.favorites.RecentTripEntity
+import com.wakeme.app.ui.theme.ColorSchemePreset
+import com.wakeme.app.ui.theme.LocalWakeMeIsDark
+import com.wakeme.app.ui.theme.LocalWakeMePalette
+import com.wakeme.app.ui.theme.ThemePreference
+import com.wakeme.app.ui.theme.paletteFor
 import com.wakeme.app.util.LocationMarkerUtils
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -114,6 +120,10 @@ fun WakeMeLandingScreen(
     val isCalculatingRoadToBus by viewModel.isCalculatingRoadToBus.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentTrips by viewModel.recentTrips.collectAsState()
+    val themePref by viewModel.themePreference.collectAsState()
+    val colorSchemePreset by viewModel.colorSchemePreset.collectAsState()
+    val isDark = LocalWakeMeIsDark.current
+    val palette = LocalWakeMePalette.current
 
     val searchQuery by viewModel.searchQuery.collectAsState()
     val searchResults by viewModel.searchResults.collectAsState()
@@ -443,6 +453,9 @@ fun WakeMeLandingScreen(
                         )
                     }
                 }
+            },
+            update = { mv ->
+                LocationMarkerUtils.applyDarkMapFilter(mv, isDark)
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -1652,7 +1665,7 @@ fun WakeMeLandingScreen(
         )
     }
 
-    // 9. App Info & Battery Settings Dialog
+    // 9. App Info, Appearance & Battery Settings Dialog
     if (showProfileSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showProfileSettingsDialog = false },
@@ -1665,13 +1678,84 @@ fun WakeMeLandingScreen(
                 )
             },
             title = {
-                Text("Settings & Offline Data", fontWeight = FontWeight.Bold)
+                Text("Appearance & Settings", fontWeight = FontWeight.Bold)
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+                    Text("Theme Mode", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        ThemePreference.values().forEach { pref ->
+                            val selected = pref == themePref
+                            Surface(
+                                onClick = { viewModel.setThemePreference(pref) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(9.dp),
+                                color = if (selected) MaterialTheme.colorScheme.surface else Color.Transparent,
+                                shadowElevation = if (selected) 2.dp else 0.dp
+                            ) {
+                                Box(Modifier.fillMaxWidth().padding(vertical = 7.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        pref.label,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text("Color Scheme", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                    ColorSchemePreset.values().forEach { preset ->
+                        val swatch = paletteFor(preset, isDark)
+                        val selected = preset == colorSchemePreset
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { viewModel.setColorSchemePreset(preset) }
+                                .padding(vertical = 6.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy((-4).dp)) {
+                                listOf(swatch.bg, swatch.surface, swatch.blue, swatch.orange).forEach { col ->
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .clip(CircleShape)
+                                            .background(col)
+                                            .border(1.dp, palette.hairline, CircleShape)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = preset.label,
+                                fontSize = 13.sp,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (selected) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = palette.hairline)
+
                     Text(
                         text = "WakeMe v2.0",
                         style = MaterialTheme.typography.bodyMedium,

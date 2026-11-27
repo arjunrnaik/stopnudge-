@@ -35,6 +35,8 @@ import com.wakeme.app.model.DestinationConfig
 import com.wakeme.app.model.SelectedBusStop
 import com.wakeme.app.model.VehicleMode
 import com.wakeme.app.service.WakeMeTrackingService
+import com.wakeme.app.ui.theme.ColorSchemePreset
+import com.wakeme.app.ui.theme.ThemePreference
 import com.wakeme.app.util.GoogleMapsUrlParser
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -59,6 +61,32 @@ class WakeMeViewModel(application: Application) : AndroidViewModel(application) 
     private val searchRepository = SearchRepository(application)
     private var searchJob: Job? = null
     private var previewRouteJob: Job? = null
+
+    private val uiPrefs = application.getSharedPreferences("wakeme_ui_prefs", Context.MODE_PRIVATE)
+
+    private val _themePreference = MutableStateFlow(
+        runCatching {
+            ThemePreference.valueOf(uiPrefs.getString("theme_pref", ThemePreference.SYSTEM.name) ?: ThemePreference.SYSTEM.name)
+        }.getOrDefault(ThemePreference.SYSTEM)
+    )
+    val themePreference: StateFlow<ThemePreference> = _themePreference.asStateFlow()
+
+    private val _colorSchemePreset = MutableStateFlow(
+        runCatching {
+            ColorSchemePreset.valueOf(uiPrefs.getString("color_scheme", ColorSchemePreset.SIGNAL.name) ?: ColorSchemePreset.SIGNAL.name)
+        }.getOrDefault(ColorSchemePreset.SIGNAL)
+    )
+    val colorSchemePreset: StateFlow<ColorSchemePreset> = _colorSchemePreset.asStateFlow()
+
+    fun setThemePreference(pref: ThemePreference) {
+        _themePreference.value = pref
+        uiPrefs.edit().putString("theme_pref", pref.name).apply()
+    }
+
+    fun setColorSchemePreset(preset: ColorSchemePreset) {
+        _colorSchemePreset.value = preset
+        uiPrefs.edit().putString("color_scheme", preset.name).apply()
+    }
 
     // Screen Navigation State (Uber/Rapido 3-Step Flow)
     private val _currentScreen = MutableStateFlow(WakeMeScreen.SEARCH_LANDING)

@@ -45,6 +45,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.border
 import com.wakeme.app.data.local.transit.BmtcBusCategory
 import com.wakeme.app.data.local.transit.NammaMetroNetwork
+import com.wakeme.app.ui.theme.LocalWakeMeIsDark
 import com.wakeme.app.util.LocationMarkerUtils
 import java.util.Locale
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
@@ -98,7 +99,9 @@ fun WakeMeModeSelectionScreen(
     val isTransitMode = isMetroMode || isBusMode
 
     var showCustomRadiusDialog by remember { mutableStateOf(false) }
+    var showReminderPopup by remember { mutableStateOf(false) }
     var showBoardingStationPicker by remember { mutableStateOf(false) }
+    val isDark = LocalWakeMeIsDark.current
     var modeMapViewRef by remember { mutableStateOf<MapView?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -177,35 +180,136 @@ fun WakeMeModeSelectionScreen(
                         "${radiusMeters.toInt()}m"
                     }
 
-                    Button(
-                        onClick = {
-                            WakeMeAlarmController.stopAlert(context)
-                            viewModel.startTracking(context)
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(54.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val (ctaIcon, actionLabel) = when {
-                            isMetroMode -> Icons.Default.DirectionsSubway to "Start Metro Journey"
-                            isBusMode -> Icons.Default.DirectionsBus to "Start Bus Journey"
-                            isRoadMode -> Icons.Default.DirectionsCar to "Start Road Alarm"
-                            else -> Icons.Default.NotificationsActive to "Start Commute Alarm"
+                        Surface(
+                            onClick = { showReminderPopup = true },
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .height(54.dp)
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Notifications,
+                                    contentDescription = "Reminder & Ring Settings",
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = triggerLabel,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
-                        Icon(
-                            imageVector = ctaIcon,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "$actionLabel ($triggerLabel)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
+
+                        Button(
+                            onClick = {
+                                WakeMeAlarmController.stopAlert(context)
+                                viewModel.startTracking(context)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(54.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            val (ctaIcon, actionLabel) = when {
+                                isMetroMode -> Icons.Default.DirectionsSubway to "Start Metro"
+                                isBusMode -> Icons.Default.DirectionsBus to "Start Bus"
+                                isRoadMode -> Icons.Default.DirectionsCar to "Start Road Alarm"
+                                else -> Icons.Default.NotificationsActive to "Start Commute"
+                            }
+                            Icon(
+                                imageVector = ctaIcon,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "$actionLabel ($triggerLabel)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    if (showReminderPopup) {
+                        AlertDialog(
+                            onDismissRequest = { showReminderPopup = false },
+                            title = { Text("Reminder & Ring Style", fontWeight = FontWeight.Bold) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(
+                                        text = if (isTransitMode) "Stops Before Exit / Transfer" else "Alert Distance Before Destination",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                        if (isTransitMode) {
+                                            listOf(0 to "At stop", 1 to "1 stop", 2 to "2 stops", 3 to "3 stops").forEach { (stops, lbl) ->
+                                                val sel = metroStopsBeforeAlert == stops
+                                                FilterChip(
+                                                    selected = sel,
+                                                    onClick = { viewModel.setMetroStopsBeforeAlert(stops) },
+                                                    label = { Text(lbl, fontSize = 11.sp) }
+                                                )
+                                            }
+                                        } else {
+                                            listOf(200f to "200m", 500f to "500m", 1000f to "1 km", 2000f to "2 km").forEach { (m, lbl) ->
+                                                val sel = radiusMeters.toInt() == m.toInt()
+                                                FilterChip(
+                                                    selected = sel,
+                                                    onClick = { viewModel.setRadius(m) },
+                                                    label = { Text(lbl, fontSize = 11.sp) }
+                                                )
+                                            }
+                                        }
+                                    }
+                                    Text(
+                                        text = "How It Rings",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                                        AudioRouting.values().forEach { routing ->
+                                            val sel = audioRouting == routing
+                                            FilterChip(
+                                                selected = sel,
+                                                onClick = { viewModel.setAudioRouting(routing) },
+                                                label = { Text(routing.name.lowercase().replaceFirstChar { it.uppercase() }, fontSize = 11.sp) }
+                                            )
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Vibrate with Alert", style = MaterialTheme.typography.bodyMedium)
+                                        Switch(checked = vibrateEnabled, onCheckedChange = { viewModel.setVibrateEnabled(it) })
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(onClick = { showReminderPopup = false }) { Text("Done") }
+                            }
                         )
                     }
                 }
@@ -399,8 +503,10 @@ fun WakeMeModeSelectionScreen(
                         ).joinToString("|")
 
                         if (map.tag == renderKey) {
+                            LocationMarkerUtils.applyDarkMapFilter(map, isDark)
                             return@AndroidView
                         }
+                        LocationMarkerUtils.applyDarkMapFilter(map, isDark)
                         map.tag = renderKey
 
                         map.overlays.removeAll(map.overlays.filterIsInstance<Marker>())

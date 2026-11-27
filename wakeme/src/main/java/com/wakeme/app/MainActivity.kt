@@ -52,7 +52,9 @@ class MainActivity : ComponentActivity() {
         handleIncomingIntent(intent)
 
         setContent {
-            WakeMeTheme {
+            val themePref by viewModel.themePreference.collectAsState()
+            val colorSchemePreset by viewModel.colorSchemePreset.collectAsState()
+            WakeMeTheme(themePreference = themePref, colorSchemePreset = colorSchemePreset) {
                 val currentScreen by viewModel.currentScreen.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
 
