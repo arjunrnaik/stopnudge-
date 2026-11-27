@@ -479,7 +479,7 @@ fun WakeMeLandingScreen(
             lifecycleOwner.lifecycle.addObserver(observer)
             onDispose {
                 lifecycleOwner.lifecycle.removeObserver(observer)
-                mapViewRef?.onDetach()
+                runCatching { mapViewRef?.onDetach() }
             }
         }
 

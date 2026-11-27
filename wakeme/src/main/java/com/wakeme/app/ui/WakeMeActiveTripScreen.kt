@@ -142,14 +142,16 @@ fun WakeMeActiveTripScreen(
 
     val roadAlertLabel = if (radiusMeters >= 1000f) "${(radiusMeters / 1000f).toInt()} km" else "${radiusMeters.toInt()}m"
 
+    val initDist = initialDist
+    val curDist = distMeters
     val rawProgress = when {
         isMetroJourney && activeStageIdx == 1 -> {
             val legTotal = activeMetroPlan?.legs?.getOrNull(currentMetroLegIndex)?.stopsCount?.coerceAtLeast(1) ?: 1
             val rem = (metroStopsRemaining ?: legTotal).coerceIn(0, legTotal)
             1f - (rem.toFloat() / legTotal.toFloat())
         }
-        initialDist != null && distMeters != null && initialDist!! > 10f ->
-            (1f - (distMeters / initialDist!!)).coerceIn(0.05f, 1f)
+        initDist != null && curDist != null && initDist > 10f ->
+            (1f - (curDist / initDist)).coerceIn(0.05f, 1f)
         else -> 0.25f
     }
     val animatedProgress by animateFloatAsState(
@@ -302,10 +304,11 @@ fun WakeMeActiveTripScreen(
                 Spacer(Modifier.height(10.dp))
 
                 // Stage Pills for Metro / Bus
-                if (isMetroJourney && activeMetroPlan != null) {
+                val plan = activeMetroPlan
+                if (isMetroJourney && plan != null) {
                     val stageLabels = listOf(
                         if (isBusJourney) "1. To Stop" else "1. To Metro",
-                        if (isBusJourney) "2. On Bus" else "2. Metro (${activeMetroPlan!!.totalStops})",
+                        if (isBusJourney) "2. On Bus" else "2. Metro (${plan.totalStops})",
                         "3. Final Road"
                     )
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -360,10 +363,11 @@ fun WakeMeActiveTripScreen(
 
                 val speedEtaText = buildString {
                     val spd = currentSpeed
+                    val eta = estimatedEta
                     if (spd != null && spd > 1f) append("${spd.toInt()} km/h")
-                    if (estimatedEta != null && estimatedEta!! > 0) {
+                    if (eta != null && eta > 0) {
                         if (isNotEmpty()) append(" • ")
-                        append("~${estimatedEta}m")
+                        append("~${eta}m")
                     }
                     if (isEmpty()) append("GPS Active")
                 }
@@ -478,9 +482,10 @@ fun WakeMeActiveTripScreen(
                     ) {
                         Box(modifier = Modifier.size(9.dp).clip(CircleShape).background(accentColor))
                         Column(modifier = Modifier.weight(1f)) {
+                            val planForStage = activeMetroPlan
                             Text(
                                 text = when {
-                                    activeStageIdx == 0 && activeMetroPlan != null -> activeMetroPlan!!.boardingStation.name
+                                    activeStageIdx == 0 && planForStage != null -> planForStage.boardingStation.name
                                     else -> targetName
                                 },
                                 color = p.ink,

@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wakeme.app.service.WakeMeTrackingService
+import com.wakeme.app.ui.theme.ColorSchemePreset
+import com.wakeme.app.ui.theme.ThemePreference
 import com.wakeme.app.ui.theme.WakeMeTheme
 
 class AlarmDismissActivity : ComponentActivity() {
@@ -47,8 +49,16 @@ class AlarmDismissActivity : ComponentActivity() {
         val radiusMeters = intent.getFloatExtra(EXTRA_RADIUS_METERS, 500f)
         val isInterchange = intent.getBooleanExtra(EXTRA_IS_INTERCHANGE, false)
 
+        val uiPrefs = getSharedPreferences("wakeme_ui_prefs", Context.MODE_PRIVATE)
+        val themePref = runCatching {
+            ThemePreference.valueOf(uiPrefs.getString("theme_pref", ThemePreference.SYSTEM.name) ?: ThemePreference.SYSTEM.name)
+        }.getOrDefault(ThemePreference.SYSTEM)
+        val schemePreset = runCatching {
+            ColorSchemePreset.valueOf(uiPrefs.getString("color_scheme", ColorSchemePreset.SIGNAL.name) ?: ColorSchemePreset.SIGNAL.name)
+        }.getOrDefault(ColorSchemePreset.SIGNAL)
+
         setContent {
-            WakeMeTheme {
+            WakeMeTheme(themePreference = themePref, colorSchemePreset = schemePreset) {
                 AlarmDismissScreen(
                     destinationName = destinationName,
                     reminderNote = reminderNote,

@@ -221,17 +221,18 @@ class WakeMeTrackingService : Service() {
             .setMinUpdateDistanceMeters(3f)
             .build()
 
-        locationCallback = object : LocationCallback() {
+        val callback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
                 val location = result.lastLocation ?: return
                 onNewLocation(location)
             }
         }
+        locationCallback = callback
 
         try {
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
-                locationCallback!!,
+                callback,
                 locationThread.looper
             )
         } catch (_: SecurityException) {
@@ -402,8 +403,9 @@ class WakeMeTrackingService : Service() {
             if (liveDistanceMeters.value == null) {
                 liveDistanceMeters.value = straightDist * 1.28f
             }
-            if (speedMps > 1.0f && liveDistanceMeters.value != null) {
-                val etaSec = (liveDistanceMeters.value!! / speedMps).toInt()
+            val liveDist = liveDistanceMeters.value
+            if (speedMps > 1.0f && liveDist != null) {
+                val etaSec = (liveDist / speedMps).toInt()
                 val etaMin = (etaSec / 60).coerceAtLeast(1)
                 estimatedEtaMinutes.value = etaMin
             }
