@@ -1181,7 +1181,9 @@ object LocationMarkerUtils {
     }
 
     fun applyDarkMapFilter(map: MapView, isDark: Boolean) {
-        map.overlayManager.tilesOverlay.setColorFilter(if (isDark) GOOGLE_DARK_MAP_FILTER else null)
+        runCatching {
+            map.overlayManager?.tilesOverlay?.setColorFilter(if (isDark) GOOGLE_DARK_MAP_FILTER else null)
+        }
     }
 
     fun createSilverVehicleDrawable(context: Context, mode: VehicleMode, angleDeg: Float): Drawable {

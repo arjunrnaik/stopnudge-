@@ -48,13 +48,38 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val crashPrefs = getSharedPreferences("wakeme_crash_log", MODE_PRIVATE)
+        val prevCrash = crashPrefs.getString("last_crash", null)
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            crashPrefs.edit().putString("last_crash", "${e::class.java.simpleName}: ${e.message}\n${e.stackTraceToString().take(900)}").commit()
+            defaultHandler?.uncaughtException(t, e)
+        }
+
         requestRequiredPermissions()
         handleIncomingIntent(intent)
 
         setContent {
             val themePref by viewModel.themePreference.collectAsState()
             val colorSchemePreset by viewModel.colorSchemePreset.collectAsState()
+            var crashDialogText by remember { mutableStateOf(prevCrash) }
             WakeMeTheme(themePreference = themePref, colorSchemePreset = colorSchemePreset) {
+                if (crashDialogText != null) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = {
+                            crashPrefs.edit().remove("last_crash").apply()
+                            crashDialogText = null
+                        },
+                        title = { androidx.compose.material3.Text("Previous Crash Details") },
+                        text = { androidx.compose.material3.Text(crashDialogText ?: "", style = MaterialTheme.typography.bodySmall) },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                crashPrefs.edit().remove("last_crash").apply()
+                                crashDialogText = null
+                            }) { androidx.compose.material3.Text("Dismiss") }
+                        }
+                    )
+                }
                 val currentScreen by viewModel.currentScreen.collectAsState()
                 val snackbarHostState = remember { SnackbarHostState() }
 

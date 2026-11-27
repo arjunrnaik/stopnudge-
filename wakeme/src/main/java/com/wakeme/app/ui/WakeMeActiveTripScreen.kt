@@ -115,8 +115,10 @@ fun WakeMeActiveTripScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            map?.onPause()
-            map?.onDetach()
+            runCatching {
+                map?.onPause()
+                map?.onDetach()
+            }
         }
     }
 

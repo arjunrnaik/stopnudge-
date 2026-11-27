@@ -110,8 +110,10 @@ fun WakeMeModeSelectionScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
-            map?.onPause()
-            map?.onDetach()
+            runCatching {
+                map?.onPause()
+                map?.onDetach()
+            }
         }
     }
 
@@ -142,6 +144,7 @@ fun WakeMeModeSelectionScreen(
                 }
             },
             update = { map ->
+                runCatching {
                 LocationMarkerUtils.applyDarkMapFilter(map, isDark)
                 val renderKey = listOf(
                     selectedVehicleMode.name,
@@ -307,6 +310,7 @@ fun WakeMeModeSelectionScreen(
                     map.controller.setCenter(focusPts.firstOrNull() ?: targetLocation)
                 }
                 map.invalidate()
+                }
             }
         )
 
